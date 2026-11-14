@@ -271,7 +271,8 @@ The machine is looked after:
 - Nothing is written to its disk.
 - One file's work takes at most half of its free memory, and the machine is
   checked again before every chunk.
-- It runs at low priority and leaves a core free.
+- It runs at low priority and, on a machine with more than one core, leaves a
+  core free.
 - It stops as soon as the import does.
 
 A machine with too little memory free is refused, with what it had and what

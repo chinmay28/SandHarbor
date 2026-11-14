@@ -73,9 +73,21 @@ func TestPlanSizesTheWindowToTheMachine(t *testing.T) {
 		t.Fatalf("a big machine: %+v, %v; want the cap", b, err)
 	}
 
+	b, err = Plan(Memory{Available: 64 << 30}, 3, chunk, 2, 3)
+	if err != nil || b.Window != 2 {
+		t.Fatalf("three cores: %+v, %v; want a core left for the machine", b, err)
+	}
+
 	b, err = Plan(Memory{Available: 64 << 30}, 2, chunk, 2, 3)
 	if err != nil || b.Window != 1 {
 		t.Fatalf("two cores: %+v, %v; want a core left for the machine", b, err)
+	}
+
+	// One core has none to spare: it is used, one chunk at a time, rather
+	// than the machine being refused.
+	b, err = Plan(Memory{Available: 64 << 30}, 1, chunk, 2, 3)
+	if err != nil || b.Window != 1 {
+		t.Fatalf("one core: %+v, %v; want a window of one", b, err)
 	}
 
 	// Room for exactly two chunks in half the headroom.

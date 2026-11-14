@@ -101,7 +101,8 @@ The machine is somebody's, and doing other things, so:
   has one, whichever is tighter. One chunk in flight is reckoned at about 7×
   the chunk size: plaintext, compressed copy, coded shards, sealed parts and
   the compressor's state. One file's work may take at most half of the
-  headroom, and the window is also held to one less than the cores, at most 4.
+  headroom, and the window is also held to one less than the cores (a
+  single-core machine still gets a window of one), at most 4.
   A machine whose half won't hold one chunk is refused with what it had and
   what was wanted. A machine whose memory can't be read (no `/proc`) gets a
   window of one.
