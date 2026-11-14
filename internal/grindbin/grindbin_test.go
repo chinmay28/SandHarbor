@@ -173,3 +173,44 @@ func TestSumForReadsBothSha256sumForms(t *testing.T) {
 		}
 	}
 }
+
+// A binary installed beside this one is used as it is: no download, even for
+// a build that has a release to download from.
+func TestABundledBinaryIsUsedFirst(t *testing.T) {
+	name := "sand-v2026.11.300-linux-amd64"
+	srv, hits := release(t, map[string]string{name: "from the release"}, map[string]string{name: sumOf("from the release")})
+	s, _ := selfStore(t)
+	s.Released, s.Releases = true, srv.URL
+	s.Bundled = t.TempDir()
+	os.WriteFile(filepath.Join(s.Bundled, name), []byte("installed beside"), 0o755)
+
+	path, size, ok := s.Ready(Platform{"linux", "amd64"})
+	if !ok || size != int64(len("installed beside")) || path != filepath.Join(s.Bundled, name) {
+		t.Fatalf("Ready = %q, %d, %v", path, size, ok)
+	}
+	b, err := s.Get(context.Background(), Platform{"linux", "amd64"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(b.Path); string(got) != "installed beside" || hits.Load() != 0 {
+		t.Fatalf("got %q after %d downloads", got, hits.Load())
+	}
+}
+
+// A development build with the other platform installed beside it can copy
+// it, though it has no release; one installed for another version is not it.
+func TestABundledBinaryServesADevelopmentBuild(t *testing.T) {
+	s, _ := selfStore(t)
+	s.Bundled = t.TempDir()
+	os.WriteFile(filepath.Join(s.Bundled, "sand-v2026.10.1-linux-amd64"), []byte("older"), 0o755)
+	if err := s.CanProvide(Platform{"linux", "amd64"}); !errors.Is(err, ErrNoRelease) {
+		t.Fatalf("an older version's binary was taken for this one: %v", err)
+	}
+	os.WriteFile(filepath.Join(s.Bundled, "sand-v2026.11.300-linux-amd64"), []byte("this one"), 0o755)
+	if err := s.CanProvide(Platform{"linux", "amd64"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Get(context.Background(), Platform{"linux", "amd64"}); err != nil {
+		t.Fatal(err)
+	}
+}

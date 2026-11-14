@@ -264,10 +264,11 @@ It needs a login that may run commands, not one limited to SFTP, on a Linux or
 macOS machine (64-bit Intel or ARM). There is nothing to install. The first
 import copies SAND's own `sand` binary (one file, about 30 MB) to
 `~/.cache/sand/grind` on the machine and runs it from there. Later imports
-reuse it, and an upgraded SAND replaces it. When the machine is a different
-kind from the one running SAND, a Raspberry Pi importing from an Intel VPS
-say, SAND fetches that kind's binary from its own release on GitHub and checks
-it against the release's checksums first. A development build has no release,
+reuse it, and an upgraded SAND replaces it. The installer keeps both Linux
+kinds beside the server (64-bit ARM and Intel/AMD), so a Raspberry Pi importing
+from an Intel VPS, or the other way round, copies a binary it already has. For
+a Mac, SAND fetches the binary from its own release on GitHub and checks it
+against the release's checksums first. A development build has no release,
 so there it uses a `sand` already installed on the machine if there is one.
 When the dialog opens, it asks the machine without changing anything. Beside
 the box it says what would be copied, how much memory the work would take, or

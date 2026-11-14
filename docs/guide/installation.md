@@ -107,14 +107,28 @@ rather than minutes. It asks the GitHub API for the release (the latest, or
 anything is swapped in. A mismatch stops the install. A release with no
 checksum entry installs with a warning.
 
-> **Releases currently publish `linux/arm64` only.** The release workflow
-> (`.github/workflows/release.yml`) attaches `sand-<tag>-linux-arm64`,
-> `sand-tv.apk` and `SHA256SUMS`, and nothing else. On x86-64 a release install
-> stops with "no sand-…-linux-amd64 in release"; use the default source
-> install there. 32-bit ARM has no prebuilt binary either.
+> **Releases publish `linux/arm64`, `linux/amd64`, `darwin/arm64` and
+> `darwin/amd64`**, with `sand-tv.apk` and `SHA256SUMS`
+> (`.github/workflows/release.yml`). Releases before the one that added
+> "make the parts on the machine" published `linux/arm64` only, so a release
+> install of one of those on x86-64 stops with "no sand-…-linux-amd64 in
+> release"; use the default source install there. 32-bit ARM has no prebuilt
+> binary.
 
 Both modes install the same thing under the same unit and data directory, so
 you can switch by re-running with a different `SAND_INSTALL`.
+
+**sand for the other Linux architecture comes too.** Beside the server, in a
+`grind/` folder next to the binary the service runs (`/opt/sand/bin/grind/` in
+release mode), the installer keeps `sand-<version>-linux-<other arch>`: amd64 on a
+Pi, arm64 on an Intel machine. A release install downloads it from the same
+release and checks it against `SHA256SUMS`. A source install cross-compiles
+it, which needs no extra toolchain, since sand is pure Go. Importing with
+"make the parts on the machine" copies this file to a machine of that kind,
+so nothing is downloaded at import time. It is optional: if it can't be
+fetched or built, the install warns and carries on. Older versions' copies
+are removed once an upgrade passes its health check. See
+[design/grind.md](../design/grind.md).
 
 ### Installing from a checkout
 

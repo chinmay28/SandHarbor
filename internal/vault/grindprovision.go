@@ -52,6 +52,7 @@ func (v *Vault) grindBinaries() *grindbin.Store {
 	defer v.mu.Unlock()
 	if v.grindBins == nil {
 		v.grindBins = &grindbin.Store{
+			Bundled:  bundledGrindDir(),
 			Dir:      filepath.Join(filepath.Dir(v.path), "grind-binaries"),
 			Version:  version.String(),
 			Released: version.Patch != "0",
@@ -134,19 +135,25 @@ func (v *Vault) planGrind(ctx context.Context, client *sandsftp.Client) (grindPl
 	return plan, nil
 }
 
+// bundledGrindDir is where the installer puts sand for the other Linux
+// architecture: a grind folder beside this executable. See
+// scripts/quickstart.sh, and `make build-grind` for a build by hand.
+func bundledGrindDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if real, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = real
+	}
+	return filepath.Join(filepath.Dir(exe), "grind")
+}
+
 // knownSize is the size of the binary that would be copied, when it is at hand
 // without a download.
 func knownSize(bins *grindbin.Store, p grindbin.Platform) int64 {
-	if p == bins.Native() {
-		if b, err := bins.Get(context.Background(), p); err == nil {
-			return b.Size
-		}
-		return 0
-	}
-	if info, err := os.Stat(filepath.Join(bins.Dir, grindbin.AssetName(bins.Version, p))); err == nil {
-		return info.Size()
-	}
-	return 0
+	_, size, _ := bins.Ready(p)
+	return size
 }
 
 // runProbe runs grind.ProbeScript and answers what it printed.

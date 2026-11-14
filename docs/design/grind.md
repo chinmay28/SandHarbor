@@ -42,7 +42,17 @@ puts it there itself, the first time an import asks for grinding
    writes nothing. The dialog's figures come from this, before anything runs.
 2. **Pick a binary** (`internal/grindbin`):
    - the same OS and architecture as the vault: the vault's own executable;
-   - another one: the release this vault was built as. The vault downloads
+   - the other Linux architecture: the binary the installer put in `grind/`
+     beside the server (`/opt/sand/bin/grind/sand-<version>-linux-<arch>`).
+     In release mode the installer downloads it from the same release and
+     verifies it against `SHA256SUMS`; in source mode it cross-compiles it
+     with `CGO_ENABLED=0`. `make build-grind` does the same for a build by
+     hand. It is looked up by exact version, so a file an older install left
+     is never used, and the installer removes older versions once the new
+     one has passed its health check. **For a Pi and an Intel machine, in
+     either direction, the copy is all there is: no download.**
+   - anything else (macOS, or an install without the companion): the release
+     this vault was built as. The vault downloads
      `sand-<version>-<os>-<arch>` once, checks it against that release's
      `SHA256SUMS`, and keeps it beside the vault, removing older versions'
      downloads as it goes. Releases publish linux and darwin, each for amd64

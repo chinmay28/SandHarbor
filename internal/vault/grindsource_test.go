@@ -437,3 +437,34 @@ func TestGroundImportCutOffMidFileLeavesNoParts(t *testing.T) {
 		t.Fatalf("%d objects on the accounts, want only b.txt's three", len(objects))
 	}
 }
+
+// The installer puts the other Linux architecture beside sand, so a machine
+// of that kind is served by a plain copy: no release, no download — a
+// development build with the binary installed beside it does it too.
+func TestAnotherPlatformFromTheBinaryInstalledBeside(t *testing.T) {
+	other, err := grindbin.FromUname("Linux", grindtest.OtherArch())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &grindtest.Machine{Arch: grindtest.OtherArch()}
+	v, id, root, _ := grindFixture(t, m)
+	v.grindBins.Bundled = t.TempDir()
+	const binary = "#!installed beside sand\n"
+	os.WriteFile(filepath.Join(v.grindBins.Bundled, grindbin.AssetName(testSandVersion, other)), []byte(binary), 0o755)
+	seed(t, filepath.Join(root, "a.txt"), "a")
+
+	info, err := v.ProbeGrinder(context.Background(), id)
+	if err != nil || !info.Available || !info.Copies || info.CopyBytes != int64(len(binary)) {
+		t.Fatalf("probe: %+v, %v", info, err)
+	}
+	summary, err := v.ImportFromSource(context.Background(), MainScope, id, ImportRequest{
+		Paths: []string{"a.txt"}, Dest: "/", Grind: true,
+	})
+	if err != nil || summary.Imported != 1 {
+		t.Fatalf("import: %+v, %v", summary, err)
+	}
+	at := filepath.Join(m.Home, ".cache", "sand", "grind", grindbin.AssetName(testSandVersion, other))
+	if got, _ := os.ReadFile(at); string(got) != binary {
+		t.Fatalf("copied %q, want the binary installed beside", got)
+	}
+}
