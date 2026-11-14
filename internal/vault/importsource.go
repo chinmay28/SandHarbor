@@ -211,7 +211,7 @@ func (v *Vault) ImportFromSource(ctx context.Context, scope Scope, id string, re
 	// parts says so as the answer to the request rather than once per file.
 	var link *grindLink
 	if req.Grind {
-		link = &grindLink{client: client}
+		link = &grindLink{v: v, ctx: ctx, client: client}
 		defer link.close()
 		if _, err := link.get(); err != nil {
 			return ImportSummary{}, err

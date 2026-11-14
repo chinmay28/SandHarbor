@@ -570,6 +570,8 @@ if [ "$UNINSTALL" = 1 ]; then
     fi
     if [ -d "$PREFIX/bin" ]; then
       rm -f "$PREFIX/bin/sand" "$PREFIX/bin/sand.prev" "$PREFIX/bin/sand.new" "$PROTON_BIN"
+      rm -f "$PREFIX/bin/grind"/sand-*
+      rmdir "$PREFIX/bin/grind" 2>/dev/null || true
       rmdir "$PREFIX/bin" 2>/dev/null || warn "kept $PREFIX/bin — it still holds files this script did not put there."
     fi
     rm -rf "${CHECKOUT_DIR:?}" "${BUN_DIR:?}" "${PROTON_SDK_DIR:?}" "${BUILD_HOME:?}"
@@ -646,6 +648,35 @@ fi
 # Kept for rollback: the binary the service was running before this run.
 PREV_BIN="${SERVER_BIN}.prev"
 STAGED_BIN="${SERVER_BIN}.new"
+# sand for the other Linux architecture, beside the server's own. "Make the
+# parts on the machine" copies sand onto the machine being imported from, and
+# a Pi importing from an Intel VPS needs the amd64 one: with both here that is
+# a plain copy, with no download at import time. The server looks here by
+# exact version name (sand-<version>-linux-<arch>), so a file an older install
+# left behind is never mistaken for this version's. See internal/grindbin.
+GRIND_DIR="$(dirname "$SERVER_BIN")/grind"
+
+# other_linux_arch names the Linux architecture that is not this one's.
+other_linux_arch() {
+  case "$1" in
+    amd64) echo arm64 ;;
+    arm64) echo amd64 ;;
+  esac
+}
+
+# prune_grind keeps only this version's binaries in $GRIND_DIR. Run once the
+# new version has passed its health check, so a rollback still finds its own.
+prune_grind() {
+  local keep="$1" f
+  [ -n "$keep" ] && [ -d "$GRIND_DIR" ] || return 0
+  for f in "$GRIND_DIR"/sand-*; do
+    [ -e "$f" ] || continue
+    case "$(basename "$f")" in
+      "sand-${keep}-"*) ;;
+      *) rm -f "$f" ;;
+    esac
+  done
+}
 
 # The unit sets ProtectHome=true (write_unit), which makes /home, /root and
 # /run/user empty directories to the service. A prefix under one of them is a
@@ -961,6 +992,27 @@ if [ "$INSTALL_MODE" = release ]; then
   install -d -m 755 "$(dirname "$SERVER_BIN")"
   install -m 755 "$tmp/sand" "$STAGED_BIN"
   ok "staged $RELEASE_VERSION → $STAGED_BIN"
+
+  # The other architecture, for copying to machines of that kind. Optional:
+  # an older release that did not publish it, or a checksum that does not
+  # match, costs only that, and the server says so when it is needed.
+  other="$(other_linux_arch "$arch")"
+  if [ -n "$other" ]; then
+    companion="sand-${RELEASE_VERSION}-linux-${other}"
+    if curl -fsSL "$base/$companion" -o "$tmp/$companion" 2>/dev/null; then
+      want="$( [ -f "$tmp/SHA256SUMS" ] && grep " $companion\$" "$tmp/SHA256SUMS" | awk '{print $1}' | head -1)"
+      got="$(sha256sum "$tmp/$companion" | awk '{print $1}')"
+      if [ -n "$want" ] && [ "$want" = "$got" ]; then
+        install -d -m 755 "$GRIND_DIR"
+        install -m 755 "$tmp/$companion" "$GRIND_DIR/$companion"
+        ok "added $companion, for importing from linux/$other machines"
+      else
+        warn "$companion did not match its checksum — left out; linux/$other machines will fetch it when needed."
+      fi
+    else
+      warn "$RELEASE_VERSION publishes no $companion — linux/$other machines will need sand fetched when imported from."
+    fi
+  fi
 else
   if [ -n "$LOCAL_CHECKOUT" ]; then
     log "copying the checkout at $LOCAL_CHECKOUT$(describe_head) to $SRC_DIR…"
@@ -1019,6 +1071,24 @@ build_src() {
   as_svc go -C "$SRC_DIR" build -trimpath \
       -ldflags "-s -w -X github.com/chinmay28/SandHarbor/internal/version.Patch=${patch} -X github.com/chinmay28/SandHarbor/internal/version.Date=${date}" \
       -o "$STAGED_BIN" ./cmd/sand
+
+  # The other Linux architecture, for copying to machines of that kind. sand
+  # is pure Go, so this is the same build with GOARCH set — no toolchain to
+  # install. Optional: a failure here is a warning, never a failed install.
+  local ver native other
+  ver="$("$STAGED_BIN" version 2>/dev/null | awk '{print $NF}')"
+  native="$(as_svc go env GOARCH 2>/dev/null)"
+  other="$(other_linux_arch "$native")"
+  if [ -n "$ver" ] && [ -n "$other" ]; then
+    as_svc mkdir -p "$GRIND_DIR"
+    if as_svc env CGO_ENABLED=0 GOOS=linux GOARCH="$other" go -C "$SRC_DIR" build -trimpath \
+        -ldflags "-s -w -X github.com/chinmay28/SandHarbor/internal/version.Patch=${patch} -X github.com/chinmay28/SandHarbor/internal/version.Date=${date}" \
+        -o "$GRIND_DIR/sand-${ver}-linux-${other}" ./cmd/sand; then
+      ok "built sand-${ver}-linux-${other}, for importing from linux/$other machines"
+    else
+      warn "could not build sand for linux/$other — machines of that kind will need it fetched when imported from."
+    fi
+  fi
 }
 
 if [ "$INSTALL_MODE" = source ]; then
@@ -1438,6 +1508,7 @@ restore_snapshot() {
 
 if check_health; then
   ok "healthy ($health_url) — $(probe | sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p')"
+  prune_grind "$("$SERVER_BIN" version 2>/dev/null | awk '{print $NF}')"
 elif [ "$INSTALL_MODE" = release ] && [ "$UPGRADE" -eq 1 ] && [ -f "$PREV_BIN" ]; then
   # Release-mode rollback: the previous binary is right there, so put it back
   # with the pre-upgrade vault and restart.

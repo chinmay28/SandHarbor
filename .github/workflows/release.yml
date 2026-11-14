@@ -92,14 +92,21 @@ jobs:
         if: steps.notes.outputs.release == 'true'
         run: cd web && npm ci && npm run build
 
-      - name: Build sand-linux-arm64
+      # Every platform a source machine might be, not only the Pi the server
+      # usually runs on: importing with "make the parts on the machine" copies
+      # the release's own binary for that machine's platform onto it, so a
+      # platform missing here is a machine that cannot grind. See
+      # internal/grindbin.
+      - name: Build sand binaries
         if: steps.notes.outputs.release == 'true'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           mkdir -p dist
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath \
-            -ldflags="-s -w -X github.com/chinmay28/SandHarbor/internal/version.Patch=${{ steps.version.outputs.patch }} -X github.com/chinmay28/SandHarbor/internal/version.Date=${{ steps.version.outputs.date }}" \
-            -o "dist/sand-${VERSION}-linux-arm64" ./cmd/sand
+          for target in linux/arm64 linux/amd64 darwin/arm64 darwin/amd64; do
+            CGO_ENABLED=0 GOOS="${target%/*}" GOARCH="${target#*/}" go build -trimpath \
+              -ldflags="-s -w -X github.com/chinmay28/SandHarbor/internal/version.Patch=${{ steps.version.outputs.patch }} -X github.com/chinmay28/SandHarbor/internal/version.Date=${{ steps.version.outputs.date }}" \
+              -o "dist/sand-${VERSION}-${target%/*}-${target#*/}" ./cmd/sand
+          done
 
       # The SAND TV app, stamped with this release's version. Attached under a
       # name that never changes, so .../releases/latest/download/sand-tv.apk is
@@ -134,6 +141,9 @@ jobs:
           fi
           gh release create "${VERSION}" \
             "dist/sand-${VERSION}-linux-arm64" \
+            "dist/sand-${VERSION}-linux-amd64" \
+            "dist/sand-${VERSION}-darwin-arm64" \
+            "dist/sand-${VERSION}-darwin-amd64" \
             dist/sand-tv.apk \
             dist/SHA256SUMS \
             --target "${GITHUB_SHA}" \

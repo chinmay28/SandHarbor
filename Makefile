@@ -1,4 +1,4 @@
-.PHONY: build build-web build-go icons icons-check version release test test-cover test-e2e test-e2e-slow test-all clean
+.PHONY: build build-web build-go build-grind icons icons-check version release test test-cover test-e2e test-e2e-slow test-all clean
 
 # Build everything: frontend + Go binary
 build: build-web build-go
@@ -36,6 +36,19 @@ build-go:
 	CGO_ENABLED=0 go build -trimpath \
 		-ldflags="-s -w -X $(VERSION_PKG).Patch=$(PATCH) -X $(VERSION_PKG).Date=$(DATE)" \
 		-o $(BUILD_OUT) ./cmd/sand
+
+# sand for linux/amd64 and linux/arm64 in ./grind, beside ./sand, named as a
+# release names them. "Make the parts on the machine" copies one of these to
+# the machine being imported from, with no download; the installer does the
+# same for the other architecture. See internal/grindbin.
+VERSION_STR := $(shell node scripts/version.mjs 2>/dev/null || echo v0.0.0)
+build-grind:
+	mkdir -p grind
+	for arch in amd64 arm64; do \
+		CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -trimpath \
+			-ldflags="-s -w -X $(VERSION_PKG).Patch=$(PATCH) -X $(VERSION_PKG).Date=$(DATE)" \
+			-o grind/sand-$(VERSION_STR)-linux-$$arch ./cmd/sand; \
+	done
 
 # Print the version this tree would build as
 version:

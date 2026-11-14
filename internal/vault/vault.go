@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/chinmay28/SandHarbor/internal/grindbin"
 	"io"
 	"log"
 	"path"
@@ -32,6 +33,10 @@ import (
 // for concurrent use.
 type Vault struct {
 	path string
+
+	// grindBins is where a sand for another machine comes from, made on first
+	// use. See grindprovision.go.
+	grindBins *grindbin.Store
 
 	// instance is the name this machine opens the vault under — the hostname
 	// unless SAND_INSTANCE says otherwise. It is what a local account's Host

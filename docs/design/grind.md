@@ -29,24 +29,57 @@ bringing the file across whole.
 Code: `internal/grind` (protocol, budget, grinder, the vault's session),
 `internal/vault/grindsource.go` (the import path), `cmd/sand/grind.go`.
 
-## Running code on the far end
+## Putting sand on the far end
 
-The far end needs `sand` installed, the same release as the vault: the
-protocol version and the part format must both match, or the vault refuses
-with both versions named. The vault runs one POSIX `sh` script that looks for
-it on `PATH`, then in `/opt/sand/bin`, `/usr/local/bin`, `~/.local/bin` and
-`~/bin`. If it isn't in any of those, the script says so on stderr, and that
-message is what the dialog shows.
+`sand` is one static executable (`CGO_ENABLED=0`, no libraries, no data files),
+so `sand grind` needs one file on the machine, not an installation. The vault
+puts it there itself, the first time an import asks for grinding
+(`internal/vault/grindprovision.go`):
 
-The grinder starts its output with a fixed preamble before any frame. The
-preamble is how the vault tells a grinder from a shell banner, a NAS menu or
-an older `sand` that doesn't know `grind`. A login that may only speak SFTP
-(`ForceCommand internal-sftp`, storage boxes, most NAS accounts) refuses the
-exec. Such a machine can still be imported from the ordinary way.
+1. **Probe.** One POSIX `sh` script (`grind.ProbeScript`) reports `uname -s`
+   and `-m`, `$HOME`, `df` of the home, cores, `MemAvailable`, the cgroup's
+   memory figures, and any `sand` already on `PATH` or in the usual places. It
+   writes nothing. The dialog's figures come from this, before anything runs.
+2. **Pick a binary** (`internal/grindbin`):
+   - the same OS and architecture as the vault: the vault's own executable;
+   - the other Linux architecture: the binary the installer put in `grind/`
+     beside the server (`/opt/sand/bin/grind/sand-<version>-linux-<arch>`).
+     In release mode the installer downloads it from the same release and
+     verifies it against `SHA256SUMS`; in source mode it cross-compiles it
+     with `CGO_ENABLED=0`. `make build-grind` does the same for a build by
+     hand. It is looked up by exact version, so a file an older install left
+     is never used, and the installer removes older versions once the new
+     one has passed its health check. **For a Pi and an Intel machine, in
+     either direction, the copy is all there is: no download.**
+   - anything else (macOS, or an install without the companion): the release
+     this vault was built as. The vault downloads
+     `sand-<version>-<os>-<arch>` once, checks it against that release's
+     `SHA256SUMS`, and keeps it beside the vault, removing older versions'
+     downloads as it goes. Releases publish linux and darwin, each for amd64
+     and arm64;
+   - a development build has no release, so for another platform it falls
+     back to a `sand` already installed there, and otherwise says exactly that.
+3. **Copy** it to `~/.cache/sand/grind/sand-<version>-<os>-<arch>` over SFTP.
+   It goes to a temporary name first, is `chmod 0700` inside a `0700`
+   directory, and is then renamed into place, so a copy cut off partway is
+   never the file that runs. Copies older vaults left there are removed.
+   **The copy is refused if it would leave less than 256 MiB free** in the
+   home; the refusal says what was free and what was needed.
+4. **Run** `exec '<path>' grind`. The path is quoted for `sh`. The grinder
+   starts its output with a fixed preamble before any frame, which is how the
+   vault tells it from a shell banner or a NAS menu. A copy that was already
+   there but doesn't answer as a grinder of this protocol is replaced once.
 
-Asking for grinding on a machine that can't do it fails the import up front,
-with the reason (HTTP 409, `GRIND_UNAVAILABLE`). The import does not fall back
-to bringing the files across whole, because that isn't what was asked for.
+Later imports find the copy there and run it, with no copy and no download.
+The copy is the one thing grinding writes outside the folder the machine is
+scoped to, and only when the box is ticked.
+
+A login that may only speak SFTP (`ForceCommand internal-sftp`, storage boxes,
+most NAS accounts) can't run the probe. Such a machine can still be imported
+from the ordinary way. Asking for grinding on a machine that can't do it fails
+the import up front, with the reason (HTTP 409, `GRIND_UNAVAILABLE`). The
+import does not fall back to bringing the files across whole, because that
+isn't what was asked for.
 
 ## Keys: what the far end is trusted with
 
@@ -118,9 +151,10 @@ The machine is somebody's, and doing other things, so:
   a file (a cloud failed, the import was stopped) closes the command, and that
   is the cancel. There is no cancel message in the protocol to be missed.
 
-The probe (`GET /api/remote/{id}/grind`) reports the machine's version, cores,
-free memory and the budget a file would get. The dialog puts those figures
-beside the tick-box, so the cost is visible before it is chosen.
+The probe (`GET /api/remote/{id}/grind`) reports the machine's platform, cores,
+free memory and disk, whether sand would be copied there and how big it is, and
+the budget a file would get. It changes nothing on the machine. The dialog puts
+those figures beside the tick-box, so the cost is visible before it is chosen.
 
 ## The protocol
 

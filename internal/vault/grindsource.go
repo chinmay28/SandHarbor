@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/chinmay28/SandHarbor/internal/archive"
@@ -30,14 +29,6 @@ import (
 // compressed file, so on incompressible media at 2-of-3 it moves half as much
 // again as bringing the file across whole would.
 
-// grindCommand runs the grinder on the far end, wherever sand is installed
-// there. It is a POSIX sh script run through sh, so a login whose shell is
-// something else — fish, a NAS's own — still runs it, and it looks in the
-// places an install puts sand before giving up and saying so.
-const grindCommand = `sh -c 'for s in sand /opt/sand/bin/sand /usr/local/bin/sand "$HOME/.local/bin/sand" "$HOME/bin/sand"; do ` +
-	`if command -v "$s" >/dev/null 2>&1; then exec "$s" grind; fi; done; ` +
-	`echo "sand is not installed on this machine (looked on PATH, in /opt/sand/bin, /usr/local/bin, ~/.local/bin and ~/bin)" >&2; exit 127'`
-
 // ErrCannotGrind is an import that asked for its parts to be made on the
 // machine, from a machine that cannot make them: no sand there, a login that
 // may only speak SFTP, a sand of another release. The wrapped error says which.
@@ -50,11 +41,27 @@ type GrinderInfo struct {
 	Available bool   `json:"available"`
 	Reason    string `json:"reason,omitempty"`
 
+	// Version is the sand that would run there: this vault's own when it is
+	// copied there or already was, empty for one that was installed by hand.
 	Version string       `json:"version,omitempty"`
 	OS      string       `json:"os,omitempty"`
 	Arch    string       `json:"arch,omitempty"`
 	CPUs    int          `json:"cpus,omitempty"`
 	Memory  grind.Memory `json:"memory"`
+
+	// Path is where that sand is, or will be, on the machine.
+	Path string `json:"path,omitempty"`
+
+	// Copies says sand is not on the machine yet and the first import will
+	// copy it there; CopyBytes is how big it is, when known before fetching.
+	Copies    bool  `json:"copies,omitempty"`
+	CopyBytes int64 `json:"copy_bytes,omitempty"`
+
+	// Installed says what will run is a sand somebody installed there.
+	Installed bool `json:"installed,omitempty"`
+
+	// FreeDisk is what the machine has free in its home, -1 when unknown.
+	FreeDisk int64 `json:"free_disk"`
 
 	// Budget is what one file would be given there now, at this vault's
 	// chunk size and default code: the window and the memory it holds.
@@ -62,8 +69,10 @@ type GrinderInfo struct {
 }
 
 // ProbeGrinder asks a source's machine whether it can make parts, and how
-// much it has to make them with. A machine that cannot is an answer, not an
-// error; the error is for a source that does not exist or cannot be reached.
+// much it has to make them with. It changes nothing there: what it reports is
+// what an import would do, including copying sand there first. A machine
+// that cannot is an answer, not an error; the error is for a source that does
+// not exist or cannot be reached.
 func (v *Vault) ProbeGrinder(ctx context.Context, id string) (GrinderInfo, error) {
 	client, _, err := v.connectSource(ctx, id)
 	if err != nil {
@@ -71,25 +80,31 @@ func (v *Vault) ProbeGrinder(ctx context.Context, id string) (GrinderInfo, error
 	}
 	defer client.Close()
 
-	link := &grindLink{client: client}
-	defer link.close()
-	session, err := link.get()
+	plan, err := v.planGrind(ctx, client)
 	if err != nil {
-		return GrinderInfo{Reason: strings.TrimPrefix(err.Error(), ErrCannotGrind.Error()+": ")}, nil
+		return GrinderInfo{Reason: err.Error(), FreeDisk: -1}, nil
 	}
-
-	hello := session.Hello()
+	facts := plan.facts
 	info := GrinderInfo{
-		Available: true,
-		Version:   hello.Version, OS: hello.OS, Arch: hello.Arch, CPUs: hello.CPUs, Memory: hello.Memory,
+		OS: plan.platform.OS, Arch: plan.platform.Arch, CPUs: facts.CPUs, Memory: facts.Memory,
+		Path: plan.path, Copies: plan.copies, CopyBytes: plan.copyBytes, Installed: plan.installed,
+		FreeDisk: facts.FreeDisk,
 	}
-	scheme := v.defaultSchemeForProbe()
-	budget, err := grind.Plan(hello.Memory, hello.CPUs, v.uploadChunkSize(), scheme.Data, scheme.Total)
-	if err != nil {
-		info.Available, info.Reason = false, err.Error()
+	if plan.unable != nil {
+		info.Reason = plan.unable.Error()
 		return info, nil
 	}
-	info.Budget = &budget
+	if !plan.installed {
+		info.Version = v.grindBinaries().Version
+	}
+
+	scheme := v.defaultSchemeForProbe()
+	budget, err := grind.Plan(facts.Memory, max(facts.CPUs, 1), v.uploadChunkSize(), scheme.Data, scheme.Total)
+	if err != nil {
+		info.Reason = err.Error()
+		return info, nil
+	}
+	info.Available, info.Budget = true, &budget
 	return info, nil
 }
 
@@ -114,6 +129,8 @@ func (v *Vault) defaultSchemeForProbe() archive.Scheme {
 // gives up on partway does not — the grinder is still sending — and closing
 // the command is how that file is stopped.
 type grindLink struct {
+	v       *Vault
+	ctx     context.Context
 	client  *sandsftp.Client
 	cmd     *sandsftp.Command
 	session *grind.Session
@@ -128,55 +145,16 @@ func (l *grindLink) get() (*grind.Session, error) {
 	if l.session != nil {
 		return l.session, nil
 	}
-	cmd, err := l.client.Start(grindCommand)
+	ctx := l.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cmd, session, err := l.startGrinder(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrCannotGrind, err)
 	}
-
-	type opened struct {
-		session *grind.Session
-		err     error
-	}
-	ch := make(chan opened, 1)
-	go func() {
-		s, err := grind.Open(cmd.Stdout, cmd.Stdin)
-		ch <- opened{s, err}
-	}()
-
-	var got opened
-	select {
-	case got = <-ch:
-	case <-time.After(openTimeout):
-		cmd.Close()
-		got = <-ch
-		got.err = fmt.Errorf("sand grind did not answer within %s", openTimeout)
-	}
-	if got.err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrCannotGrind, l.failure(cmd, got.err))
-	}
-	l.cmd, l.session = cmd, got.session
+	l.cmd, l.session = cmd, session
 	return l.session, nil
-}
-
-// failure is the best account of a grinder that did not start: what the
-// command said on its way out, when it said anything, and otherwise what
-// went wrong in reading it.
-func (l *grindLink) failure(cmd *sandsftp.Command, err error) error {
-	exited := make(chan error, 1)
-	go func() { exited <- cmd.Wait() }()
-	select {
-	case waitErr := <-exited:
-		if said := cmd.Stderr(); said != "" && waitErr != nil {
-			cmd.Close()
-			return errors.New(said)
-		}
-	case <-time.After(2 * time.Second):
-	}
-	cmd.Close()
-	if said := cmd.Stderr(); said != "" {
-		return errors.New(said)
-	}
-	return err
 }
 
 // drop ends the conversation, so the next file opens a fresh one.

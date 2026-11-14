@@ -260,15 +260,24 @@ running the vault, a workstation importing into a Raspberry Pi say, or when the
 vault has little disk for a spool. Nothing of the file is spooled beside the
 vault, and its plaintext never crosses the link.
 
-It needs `sand` on the machine, **the same release** as the vault: on `PATH`,
-or in `/opt/sand/bin`, `/usr/local/bin`, `~/.local/bin` or `~/bin`. It also
-needs a login that may run commands, not one limited to SFTP. When the dialog
-opens it asks the machine, and beside the box it says either how much memory
-the work would take or why it can't be ticked.
+It needs a login that may run commands, not one limited to SFTP, on a Linux or
+macOS machine (64-bit Intel or ARM). There is nothing to install. The first
+import copies SAND's own `sand` binary (one file, about 30 MB) to
+`~/.cache/sand/grind` on the machine and runs it from there. Later imports
+reuse it, and an upgraded SAND replaces it. The installer keeps both Linux
+kinds beside the server (64-bit ARM and Intel/AMD), so a Raspberry Pi importing
+from an Intel VPS, or the other way round, copies a binary it already has. For
+a Mac, SAND fetches the binary from its own release on GitHub and checks it
+against the release's checksums first. A development build has no release,
+so there it uses a `sand` already installed on the machine if there is one.
+When the dialog opens, it asks the machine without changing anything. Beside
+the box it says what would be copied, how much memory the work would take, or
+why the box can't be ticked.
 
 The machine is looked after:
 
-- Nothing is written to its disk.
+- Nothing of your files is written to its disk, and sand is not copied there
+  if that would leave less than 256 MiB free.
 - One file's work takes at most half of its free memory, and the machine is
   checked again before every chunk.
 - It runs at low priority and, on a machine with more than one core, leaves a

@@ -4,6 +4,8 @@
 # entire history because of it.
 /sand
 /sand.exe
+# sand for other platforms, beside the one built here: `make build-grind`.
+/grind/
 /dist/
 
 # Web build
