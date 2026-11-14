@@ -212,6 +212,22 @@ func (s *Server) handleFileStreamLink(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// streamDisposition says whether a stream link's file is shown or saved.
+//
+// Inline by default, because a player is what a stream link is for. Asked for
+// as a download (?download=1) it is an attachment, and that is what makes the
+// link usable as a download at all inside an Android WebView, such as an app
+// that wraps a website: a WebView cannot share a file, cannot save a blob: URL
+// either, and hands an attachment to Android's download manager, which has no
+// session cookie and needs the ticket in the address to get the file. A type
+// that is risky to render is always an attachment, asked or not.
+func streamDisposition(contentType string, download bool) string {
+	if download || isRiskyInline(contentType) {
+		return "attachment"
+	}
+	return "inline"
+}
+
 // handleStream plays a ticket's file, with ranges, to whatever asked.
 //
 // No session is required — the ticket is the credential, and the caller is a
@@ -282,10 +298,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
-	disposition := "inline"
-	if isRiskyInline(contentType) {
-		disposition = "attachment"
-	}
+	disposition := streamDisposition(contentType, r.URL.Query().Get("download") == "1")
 
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition",

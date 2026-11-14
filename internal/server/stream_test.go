@@ -281,3 +281,57 @@ func TestStreamPathEscapesTheName(t *testing.T) {
 		}
 	}
 }
+
+func TestStreamDisposition(t *testing.T) {
+	for _, tc := range []struct {
+		contentType string
+		download    bool
+		want        string
+	}{
+		{"video/mp4", false, "inline"},
+		{"video/mp4", true, "attachment"},
+		{"application/pdf", true, "attachment"},
+		{"text/html", false, "attachment"},
+		{"text/html", true, "attachment"},
+	} {
+		if got := streamDisposition(tc.contentType, tc.download); got != tc.want {
+			t.Errorf("streamDisposition(%q, %v) = %q, want %q", tc.contentType, tc.download, got, tc.want)
+		}
+	}
+}
+
+// Inside an Android WebView a stream link is how a file gets downloaded at all:
+// asked for with ?download=1 it comes back as an attachment under its own
+// name, still without a session, so Android's download manager can fetch it.
+func TestStreamLinkDownloadsAsAnAttachment(t *testing.T) {
+	c := newTestClient(t)
+	c.setup("stream-me-please", 3)
+
+	content := []byte("a magazine, page by page")
+	file := c.upload("Story Teller.pdf", "/", content)
+	link := c.mintStream(file["id"].(string))
+
+	for _, tc := range []struct {
+		query string
+		want  string
+	}{
+		{"", "inline"},
+		{"?download=1", "attachment"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, link+tc.query, nil)
+		req.Host = "example.test"
+		w := httptest.NewRecorder()
+		c.handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET %s%s = %d %s, want 200", link, tc.query, w.Code, w.Body.String())
+		}
+		if !bytes.Equal(w.Body.Bytes(), content) {
+			t.Errorf("GET %s%s returned %q, want %q", link, tc.query, w.Body.String(), content)
+		}
+		got := w.Header().Get("Content-Disposition")
+		if !strings.HasPrefix(got, tc.want+";") || !strings.Contains(got, "Story Teller.pdf") {
+			t.Errorf("GET %s%s: Content-Disposition = %q, want %s with the file's name", link, tc.query, got, tc.want)
+		}
+	}
+}

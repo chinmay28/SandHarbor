@@ -4676,6 +4676,37 @@ class TestDownloadingAFolder:
         assert download.value.path().read_text() == "kept after all"
         expect(sheet).to_have_count(0)
 
+    def test_an_android_webview_downloads_through_a_link(self, app, tmp_path):
+        """An app that wraps a website in an Android WebView has no share sheet
+        and cannot save a blob: URL — Android is handed the blob, has no app
+        for it, and says "No app on this phone opens that link". What it can
+        do is hand an attachment to the download manager, which has no session
+        cookie. So the file goes out as a stream link asked for as a download,
+        and the page stays where it is."""
+        source = tmp_path / "wrapped.txt"
+        source.write_text("out through the download manager")
+        upload_and_settle(app, source)
+        app.evaluate("""() => {
+          Object.defineProperty(navigator, 'userAgent', { value:
+            'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP2A; wv) AppleWebKit/537.36 '
+            + '(KHTML, like Gecko) Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36' })
+          navigator.share = undefined
+          navigator.canShare = undefined
+          window.__blobs = 0
+          const create = URL.createObjectURL.bind(URL)
+          URL.createObjectURL = (b) => { window.__blobs += 1; return create(b) }
+        }""")
+        before = app.url
+
+        with app.expect_download(timeout=60000) as download:
+            app.get_by_label("Download wrapped.txt").click()
+
+        assert re.search(r"/stream/[^/]+/wrapped\.txt\?download=1$", download.value.url)
+        assert download.value.suggested_filename == "wrapped.txt"
+        assert download.value.path().read_text() == "out through the download manager"
+        assert app.evaluate("window.__blobs") == 0
+        assert app.url == before
+
     def test_an_empty_folder_is_refused_rather_than_zipped(self, app):
         make_folder(app, "zip-empty")
         app.locator('button[aria-label="Actions for zip-empty"]').click()
@@ -4761,7 +4792,9 @@ class TestMovingFilesWithAMachine:
         source.write_text(body)
         upload_and_settle(app, source)
 
-        app.locator('button[title="Open"]').first.click()
+        # Its own row, not the first: the vault is shared across the session,
+        # and another test's file can sort ahead of this one.
+        app.locator('button[title="Open"]', has_text="onscreen.txt").click()
         app.wait_for_selector(f"text={body.strip()}", timeout=60000)
         preview = app.get_by_role("dialog", name="onscreen.txt")
         preview.get_by_role("button", name=re.compile("Send to a machine")).click()
