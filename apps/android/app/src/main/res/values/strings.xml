@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SAND Vault</string>
+    <string name="tagline">Secure Archival Network Distribution</string>
+    <string name="settings_title">App settings</string>
+    <string name="settings_short">Settings</string>
+    <string name="save_to_downloads">Save to Downloads</string>
+
+    <!-- First run -->
+    <string name="setup_intro">Where is your vault? You can change this later in the app\'s settings.</string>
+    <string name="setup_remote_title">Connect to a server</string>
+    <string name="setup_remote_body">Your vault runs on another machine — a Raspberry Pi, a desktop, a server. This phone opens it, like a browser would.</string>
+    <string name="setup_address_hint">Server address, e.g. 192.168.1.20 or https://vault.example.com</string>
+    <string name="setup_find">Find on this network</string>
+    <string name="setup_finding">Looking…</string>
+    <string name="setup_found_item">%1$s — %2$s</string>
+    <string name="setup_found_none">No SAND server answered. Type its address instead.</string>
+    <string name="setup_phone_title">Run the vault on this phone</string>
+    <string name="setup_phone_body">The whole of SAND Vault runs here: the index, the keys and the clouds. Create a new vault, restore one from a recovery kit, or open a vault that already runs on another machine as a second machine — all from the next screen.</string>
+    <string name="setup_phone_unavailable">This build of the app, or this phone\'s processor, has no vault server in it. Connect to a server instead.</string>
+    <string name="setup_continue">Continue</string>
+
+    <!-- Main screen -->
+    <string name="starting_server">Starting the vault on this phone…</string>
+    <string name="restarting_server">The vault stopped. Starting it again…</string>
+    <string name="server_failed">The vault on this phone would not start.</string>
+    <string name="connecting">Connecting to %1$s…</string>
+    <string name="cannot_reach">Cannot reach %1$s</string>
+    <string name="bad_certificate">%1$s has a certificate this phone does not trust. Install its CA in Android\'s settings, or connect over http on your own network.</string>
+    <string name="retry">Retry</string>
+    <string name="open_settings">App settings</string>
+
+    <!-- Files -->
+    <string name="saved_to_downloads">Saved %1$s to Downloads</string>
+    <string name="save_failed">Could not save %1$s: %2$s</string>
+    <string name="downloading">Downloading %1$s</string>
+    <string name="no_app_for_link">No app on this phone opens that link.</string>
+    <string name="share_with">Share</string>
+
+    <!-- Notifications -->
+    <string name="channel_server">Vault on this phone</string>
+    <string name="channel_downloads">Downloads</string>
+    <string name="notify_server_running">Your vault is running on this phone</string>
+    <string name="notify_server_local">Only this phone can reach it.</string>
+    <string name="notify_server_shared">Open http://%1$s:%2$d on another device on this network.</string>
+    <string name="notify_stop">Stop</string>
+
+    <!-- Settings -->
+    <string name="pref_cat_mode">How the app reaches your vault</string>
+    <string name="pref_mode">Mode</string>
+    <string name="pref_cat_remote">Server on another machine</string>
+    <string name="pref_address">Server address</string>
+    <string name="pref_find">Find servers on this network</string>
+    <string name="pref_find_summary">Lists the SAND servers that answer on this Wi-Fi.</string>
+    <string name="pref_cat_phone">Vault on this phone</string>
+    <string name="pref_port">Port</string>
+    <string name="pref_share">Serve other devices on this network</string>
+    <string name="pref_share_summary_off">Only this phone can open the vault.</string>
+    <string name="pref_share_summary_on">Laptops, SAND TV and other phones on this network can open it, with the vault password. The connection is not encrypted.</string>
+    <string name="pref_keep">Keep running when the app is closed</string>
+    <string name="pref_keep_summary">Uploads, checks and repairs carry on, and other devices can still reach it. Shows a notification while it runs.</string>
+    <string name="pref_machine">Machine name</string>
+    <string name="pref_machine_summary">What your other machines list this phone as: %1$s</string>
+    <string name="pref_status">Server</string>
+    <string name="pref_restart">Restart the server</string>
+    <string name="pref_log">Server log</string>
+    <string name="pref_log_summary">What the vault on this phone has said lately.</string>
+    <string name="pref_stop">Stop the server now</string>
+    <string name="pref_cat_about">About</string>
+    <string name="pref_version">Version</string>
+    <string name="pref_data">Where the vault is kept</string>
+    <string name="pref_data_summary">In this app\'s private storage. Uninstalling the app deletes it — export a recovery kit first.</string>
+
+    <string name="status_stopped">Stopped</string>
+    <string name="status_starting">Starting…</string>
+    <string name="status_running">Running %1$s at %2$s</string>
+    <string name="status_restarting">Exited (status %1$d), restarting</string>
+    <string name="status_failed">Not running: exited with status %1$d. See the server log.</string>
+    <string name="status_unavailable">No vault server in this build</string>
+
+    <string-array name="mode_entries">
+        <item>Connect to a server (thin client)</item>
+        <item>Run the vault on this phone (full stack)</item>
+    </string-array>
+    <string-array name="mode_values">
+        <item>remote</item>
+        <item>on_phone</item>
+    </string-array>
+</resources>

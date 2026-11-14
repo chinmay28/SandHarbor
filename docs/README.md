@@ -20,6 +20,7 @@ Task-oriented: how to do something, and what to expect.
 | [Films](guide/films.md) | Film details and folder pictures |
 | [Streaming](guide/streaming.md) | VLC, TVs, and mounting the vault as a drive over WebDAV |
 | [SAND TV](guide/sand-tv.md) | Installing, pairing and using the Fire TV app |
+| [Android app](guide/android.md) | The phone app: a client for a server elsewhere, or the whole vault on the phone |
 | [Maintenance](guide/maintenance.md) | Self-maintaining folders, stray and lost parts, old versions, leftovers |
 | [Vault management](guide/vault-management.md) | Changing the password, sub vaults, several machines |
 | [Recovery](guide/recovery.md) | Losing the vault file, recovery kits, rebuilding a file by hand |
@@ -51,6 +52,7 @@ How it works inside, and why.
 | [Providers](design/providers.md) | The backend interface, sign-in, quotas, health |
 | [Server](design/server.md) | Partial success, errors, WebDAV, stream tickets, standalone mode |
 | [SAND TV](design/sand-tv.md) | Pairing codes, discovery, the player |
+| [Android app](design/android.md) | The web view and its bridge, the server on the phone, navigation and trust |
 | [Recovery kit](design/recovery-kit.md) | The offline kit that rebuilds a vault |
 | [Paced password change](design/paced-rekey.md) | Re-keying a large vault without stopping it |
 | [SFTP](design/sftp.md) | Machines you have a login on |

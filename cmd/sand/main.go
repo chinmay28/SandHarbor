@@ -13,10 +13,17 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/chinmay28/SandHarbor/internal/hostenv"
 	"github.com/chinmay28/SandHarbor/internal/version"
 )
 
 func main() {
+	// On a phone (apps/android) the app says which DNS servers and time zone
+	// to use, because Android has neither /etc/resolv.conf nor /etc/localtime.
+	// Elsewhere none of its variables are set and this does nothing.
+	if _, err := hostenv.Apply(os.Getenv); err != nil {
+		fmt.Fprintln(os.Stderr, "warning:", err)
+	}
 	if err := rootCmd().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)

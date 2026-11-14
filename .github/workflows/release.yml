@@ -41,7 +41,7 @@ jobs:
         with:
           node-version: 22
 
-      # For the Fire TV app. The runner image ships the Android SDK.
+      # For the Fire TV and phone apps. The runner image ships the Android SDK.
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -125,6 +125,24 @@ jobs:
           fi
           cp "${apks[0]}" ../../dist/sand-tv.apk
 
+      # The SAND Vault phone app, which carries this release's sand server
+      # for its full-stack mode, so it is built after the web client above.
+      # Also under a name that never changes.
+      - name: Build sand-vault.apk
+        if: steps.notes.outputs.release == 'true'
+        working-directory: apps/android
+        run: |
+          ./gradlew --no-daemon :app:assembleRelease \
+            -PsandVersionName="${{ steps.version.outputs.version }}" \
+            -PsandVersionCode="${{ steps.version.outputs.patch }}" \
+            -PsandVersionDate="${{ steps.version.outputs.date }}"
+          apks=(app/build/outputs/apk/release/*.apk)
+          if [ "${#apks[@]}" -ne 1 ] || [ ! -f "${apks[0]}" ]; then
+            echo "expected exactly one release APK, found: ${apks[*]}" >&2
+            exit 1
+          fi
+          cp "${apks[0]}" ../../dist/sand-vault.apk
+
       - name: Checksums
         if: steps.notes.outputs.release == 'true'
         run: (cd dist && sha256sum sand-* > SHA256SUMS)
@@ -145,6 +163,7 @@ jobs:
             "dist/sand-${VERSION}-darwin-arm64" \
             "dist/sand-${VERSION}-darwin-amd64" \
             dist/sand-tv.apk \
+            dist/sand-vault.apk \
             dist/SHA256SUMS \
             --target "${GITHUB_SHA}" \
             --title "${VERSION}" \

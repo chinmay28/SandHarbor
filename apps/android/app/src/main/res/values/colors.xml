@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- web/src/theme.js -->
+    <color name="sand_bg">#FF0A0E17</color>
+    <color name="sand_surface">#FF121826</color>
+    <color name="sand_text">#FFE6E8EE</color>
+    <color name="sand_muted">#FF8A93A6</color>
+    <color name="sand_accent">#FFD97706</color>
+</resources>

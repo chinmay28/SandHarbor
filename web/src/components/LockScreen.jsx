@@ -5,6 +5,7 @@ import { api } from '../api'
 import { Banner, Button, PasswordInput, Spinner } from './ui'
 import { Brand, DevMark } from './Brand'
 import ImportKit, { ImportKitDoor } from './ImportKit'
+import { nativeApp, nativeAppMode } from '../nativeApp'
 
 /* The gate in front of everything: without the vault password the server
    cannot decrypt the index, so there is nothing to show and nothing to fetch. */
@@ -221,6 +222,12 @@ export default function LockScreen({ status, onUnlocked }) {
             color: COLORS.textMuted,
             textAlign: 'center',
           }}>AES-256-GCM · Argon2id · zstd · any 2 of 3 parts rebuild a file</span>
+          {/* In the phone app, the way back to choosing a different vault
+              before this one is even open. */}
+          {nativeApp() && (
+            <Button type="button" size="sm" variant="ghost" onClick={() => nativeApp()?.openSettings()}
+              title={nativeAppMode()}>⚙ App settings</Button>
+          )}
           {/* No divider to hang off down here, so drop the hairline. */}
           <DevMark bare />
         </div>

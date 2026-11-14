@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the icon: the app's own settings, reachable whatever the
+     server's web page offers (an older server has no button for them). -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_launcher"
+        android:shortcutId="settings"
+        android:shortcutShortLabel="@string/settings_short">
+        <intent
+            android:action="com.sandvault.app.SETTINGS"
+            android:targetClass="com.sandvault.app.SettingsActivity"
+            android:targetPackage="com.sandvault.app" />
+    </shortcut>
+</shortcuts>
