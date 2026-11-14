@@ -87,6 +87,14 @@ ID.
   names there.
 - **Exports and imports over SFTP.** Sending files to a machine writes plaintext
   there, deliberately. See [design/sftp.md](design/sftp.md).
+- **Making the parts on the machine.** An import with this ticked sends the
+  machine the chunk keys for each file it cuts, over the SSH channel and never
+  to its disk. Those keys open that file's parts and nothing else, and the
+  machine already holds that file in the clear. The data key stays in the
+  vault, and every part that comes back is opened and checked before it is
+  stored. A machine that is compromised during the import can still get bad
+  parity past that check: the parts open and say the right things, but don't
+  rebuild if a data shard is lost. See [design/grind.md](design/grind.md).
 
 ## Binding and exposure
 

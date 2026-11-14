@@ -54,6 +54,7 @@ How it works inside, and why.
 | [Recovery kit](design/recovery-kit.md) | The offline kit that rebuilds a vault |
 | [Paced password change](design/paced-rekey.md) | Re-keying a large vault without stopping it |
 | [SFTP](design/sftp.md) | Machines you have a login on |
+| [Grinding](design/grind.md) | Making an import's parts on the machine the file is on |
 | [Streaming performance](design/streaming-performance.md) | Where the time goes when a UHD film plays |
 | [Adding a backend](design/cloud-backends.md) | Candidate tiers and the recipe for a new provider |
 

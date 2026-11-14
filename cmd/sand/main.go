@@ -70,6 +70,7 @@ vault involved.`,
 		restoreCmd(),
 		manifestCmd(),
 		smartScanCmd(),
+		grindCmd(),
 	)
 	return root
 }

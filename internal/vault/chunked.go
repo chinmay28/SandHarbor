@@ -159,6 +159,41 @@ func (v *Vault) putChunks(
 	chunks archive.ChunkPlan,
 	next func() ([]byte, error),
 ) ([]Shard, map[int]ShardFailure, error) {
+	// next is called once per chunk and in order, so the count of calls is
+	// the index of the chunk each one returns.
+	index := uint32(0)
+	return v.putChunkWork(ctx, target, plan, chunks, func() (chunkWork, error) {
+		plaintext, err := next()
+		if err != nil {
+			return nil, err
+		}
+		at := index
+		index++
+		return func() (*archive.EncodedChunk, error) {
+			return archive.EncodeChunk(chunks, at, plaintext, target.dataKey)
+		}, nil
+	})
+}
+
+// chunkWork produces one chunk's sealed parts. It runs on the upload window's
+// goroutine, so it is where the expensive half of a chunk goes: for a file cut
+// here that is compressing, coding and sealing it; for one cut on the machine
+// it came from it is nothing, the parts having arrived already made.
+type chunkWork func() (*archive.EncodedChunk, error)
+
+// putChunkWork is putChunks for a caller that hands over the work of making
+// each chunk rather than its plaintext: next is called in order, once per
+// chunk, from this goroutine, and the work it returns runs inside the window.
+//
+// Everything else — the window, the per-shard all-or-nothing, the records
+// returned — is putChunks's, because it is putChunks.
+func (v *Vault) putChunkWork(
+	ctx context.Context,
+	target *transferTarget,
+	plan Plan,
+	chunks archive.ChunkPlan,
+	next func() (chunkWork, error),
+) ([]Shard, map[int]ShardFailure, error) {
 	var mu sync.Mutex
 	sizes := map[int]int64{}
 	failures := map[int]ShardFailure{}
@@ -191,7 +226,7 @@ func (v *Vault) putChunks(
 			break
 		}
 
-		plaintext, err := next()
+		work, err := next()
 		if err != nil {
 			mu.Lock()
 			if fatal == nil {
@@ -205,11 +240,14 @@ func (v *Vault) putChunks(
 		outer.Add(1)
 		window <- struct{}{}
 
-		go func(index uint32, plaintext []byte) {
+		go func(index uint32, work chunkWork) {
 			defer outer.Done()
 			defer func() { <-window }()
 
-			encoded, err := archive.EncodeChunk(chunks, index, plaintext, target.dataKey)
+			encoded, err := work()
+			if err == nil && encoded.Index != index {
+				err = fmt.Errorf("made as chunk %d", encoded.Index)
+			}
 			if err != nil {
 				mu.Lock()
 				if fatal == nil {
@@ -220,7 +258,7 @@ func (v *Vault) putChunks(
 				return
 			}
 			v.putChunkParts(putCtx, target, plan, chunks.ArchiveID, index, encoded, &mu, sizes, failures)
-		}(index, plaintext)
+		}(index, work)
 	}
 
 	outer.Wait()

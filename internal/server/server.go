@@ -870,11 +870,16 @@ func (s *Server) Handler() (http.Handler, error) {
 		// holds a shard. Listing is index work; the rest talk to somebody
 		// else's machine and carry deadlines of their own. See
 		// handlers_remote.go and internal/vault/source.go.
-		"GET /api/remote":              s.handleRemoteList,
-		"POST /api/remote":             s.handleRemoteAdd,
-		"PATCH /api/remote/{id}":       s.handleRemoteUpdate,
-		"DELETE /api/remote/{id}":      s.handleRemoteRemove,
-		"GET /api/remote/{id}/files":   s.handleRemoteBrowse,
+		"GET /api/remote":            s.handleRemoteList,
+		"POST /api/remote":           s.handleRemoteAdd,
+		"PATCH /api/remote/{id}":     s.handleRemoteUpdate,
+		"DELETE /api/remote/{id}":    s.handleRemoteRemove,
+		"GET /api/remote/{id}/files": s.handleRemoteBrowse,
+		// Whether the machine can make an import's parts itself, with the
+		// sand installed there, and how much it has free to do it with.
+		// Asked when the dialog opens, so the tick-box can say what it would
+		// cost before it is ticked. See internal/vault/grindsource.go.
+		"GET /api/remote/{id}/grind":   s.handleRemoteGrindProbe,
 		"POST /api/remote/{id}/import": s.handleRemoteImport,
 		// What that import is doing while it does it. A GET beside the POST
 		// rather than a route of its own, because it is the same noun: one
@@ -1382,6 +1387,11 @@ func vaultErrorResponse(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, err.Error(), "NO_REPLICA")
 	case errors.Is(err, vault.ErrNoAccount):
 		writeError(w, http.StatusNotFound, err.Error(), "NOT_FOUND")
+	case errors.Is(err, vault.ErrCannotGrind):
+		// 409: the request is fine and so is the machine, for a plain import;
+		// it is the machine that has to change — sand installed, or a login
+		// that may run commands — before this one can be done as asked.
+		writeError(w, http.StatusConflict, err.Error(), "GRIND_UNAVAILABLE")
 	case errors.Is(err, vault.ErrNeedsConversion):
 		// 409 rather than 400: nothing about the request is wrong, the file is
 		// simply in a state that has to change before it can be answered for.

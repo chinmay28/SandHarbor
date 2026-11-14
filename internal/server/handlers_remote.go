@@ -197,6 +197,23 @@ func (s *Server) handleRemoteBrowse(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, listing)
 }
 
+// handleRemoteGrindProbe asks a machine whether it can make parts. A machine
+// that cannot is a 200 with the reason, because that is an answer about the
+// machine rather than a failure of the request; only a source that is not
+// there, or cannot be reached, is an error.
+func (s *Server) handleRemoteGrindProbe(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := contextWithTimeout(r, remoteBrowseTimeout)
+	defer cancel()
+
+	v, _ := s.Vault()
+	info, err := v.ProbeGrinder(ctx, r.PathValue("id"))
+	if err != nil {
+		vaultErrorResponse(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
 // remoteImportRequest is one pull into a folder of the vault.
 type remoteImportRequest struct {
 	Vault string `json:"vault,omitempty"`
@@ -218,6 +235,11 @@ type remoteImportRequest struct {
 	// beside it under a numbered name, and re-fetches what would otherwise be
 	// skipped as already imported.
 	Overwrite bool `json:"overwrite,omitempty"`
+
+	// Grind has the machine make each file's parts itself, with the sand
+	// installed there, so only sealed parts cross to this one. The import is
+	// refused with the reason when the machine cannot. See vault.ImportRequest.
+	Grind bool `json:"grind,omitempty"`
 
 	// Detach runs the import on a context of its own and answers at once,
 	// rather than holding the request open until it is done. Off unless asked
@@ -302,6 +324,7 @@ func (s *Server) handleRemoteImport(w http.ResponseWriter, r *http.Request) {
 				Accounts:   req.Accounts,
 				Scheme:     scheme,
 				Overwrite:  req.Overwrite,
+				Grind:      req.Grind,
 				OnProgress: s.transferProgress(ticket),
 			})
 			if err != nil {

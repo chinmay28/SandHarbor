@@ -921,6 +921,12 @@ export const api = {
      it came to arrives on sourceImports below. */
   importFromSource: (id, body, { signal } = {}) =>
     request(`/api/remote/${encodeURIComponent(id)}/import`, { method: 'POST', body, signal }),
+  /* Whether a machine can make an import's parts itself, with the sand
+     installed there: { available, reason, version, os, arch, cpus, memory:
+     { available, limit, used }, budget: { window, total } }. A machine that
+     cannot is an answer with a reason, not an error. */
+  grindProbe: (id, { signal } = {}) =>
+    request(`/api/remote/${encodeURIComponent(id)}/grind`, { signal }),
   /* Where the imports running from one machine have got to, right now.
 
      A GET beside the POST above, and a poll rather than anything pushed: the

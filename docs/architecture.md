@@ -136,6 +136,7 @@ Verified against each package's doc comment.
 | `internal/sandfile` | The on-disk format of one encrypted part: a clear header with what is needed to derive its key, everything else inside the ciphertext |
 | `internal/provider` | The object-store interface (put, get, delete, list) and every backend: local folder, S3-compatible, WebDAV, SFTP, Google Drive, Dropbox, OneDrive, Box, Zoho WorkDrive, Drime, Filen, Internxt, iCloud Drive, Proton Drive, and synced-folder backends (MEGA, Jottacloud, Sync.com, Tresorit, Icedrive). Specs, OAuth, quotas, health pings, disk SMART. `s3test` is an in-memory versioned S3 for tests. See [providers](design/providers.md) and [adding a backend](design/cloud-backends.md) |
 | `internal/sftp` | SSH/SFTP spoken natively (not via the system `ssh`), for SFTP accounts and for import/export sources; key generation and host keys. `sftptest` is an in-process sshd. See [SFTP](design/sftp.md) |
+| `internal/grind` | The protocol for making an import's parts on the source machine: `sand grind`'s side, the vault's checking session, and the memory budget that keeps the machine standing. See [Grinding](design/grind.md) |
 | `internal/git` | The small part of git needed: `ls-remote`, bare mirrors, bundles. Shells out to the machine's git for its credentials; URLs are allow-listed. See [index: repositories](design/index.md#repositories-kept-as-bundles) |
 | `internal/movie` | File name to film guess, and the TMDb client. Reached only for folders opted in by name. See [index: film details](design/index.md#film-details) |
 | `internal/assistant` | Sandy: a chat model in front of read-only tools over the index, speaking the OpenAI-compatible chat-completions protocol to a model server the user configures. See [Sandy](guide/sandy.md) |
@@ -244,6 +245,7 @@ locked.
 | [design/recovery-kit.md](design/recovery-kit.md) | The recovery kit |
 | [design/paced-rekey.md](design/paced-rekey.md) | Pacing a password change |
 | [design/sftp.md](design/sftp.md) | SFTP accounts and import/export sources |
+| [design/grind.md](design/grind.md) | Making an import's parts on the source machine (`sand grind`) |
 | [design/streaming-performance.md](design/streaming-performance.md) | Streaming performance |
 | [design/cloud-backends.md](design/cloud-backends.md) | Adding a backend |
 
