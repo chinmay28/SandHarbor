@@ -45,6 +45,13 @@ type Server struct {
 	// an unexplained EOF.
 	NoSubsystem bool
 
+	// Exec, when set, answers an exec request — a command run over the
+	// connection rather than the SFTP subsystem — by calling it with the
+	// command line and the session's streams, and reporting what it returns
+	// as the exit status. Nil refuses every exec, which is what a login that
+	// may only speak SFTP does.
+	Exec func(command string, stdin io.Reader, stdout, stderr io.Writer) int
+
 	hostKey  ssh.Signer
 	listener net.Listener
 	wg       sync.WaitGroup
@@ -159,6 +166,10 @@ func (s *Server) handle(conn net.Conn, root string) {
 
 func (s *Server) session(channel ssh.Channel, requests <-chan *ssh.Request, root string) {
 	for req := range requests {
+		if req.Type == "exec" && s.Exec != nil {
+			s.exec(channel, requests, req)
+			return
+		}
 		if req.Type != "subsystem" || s.NoSubsystem {
 			req.Reply(false, nil)
 			continue
@@ -184,6 +195,32 @@ func (s *Server) session(channel ssh.Channel, requests <-chan *ssh.Request, root
 		channel.Close()
 		return
 	}
+}
+
+// exec runs one command on a session and reports its exit status, the way
+// sshd does: a reply to the request, the command's streams on the channel, an
+// exit-status request when it returns, and the channel closed.
+func (s *Server) exec(channel ssh.Channel, requests <-chan *ssh.Request, req *ssh.Request) {
+	var payload struct{ Command string }
+	if err := ssh.Unmarshal(req.Payload, &payload); err != nil {
+		req.Reply(false, nil)
+		channel.Close()
+		return
+	}
+	req.Reply(true, nil)
+	// Signals and the like after the exec are answered no, as a server that
+	// does not support them would.
+	go func() {
+		for later := range requests {
+			if later.WantReply {
+				later.Reply(false, nil)
+			}
+		}
+	}()
+
+	status := s.Exec(payload.Command, channel, channel, channel.Stderr())
+	_, _ = channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{uint32(status)}))
+	channel.Close()
 }
 
 // NewClientKey returns a fresh ed25519 key as unencrypted OpenSSH PEM, with

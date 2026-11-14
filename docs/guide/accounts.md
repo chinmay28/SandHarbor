@@ -251,6 +251,39 @@ from its first byte. Sending out never overwrites an existing file unless
 server with no browser attached. Reopen the machine to see progress or stop
 it. A restart of the server ends it; run the import again to carry on.
 
+### Making the parts on the machine
+
+**Make the parts on the machine** has the machine compress, split and seal
+each file itself, so only sealed parts cross to SAND Vault, which checks each
+one and sends it on. Use it when the machine has more cores than the one
+running the vault, a workstation importing into a Raspberry Pi say, or when the
+vault has little disk for a spool. Nothing of the file is spooled beside the
+vault, and its plaintext never crosses the link.
+
+It needs `sand` on the machine, **the same release** as the vault: on `PATH`,
+or in `/opt/sand/bin`, `/usr/local/bin`, `~/.local/bin` or `~/bin`. It also
+needs a login that may run commands, not one limited to SFTP. When the dialog
+opens it asks the machine, and beside the box it says either how much memory
+the work would take or why it can't be ticked.
+
+The machine is looked after:
+
+- Nothing is written to its disk.
+- One file's work takes at most half of its free memory, and the machine is
+  checked again before every chunk.
+- It runs at low priority and leaves a core free.
+- It stops as soon as the import does.
+
+A machine with too little memory free is refused, with what it had and what
+was needed. A file the machine can't do, or one that changes while it is
+being read, fails on its own line, and a re-run picks it up.
+
+The cost is on the link. It carries the parts rather than the file, which is
+n/k of the compressed size: about 1.5× for incompressible video at 2-of-3.
+The machine is also handed the keys for each file it cuts. Those open only
+that file, which it holds anyway, never the vault. See
+[design/grind.md](../design/grind.md).
+
 ## Naming an account and choosing its colour
 
 Every account wears a colour: the stripe down its card, every part badge for a

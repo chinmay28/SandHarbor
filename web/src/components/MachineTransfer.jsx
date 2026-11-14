@@ -408,6 +408,10 @@ function SourceBrowser({
   const [runs, setRuns] = useState([])
   const [detach, setDetach] = useState(true)
   const [overwrite, setOverwrite] = useState(false)
+  // Whether the machine makes the parts itself, and what it said when asked
+  // whether it can: null while asking, then the probe's answer.
+  const [grind, setGrind] = useState(false)
+  const [grinder, setGrinder] = useState(null)
   // Where an import lands: the upload dialog's own starting point, which is
   // the vault's default, and the same picker to change it with.
   const [clouds, setClouds] = useState(() => (providers ? initialSelection(providers, defaults) : []))
@@ -423,6 +427,19 @@ function SourceBrowser({
       .catch((err) => { if (live) { setError(err.message); setListing({ entries: [] }) } })
     return () => { live = false }
   }, [source.id, cwd, reload])
+
+  /* Asked once per machine, as the bring-in view opens, so the box can say
+     what ticking it would cost before anyone ticks it. A probe that fails is
+     an answer too: the box stays off and says why. */
+  useEffect(() => {
+    if (mode !== 'import') return undefined
+    let live = true
+    setGrinder(null)
+    api.grindProbe(source.id)
+      .then((resp) => { if (live) setGrinder(resp) })
+      .catch((err) => { if (live) setGrinder({ available: false, reason: err.message }) })
+    return () => { live = false }
+  }, [source.id, mode])
 
   // Changing direction with nothing picked yet opens the picker for a send
   // and closes it for a bring-in; a selection already made is kept.
@@ -522,6 +539,7 @@ function SourceBrowser({
         paths: [...picked],
         dest: path,
         detach,
+        grind: grind && !!grinder?.available,
         ...placementFor(providers, clouds, scheme),
       })
       // Detached, the answer is the run rather than the result: the transfer
@@ -708,6 +726,16 @@ function SourceBrowser({
         />
       )}
 
+      {!exporting && (
+        <Choice
+          checked={grind && !!grinder?.available}
+          disabled={busy || !grinder?.available}
+          onChange={setGrind}
+          label="Make the parts on the machine"
+          help={grindHelp(source, grinder, scheme)}
+        />
+      )}
+
       {/* Ticked to begin with, because the page is the fragile half of the
           pair: a phone that sleeps or a tab closed by habit should not be what
           decides whether an 18 GB film finishes arriving. It can be unticked
@@ -847,6 +875,26 @@ function ImportClouds({ providers, defaults, selected, scheme, disabled, onCloud
       )}
     </div>
   )
+}
+
+/* What making the parts on the machine would mean there, in a sentence or
+   two: what it would take of the machine while asking, while it can, and why
+   not when it cannot. The figures are the machine's own, read as the dialog
+   opened; each file is sized again as it starts. */
+export function grindHelp(source, grinder, scheme) {
+  if (!grinder) return `Asking ${source.name} whether it has sand installed…`
+  if (!grinder.available) {
+    return `${grinder.reason} Install the same release of sand on ${source.name} to use this.`
+  }
+  const budget = grinder.budget || {}
+  const free = grinder.memory?.available || 0
+  const ratio = scheme && scheme.data > 0 ? (scheme.total / scheme.data) : 1.5
+  return `${source.name} compresses, splits and seals each file itself with sand ${grinder.version}, `
+    + `using at most ${formatBytes(budget.total || 0)}${free ? ` of its ${formatBytes(free)} free memory` : ''}, `
+    + `${budget.window === 1 ? 'one chunk' : `${budget.window} chunks`} at a time, and writing nothing to its disk. `
+    + 'Only sealed parts reach SAND, which checks each one before sending it on, and the keys it is given open '
+    + 'only the files it already holds. The link carries the parts rather than the file: about '
+    + `${ratio.toFixed(1).replace(/\.0$/, '')}× its compressed size.`
 }
 
 /* One tick-box with a sentence under it. */
@@ -1160,7 +1208,9 @@ function TransferProgress({ run, onStop }) {
       ? 'gathering from the clouds and sending to the machine…'
       : scattering
         ? 'splitting, encrypting and scattering…'
-        : 'coming down from the machine…'
+        : at?.stage === 'grinding'
+          ? 'read through on the machine for its checksum…'
+          : 'coming down from the machine…'
 
   return (
     <div style={{

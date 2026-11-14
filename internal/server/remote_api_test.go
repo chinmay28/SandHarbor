@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chinmay28/SandHarbor/internal/grind"
 	"github.com/chinmay28/SandHarbor/internal/sftp/sftptest"
 )
 
@@ -603,5 +606,89 @@ func TestDetachedImportSurvivesTheRequestGoingAway(t *testing.T) {
 	files, _ := listing["files"].([]any)
 	if len(files) != 1 {
 		t.Fatalf("the vault holds %d files, want the one that was imported: %v", len(files), listing)
+	}
+}
+
+// remoteGrindFixture is remoteFixture for a machine with sand on it: its sshd
+// runs a real grinder, in this process, for any command it is asked to run.
+// exec, when nil, refuses commands the way an SFTP-only login does.
+func remoteGrindFixture(t *testing.T, name string, withSand bool) (map[string]any, string) {
+	t.Helper()
+
+	disk := t.TempDir()
+	server := sftptest.NewServer(t, disk)
+	key, pub := sftptest.NewClientKey(t)
+	server.Authorized = pub
+	if withSand {
+		server.Exec = func(_ string, stdin io.Reader, stdout, stderr io.Writer) int {
+			g := &grind.Grinder{In: stdin, Out: stdout, Version: "test", CPUs: 4,
+				Memory: func() grind.Memory { return grind.Memory{Available: 8 << 30} }}
+			if err := g.Serve(context.Background()); err != nil {
+				fmt.Fprintln(stderr, err)
+				return 1
+			}
+			return 0
+		}
+	}
+	host, port := server.HostPort(t)
+
+	root := filepath.Join(disk, "share")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("making the root: %v", err)
+	}
+	return map[string]any{
+		"name": name, "host": host, "port": port, "user": "sand",
+		"private_key": key, "root": filepath.ToSlash(root),
+	}, root
+}
+
+func TestRemoteGroundImport(t *testing.T) {
+	c := newTestClient(t)
+	c.setup("pw", 3)
+	req, root := remoteGrindFixture(t, "workstation", true)
+	seedRemote(t, filepath.Join(root, "films", "one.mp4"), "a film")
+	seedRemote(t, filepath.Join(root, "films", "two.mp4"), "another film")
+	id := c.connectRemote(req)["id"].(string)
+
+	w, body := c.json(http.MethodGet, "/api/remote/"+id+"/grind", nil)
+	if w.Code != http.StatusOK || body["available"] != true || body["version"] != "test" {
+		t.Fatalf("probe: %d %v", w.Code, body)
+	}
+	if _, ok := body["budget"].(map[string]any); !ok {
+		t.Fatalf("probe names no budget: %v", body)
+	}
+
+	w, body = c.json(http.MethodPost, "/api/remote/"+id+"/import", map[string]any{
+		"paths": []string{"films"}, "dest": "/media", "grind": true,
+	})
+	if w.Code != http.StatusCreated || number(t, body, "imported") != 2 {
+		t.Fatalf("import: %d %v", w.Code, body)
+	}
+	_, body = c.json(http.MethodGet, "/api/files?path=/media/films", nil)
+	if files, _ := body["files"].([]any); len(files) != 2 {
+		t.Fatalf("vault holds %v under /media/films", body)
+	}
+}
+
+// A login that may only speak SFTP cannot make parts: the probe says so as an
+// answer, and an import that asks anyway is refused with its own code rather
+// than quietly bringing the files across whole.
+func TestRemoteGroundImportOnAnSFTPOnlyLogin(t *testing.T) {
+	c := newTestClient(t)
+	c.setup("pw", 3)
+	req, root := remoteGrindFixture(t, "nas", false)
+	seedRemote(t, filepath.Join(root, "a.txt"), "a")
+	id := c.connectRemote(req)["id"].(string)
+
+	w, body := c.json(http.MethodGet, "/api/remote/"+id+"/grind", nil)
+	if w.Code != http.StatusOK || body["available"] != false || !strings.Contains(body["reason"].(string), "cannot run commands") {
+		t.Fatalf("probe: %d %v", w.Code, body)
+	}
+
+	w, body = c.json(http.MethodPost, "/api/remote/"+id+"/import", map[string]any{
+		"paths": []string{"a.txt"}, "dest": "/", "grind": true,
+	})
+	if w.Code != http.StatusConflict || body["code"] != "GRIND_UNAVAILABLE" {
+		t.Fatalf("import: %d %v", w.Code, body)
 	}
 }

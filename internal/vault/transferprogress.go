@@ -38,6 +38,13 @@ const (
 	// compressed, split and encrypted on the way. See UploadStream.
 	StageScattering TransferStage = "scattering"
 
+	// StageGrinding is a file being read through on the machine it is on,
+	// for the checksum every one of its parts has to carry, before any part
+	// of it can be made. Done counts what the machine has read. It is the
+	// first leg of an import that makes its parts on the machine; the second
+	// is StageScattering, with the parts arriving made. See importGround.
+	StageGrinding TransferStage = "grinding"
+
 	// StageSending is a file leaving the vault for a machine: gathered from
 	// the clouds, decrypted and written out as it arrives. See ExportToSource.
 	StageSending TransferStage = "sending"

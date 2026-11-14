@@ -140,6 +140,27 @@ type DecodedChunk struct {
 // offset in the same file fails its tag rather than silently rebuilding a file
 // whose middle has been rearranged.
 func EncodeChunk(plan ChunkPlan, index uint32, plaintext, master []byte) (*EncodedChunk, error) {
+	key, err := crypto.DeriveChunkKey(master, plan.ArchiveID, index)
+	if err != nil {
+		return nil, err
+	}
+	defer crypto.ZeroBytes(key)
+	return EncodeChunkKeyed(plan, index, plaintext, key)
+}
+
+// EncodeChunkKeyed is EncodeChunk for a caller holding this one chunk's key
+// rather than the vault's data key: the key crypto.DeriveChunkKey gives for
+// plan.ArchiveID and index.
+//
+// It exists for the machine a file is ground on (see internal/grind). That
+// machine is handed the keys for the chunks of the one file it is cutting and
+// never the master they come from, so what it can open is exactly what it
+// already holds in the clear. The parts it makes are byte-for-byte the format
+// EncodeChunk makes, because this is the code EncodeChunk runs.
+func EncodeChunkKeyed(plan ChunkPlan, index uint32, plaintext, key []byte) (*EncodedChunk, error) {
+	if len(key) != 32 {
+		return nil, fmt.Errorf("a chunk key is 32 bytes, got %d", len(key))
+	}
 	want, err := plan.PlaintextSize(index)
 	if err != nil {
 		return nil, err
@@ -162,12 +183,6 @@ func EncodeChunk(plan ChunkPlan, index uint32, plaintext, master []byte) (*Encod
 	if err != nil {
 		return nil, fmt.Errorf("encoding chunk %d as %s: %w", index, plan.Scheme, err)
 	}
-
-	key, err := crypto.DeriveChunkKey(master, plan.ArchiveID, index)
-	if err != nil {
-		return nil, err
-	}
-	defer crypto.ZeroBytes(key)
 
 	// Every part of every chunk carries the whole archive's description. It is
 	// duplicated ChunkCount times over, which sounds wasteful and is not: about

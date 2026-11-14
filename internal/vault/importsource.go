@@ -43,6 +43,13 @@ type ImportRequest struct {
 	// deliberate re-import is how somebody says "fetch it again anyway".
 	Overwrite bool
 
+	// Grind makes each file's parts on the machine it is on, with the sand
+	// installed there, rather than bringing the file across and making them
+	// here. The import fails at once, saying why, when the machine cannot —
+	// it is asked for by name, and quietly bringing the files across whole
+	// instead would be doing what was not asked. See grindsource.go.
+	Grind bool
+
 	// OnProgress, when set, is called as files move, so a caller holding the
 	// request open can say where it is. It is called from the goroutine running
 	// the import and must not block: see TransferProgress for what it carries and
@@ -200,6 +207,17 @@ func (v *Vault) ImportFromSource(ctx context.Context, scope Scope, id string, re
 		return ImportSummary{}, err
 	}
 
+	// Asked for once, before the first file, so a machine that cannot make
+	// parts says so as the answer to the request rather than once per file.
+	var link *grindLink
+	if req.Grind {
+		link = &grindLink{client: client}
+		defer link.close()
+		if _, err := link.get(); err != nil {
+			return ImportSummary{}, err
+		}
+	}
+
 	var (
 		summary ImportSummary
 		lines   transferLines[ImportResult]
@@ -256,7 +274,7 @@ func (v *Vault) ImportFromSource(ctx context.Context, scope Scope, id string, re
 			report(StageChecking, 0)
 		}
 
-		result := v.importOne(ctx, scope, client, source, f, req, report)
+		result := v.importOne(ctx, scope, client, link, source, f, req, report)
 		switch {
 		case result.OK:
 			summary.Imported++
@@ -291,7 +309,7 @@ func (v *Vault) ImportFromSource(ctx context.Context, scope Scope, id string, re
 }
 
 // importOne fetches a single file, or says why it did not.
-func (v *Vault) importOne(ctx context.Context, scope Scope, client *sandsftp.Client,
+func (v *Vault) importOne(ctx context.Context, scope Scope, client *sandsftp.Client, link *grindLink,
 	source Source, f importFile, req ImportRequest, report func(TransferStage, int64)) ImportResult {
 
 	result := ImportResult{Path: f.remote, Dest: path.Join(f.dir, f.name)}
@@ -315,6 +333,17 @@ func (v *Vault) importOne(ctx context.Context, scope Scope, client *sandsftp.Cli
 	// moment it is picked up rather than once enough of it has arrived to
 	// report. A skipped file is passed over in silence for the same reason: it
 	// is over before there is anything to watch.
+	if link != nil {
+		warnings, err := v.importGround(ctx, scope, link, source, f, req, report)
+		result.Warnings = warnings
+		if err != nil {
+			result.Error = err.Error()
+			return result
+		}
+		result.OK = true
+		return result
+	}
+
 	if report != nil {
 		report(StageFetching, 0)
 	}
