@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chinmay28/SandHarbor/internal/grind"
+	"github.com/chinmay28/SandHarbor/internal/grind/grindtest"
 	"github.com/chinmay28/SandHarbor/internal/sftp/sftptest"
 )
 
@@ -609,9 +607,10 @@ func TestDetachedImportSurvivesTheRequestGoingAway(t *testing.T) {
 	}
 }
 
-// remoteGrindFixture is remoteFixture for a machine with sand on it: its sshd
-// runs a real grinder, in this process, for any command it is asked to run.
-// exec, when nil, refuses commands the way an SFTP-only login does.
+// remoteGrindFixture is remoteFixture for a machine that can run commands:
+// its sshd answers the vault's probe and runs a grinder, in this process, for
+// the sand the vault copies into its home. Without sand, it refuses commands
+// the way an SFTP-only login does.
 func remoteGrindFixture(t *testing.T, name string, withSand bool) (map[string]any, string) {
 	t.Helper()
 
@@ -620,15 +619,9 @@ func remoteGrindFixture(t *testing.T, name string, withSand bool) (map[string]an
 	key, pub := sftptest.NewClientKey(t)
 	server.Authorized = pub
 	if withSand {
-		server.Exec = func(_ string, stdin io.Reader, stdout, stderr io.Writer) int {
-			g := &grind.Grinder{In: stdin, Out: stdout, Version: "test", CPUs: 4,
-				Memory: func() grind.Memory { return grind.Memory{Available: 8 << 30} }}
-			if err := g.Serve(context.Background()); err != nil {
-				fmt.Fprintln(stderr, err)
-				return 1
-			}
-			return 0
-		}
+		m := &grindtest.Machine{Home: filepath.Join(disk, "home")}
+		os.MkdirAll(m.Home, 0o755)
+		server.Exec = m.Exec
 	}
 	host, port := server.HostPort(t)
 
@@ -651,7 +644,7 @@ func TestRemoteGroundImport(t *testing.T) {
 	id := c.connectRemote(req)["id"].(string)
 
 	w, body := c.json(http.MethodGet, "/api/remote/"+id+"/grind", nil)
-	if w.Code != http.StatusOK || body["available"] != true || body["version"] != "test" {
+	if w.Code != http.StatusOK || body["available"] != true || body["copies"] != true {
 		t.Fatalf("probe: %d %v", w.Code, body)
 	}
 	if _, ok := body["budget"].(map[string]any); !ok {

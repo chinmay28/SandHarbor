@@ -882,16 +882,24 @@ function ImportClouds({ providers, defaults, selected, scheme, disabled, onCloud
    not when it cannot. The figures are the machine's own, read as the dialog
    opened; each file is sized again as it starts. */
 export function grindHelp(source, grinder, scheme) {
-  if (!grinder) return `Asking ${source.name} whether it has sand installed…`
-  if (!grinder.available) {
-    return `${grinder.reason} Install the same release of sand on ${source.name} to use this.`
-  }
+  if (!grinder) return `Asking ${source.name} what it is and what it has free…`
+  if (!grinder.available) return grinder.reason
   const budget = grinder.budget || {}
   const free = grinder.memory?.available || 0
   const ratio = scheme && scheme.data > 0 ? (scheme.total / scheme.data) : 1.5
-  return `${source.name} compresses, splits and seals each file itself with sand ${grinder.version}, `
-    + `using at most ${formatBytes(budget.total || 0)}${free ? ` of its ${formatBytes(free)} free memory` : ''}, `
-    + `${budget.window === 1 ? 'one chunk' : `${budget.window} chunks`} at a time, and writing nothing to its disk. `
+  /* Where the sand that does the work comes from. Copying it is one file,
+     never an installation, and it is said before the box is ticked because
+     it is the one thing this writes outside the folder being imported. */
+  const sand = grinder.installed
+    ? `the sand installed at ${grinder.path}`
+    : grinder.copies
+      ? `sand ${grinder.version}, which the first import copies there as a single file`
+        + `${grinder.copy_bytes ? ` (${formatBytes(grinder.copy_bytes)})` : ''} in ~/.cache/sand/grind — `
+        + 'nothing is installed, and an upgraded SAND replaces it'
+      : `sand ${grinder.version}, already copied there`
+  return `${source.name} (${grinder.os}/${grinder.arch}) compresses, splits and seals each file itself with ${sand}. `
+    + `It uses at most ${formatBytes(budget.total || 0)}${free ? ` of its ${formatBytes(free)} free memory` : ''}, `
+    + `${budget.window === 1 ? 'one chunk' : `${budget.window} chunks`} at a time, and writes nothing of the files to its disk. `
     + 'Only sealed parts reach SAND, which checks each one before sending it on, and the keys it is given open '
     + 'only the files it already holds. The link carries the parts rather than the file: about '
     + `${ratio.toFixed(1).replace(/\.0$/, '')}× its compressed size.`

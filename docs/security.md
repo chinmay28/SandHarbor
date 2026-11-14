@@ -94,7 +94,12 @@ ID.
   vault, and every part that comes back is opened and checked before it is
   stored. A machine that is compromised during the import can still get bad
   parity past that check: the parts open and say the right things, but don't
-  rebuild if a data shard is lost. See [design/grind.md](design/grind.md).
+  rebuild if a data shard is lost. The import also copies a `sand` binary to
+  `~/.cache/sand/grind` on the machine: the vault's own executable, or its
+  release's binary for the machine's platform, checked against that release's
+  `SHA256SUMS`. Anyone who can write to that folder can replace it, but anyone
+  who can do that already has the login, and with it the files. See
+  [design/grind.md](design/grind.md).
 
 ## Binding and exposure
 
