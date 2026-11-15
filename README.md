@@ -4,6 +4,8 @@
 
 ## Why sand
 
+<img src="web/public/icon-512.png" align="right" width="200" alt="The Sand Harbor icon: a sandcastle of amber and teal bricks with a flag on top, on a sandy beach beside the water">
+
 A grain of sand is small and means nothing on its own. Yet sand, refined into
 silicon, is what every chip, every phone and every computer is made of: billions
 of meaningless grains, arranged, become the machine.

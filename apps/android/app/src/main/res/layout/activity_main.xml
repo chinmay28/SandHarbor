@@ -29,7 +29,7 @@
                 android:layout_height="72dp"
                 android:layout_marginBottom="16dp"
                 android:contentDescription="@null"
-                android:src="@drawable/ic_launcher" />
+                android:src="@drawable/sand_logo" />
 
             <ProgressBar
                 android:id="@+id/status_progress"

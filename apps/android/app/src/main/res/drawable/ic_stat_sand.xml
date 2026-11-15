@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The status-bar icon: the sandcastle from brand/icon.png as a silhouette.
+     Android draws a notification's small icon as a single-colour mask, so the
+     full-colour artwork would show as a blank square; this is drawn by hand
+     to the same shapes (flag, studded bricks, arch, sand) and kept to the 24dp
+     grid. See brand/README.md. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Flag and pole -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M11.4,2.6h1.2v6.9h-1.2z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M12.6,3l5.4,1.6l-5.4,1.9z" />
+    <!-- Top brick and its studs -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M8.5,8.2h2.2v1.3h-2.2z M13.3,8.2h2.2v1.3h-2.2z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M7,9.5h10v3.7h-10z" />
+    <!-- Bottom bricks, their outer studs, and the arch through them -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M4.4,12.8h2.4v1.2h-2.4z M17.2,12.8h2.4v1.2h-2.4z" />
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
+        android:pathData="M3.5,14h17v5h-17z M9.8,19v-1.6a2.2,2.2 0,0 1,4.4,0v1.6z" />
+    <!-- The beach -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M1.5,22c1.6,-1.6 4.5,-2 10.5,-1.6c6,0.4 8.9,0 10.5,1.6z" />
+</vector>

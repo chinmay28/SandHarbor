@@ -20,7 +20,7 @@ export function Brand({ size = 'md' }) {
       gap: large ? '12px' : '9px',
     }}>
       <img
-        src="/icon.svg"
+        src="/icon-192.png"
         alt=""
         aria-hidden="true"
         style={{

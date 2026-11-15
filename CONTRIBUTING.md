@@ -77,7 +77,7 @@ dependencies and Playwright's Chromium.
 
 `go test` runs a subset of `go vet`. Run `go vet ./...` for the full set; there
 is no other linter. Go code is `gofmt`-formatted. If you changed
-`web/public/icon.svg`, run `make icons` and commit the PNGs (`make icons-check`
+`brand/icon.png`, run `make icons` and commit what it redraws (`make icons-check`
 verifies them). If you changed `web/src`, commit the rebuilt
 `internal/server/dist/` too: the binary embeds it, and it is committed so a
 bare checkout builds without Node.

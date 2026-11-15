@@ -110,7 +110,7 @@ class ServerService : Service() {
             getString(R.string.notify_server_local)
         }
         return NotificationCompat.Builder(this, SandApp.CHANNEL_SERVER)
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_sand)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))

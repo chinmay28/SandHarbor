@@ -336,7 +336,7 @@ class TestBrandAndVersion:
         )
 
     def test_brand_lockup_is_present(self, app):
-        assert app.locator('img[src="/icon.svg"]').count() > 0
+        assert app.locator('img[src="/icon-192.png"]').count() > 0
 
     def test_developer_badge_opens_and_dismisses(self, app):
         app.locator('button[aria-label="Show the developer badge"]').first.click()
