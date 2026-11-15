@@ -10,6 +10,28 @@ Each section below is the body of the corresponding GitHub release. A heading
 must name the tag exactly — a tag whose commit builds a different version is a
 tag that shouldn't be published.
 
+## v2026.11.244
+
+**Downloads:** `sand-v2026.11.244-linux-arm64` (the server),
+**`sand-vault.apk`** (SAND Vault for Android — on the phone, open
+`https://github.com/chinmay28/SandHarbor/releases/latest/download/sand-vault.apk`;
+it installs over the previous version) and **`sand-tv.apk`** (the SAND TV app
+for Fire TV). All are in `SHA256SUMS`.
+
+### One icon for every SAND Harbor app
+
+SAND Vault, SAND TV and the web interface now share one icon: a sandcastle of
+bricks on a beach by the harbour, in the theme's amber and navy. It is the
+launcher icon of both Android apps (adaptive where the phone supports it), the
+Fire TV home-screen banner, and the browser's favicon and home-screen icon.
+Every size is made from the one picture in `brand/` by `make icons`.
+
+### SAND Vault for Android: the version on the setup screen
+
+The first screen, where you choose between a server and this phone, shows the
+app's version in small text under **Continue**, so you can tell which build is
+installed before any vault is set up.
+
 ## v2026.11.242
 
 **Downloads:** `sand-v2026.11.242-linux-arm64` (the server),
