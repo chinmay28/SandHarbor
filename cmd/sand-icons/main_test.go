@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"image"
 	"image/png"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -135,6 +137,46 @@ func TestParseHex(t *testing.T) {
 	for _, bad := range []string{"030b26", "#030b2", "#030b266", "#zzzzzz"} {
 		if _, err := parseHex(bad); err == nil {
 			t.Errorf("parseHex(%q) accepted", bad)
+		}
+	}
+}
+
+// TestAndroidIconReferencesResolve fails when an Android app refers to a
+// drawable or mipmap that no longer exists — which is what replacing an icon
+// leaves behind, and which only a Gradle build would otherwise notice.
+// References into the platform (android.R.drawable, @android:drawable) are
+// not the app's to resolve and are skipped.
+func TestAndroidIconReferencesResolve(t *testing.T) {
+	ref := regexp.MustCompile(`(?:@|\bR\.)(drawable|mipmap)[/.]([a-z0-9_]+)`)
+	for _, app := range []string{"apps/android/app/src/main", "apps/firetv/app/src/main"} {
+		dir := filepath.Join(repoRoot, app)
+		err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			if ext := filepath.Ext(p); ext != ".kt" && ext != ".xml" && ext != ".java" {
+				return nil
+			}
+			src, err := os.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			for _, m := range ref.FindAllSubmatchIndex(src, -1) {
+				// Skip android.R.drawable.x and @android:drawable/x.
+				if m[0] >= 8 && string(src[m[0]-8:m[0]]) == "android." {
+					continue
+				}
+				kind, name := string(src[m[2]:m[3]]), string(src[m[4]:m[5]])
+				found, _ := filepath.Glob(filepath.Join(dir, "res", kind+"*", name+".*"))
+				if len(found) == 0 {
+					rel, _ := filepath.Rel(repoRoot, p)
+					t.Errorf("%s refers to %s/%s, which no res/%s* directory has", rel, kind, name, kind)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
 }

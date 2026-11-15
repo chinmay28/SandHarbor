@@ -49,8 +49,12 @@ var apps = []app{
 			webIcons("internal/server/dist")...),
 	},
 	{
-		name:  "SAND Vault for Android",
-		icons: launcherIcons("apps/android/app/src/main/res"),
+		name: "SAND Vault for Android",
+		icons: append(launcherIcons("apps/android/app/src/main/res"),
+			// The mark on the app's own screens (main and setup), 72dp at most:
+			// one xxxhdpi-sized image, scaled down by the view.
+			icon{"apps/android/app/src/main/res/drawable-nodpi/sand_logo.png", rounded(288)},
+		),
 		texts: adaptiveIcon("apps/android/app/src/main/res"),
 	},
 	{

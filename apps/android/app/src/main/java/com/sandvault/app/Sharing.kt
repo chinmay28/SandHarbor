@@ -78,7 +78,7 @@ object Sharing {
             val save = Intent(send).setComponent(ComponentName(activity, SaveToDownloadsActivity::class.java))
             chooser.putExtra(
                 Intent.EXTRA_INITIAL_INTENTS,
-                arrayOf(LabeledIntent(save, activity.packageName, activity.getString(R.string.save_to_downloads), R.drawable.ic_launcher)),
+                arrayOf(LabeledIntent(save, activity.packageName, activity.getString(R.string.save_to_downloads), R.mipmap.ic_launcher)),
             )
         }
         activity.startActivity(chooser)
