@@ -167,5 +167,15 @@
             android:layout_marginTop="20dp"
             android:enabled="false"
             android:text="@string/setup_continue" />
+
+        <TextView
+            android:id="@+id/version"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:fontFamily="monospace"
+            android:gravity="center"
+            android:textColor="@color/sand_muted"
+            android:textSize="11sp" />
     </LinearLayout>
 </ScrollView>

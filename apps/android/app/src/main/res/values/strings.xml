@@ -68,6 +68,7 @@
     <string name="pref_stop">Stop the server now</string>
     <string name="pref_cat_about">About</string>
     <string name="pref_version">Version</string>
+    <string name="setup_version">Version %1$s</string>
     <string name="pref_data">Where the vault is kept</string>
     <string name="pref_data_summary">In this app\'s private storage. Uninstalling the app deletes it — export a recovery kit first.</string>
 

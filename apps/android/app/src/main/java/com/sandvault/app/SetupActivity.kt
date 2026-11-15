@@ -55,6 +55,8 @@ class SetupActivity : AppCompatActivity() {
         found = findViewById(R.id.found)
         find = findViewById(R.id.find)
         go = findViewById(R.id.go)
+        findViewById<android.widget.TextView>(R.id.version).text =
+            getString(R.string.setup_version, BuildConfig.VERSION_NAME)
 
         val store = ConfigStore(this)
         val existing = store.load()
