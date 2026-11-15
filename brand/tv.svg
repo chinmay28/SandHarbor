@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="SAND TV">
+  <!--
+    SAND TV: one big brick for the screen, with play cut into it, standing on
+    a dimmed brick for its stand. Same studs, same plate, same amber as the
+    rest of the family. Family rules are in brand/README.md.
+  -->
+  <rect width="64" height="64" rx="14" fill="#0a0e17"/>
+  <rect x="8.5" y="8.5" width="47" height="47" rx="9" fill="none" stroke="#1e2d3d" stroke-width="3"/>
+  <g fill="#f59e0b">
+    <rect x="17.5" y="15" width="5" height="4" rx="1"/>
+    <rect x="25.5" y="15" width="5" height="4" rx="1"/>
+    <rect x="33.5" y="15" width="5" height="4" rx="1"/>
+    <rect x="41.5" y="15" width="5" height="4" rx="1"/>
+  </g>
+  <g fill="#d97706">
+    <rect x="16" y="18" width="32" height="21" rx="2.5"/>
+  </g>
+  <rect x="22" y="41" width="20" height="9" rx="2" fill="#92400e"/>
+  <polygon points="28.5,22 28.5,35 39.5,28.5" fill="#0a0e17"/>
+</svg>

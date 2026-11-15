@@ -76,8 +76,8 @@ suite, so run them yourself. `make test-deps` installs the e2e suite's Python
 dependencies and Playwright's Chromium.
 
 `go test` runs a subset of `go vet`. Run `go vet ./...` for the full set; there
-is no other linter. Go code is `gofmt`-formatted. If you changed
-`web/public/icon.svg`, run `make icons` and commit the PNGs (`make icons-check`
+is no other linter. Go code is `gofmt`-formatted. If you changed a
+mark in `brand/`, run `make icons` and commit what it redraws (`make icons-check`
 verifies them). If you changed `web/src`, commit the rebuilt
 `internal/server/dist/` too: the binary embeds it, and it is committed so a
 bare checkout builds without Node.

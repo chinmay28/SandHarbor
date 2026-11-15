@@ -11,7 +11,7 @@ this way, read [architecture.md](architecture.md) and
 | Tool | Version | Needed for |
 |---|---|---|
 | Go | 1.25 or newer (`go.mod` says `go 1.25.0`) | the binary, Go tests |
-| Node.js | 18 or newer (CI uses 22) | the web client, `scripts/version.mjs`, `make icons` |
+| Node.js | 18 or newer (CI uses 22) | the web client, `scripts/version.mjs` |
 | git | any, with **full history** | the version number (see [Versioning](#versioning)) |
 | Python 3 + pip | for `tests/` | the end-to-end suite (pytest, Playwright, requests) |
 | JDK 17 + Android SDK | only for `apps/firetv` and `apps/android` | SAND TV, the Android app (which also needs Go, to build the server it carries) |
@@ -31,8 +31,8 @@ All targets are in the [`Makefile`](../Makefile).
 | `make build-web` | `cd web && npm ci && npm run build`. Vite writes into `internal/server/dist/` |
 | `make build-go` | `CGO_ENABLED=0 go build -trimpath` of `./cmd/sand`, with `-ldflags "-s -w -X …/internal/version.Patch=… -X …/internal/version.Date=…"`. Output is `sand`, or `sand.exe` on Windows |
 | `make version` | Prints the version this tree would build as (`node scripts/version.mjs`) |
-| `make icons` | Redraws the home-screen PNGs in `web/public/` from `web/public/icon.svg` |
-| `make icons-check` | Fails if a committed PNG no longer matches `icon.svg` |
+| `make icons` | Redraws every app icon from its mark in `brand/` |
+| `make icons-check` | Fails if a committed icon no longer matches its mark in `brand/` |
 | `make release` | `build-web`, then `scripts/build-release.sh` (all five platforms into `dist/`) |
 | `make clean` | Removes `sand`, `sand.exe`, coverage files, `web/node_modules`, `web/dist`. Leaves `internal/server/dist` alone on purpose (see below) |
 | `make dev` | `build-go`, then `./sand serve --port 8123` |
@@ -89,11 +89,14 @@ A change under `web/src` should be committed together with the rebuilt
 
 ### Icons and fonts
 
-The app's mark is drawn once, in `web/public/icon.svg`.
-`scripts/make-icons.mjs` rasterises it into `apple-touch-icon.png`,
-`icon-192.png`, `icon-512.png` and `icon-maskable-512.png`, using only Node's
-standard library. Change the SVG, run `make icons`, and commit the PNGs. Never
-edit the PNGs by hand. `make icons-check` verifies them.
+Each app's mark is drawn once, in `brand/` (`vault.svg`, `tv.svg`), to the
+family rules in [`brand/README.md`](../brand/README.md). `cmd/sand-icons`
+(on `internal/brand`, standard library only) derives everything else from it:
+the SVG copies the web pages load, the home-screen PNGs (`apple-touch-icon.png`,
+`icon-192.png`, `icon-512.png`, `icon-maskable-512.png`), and the Android and
+Fire TV launcher icons and banner. Change a mark, run `make icons`, and commit
+what changes. Never edit an output by hand. `make icons-check` verifies them,
+and so does `go test ./cmd/sand-icons`.
 
 The wordmark's script face (`web/fonts/wordmark-script.woff2`, a five-glyph
 subset of Caveat under the OFL) is embedded into `index.html` at build time by
@@ -263,14 +266,17 @@ and [guide/deployment.md](guide/deployment.md).
 
 ```
 SandHarbor/
+├── brand/                    one SVG mark per app (vault.svg, tv.svg) and the family rules
 ├── cmd/
-│   └── sand/                 the `sand` CLI and server entry point (cobra): serve, vault,
-│                             sub, remote, ls/find/put/get/rm/mkdir/mv/relocate/check,
-│                             replicate, snapshot, checksums, automation, git, archive/restore …
+│   ├── sand/                 the `sand` CLI and server entry point (cobra): serve, vault,
+│   │                         sub, remote, ls/find/put/get/rm/mkdir/mv/relocate/check,
+│   │                         replicate, snapshot, checksums, automation, git, archive/restore …
+│   └── sand-icons/           `make icons`: every app icon, drawn from its mark in brand/
 ├── internal/
 │   ├── archive/              the per-file pipeline: compress → erasure-code → seal into
 │   │                         .sand parts and back; whole-file and chunked formats, k-of-n schemes
 │   ├── assistant/            Sandy: a chat model in front of tools that read the index
+│   ├── brand/                reads an app mark and draws it as PNGs and Android vector drawables
 │   ├── checksums/            reads and writes the vault's checksum ledger (checksums.gz)
 │   ├── compress/             the zstd step: each chunk compressed before it is cut
 │   ├── crypto/               Argon2id, AES-256-GCM, HKDF chunk and purpose keys
@@ -329,7 +335,6 @@ SandHarbor/
 │   ├── nginx-sand.conf       reverse proxy with TLS
 │   ├── build-release.sh      cross-compile release binaries for five platforms
 │   ├── version.mjs           the one place the version is assembled
-│   ├── make-icons.mjs        draw the home-screen PNGs from icon.svg
 │   └── make-wordmark-font.py subset the wordmark's script face
 ├── tests/                    pytest end-to-end suite: CLI, API, vault flow, browser
 ├── docs/                     this documentation
@@ -397,6 +402,6 @@ Read [`CONTRIBUTING.md`](../CONTRIBUTING.md). In short:
   An amend or rebase keeps the sign-off only if it also signs off, so check
   `git log -1 --format=%B` afterwards.
 - Before opening a PR: `make build`, `make test`, `make test-e2e` (CI runs
-  none of these), and `make icons-check` if you touched `icon.svg`.
+  none of these), and `make icons-check` if you touched a mark in `brand/`.
 - Changes to cryptography, key handling, shard placement or the vault format
   are read closely, and §5 of the CLA applies to them.

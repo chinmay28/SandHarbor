@@ -7,14 +7,16 @@ build: build-web build-go
 build-web:
 	cd web && npm ci && npm run build
 
-# Redraw the home-screen icon PNGs from web/public/icon.svg. The PNGs are
-# committed, so run this whenever the SVG changes and commit the result.
+# Redraw every app icon (SVG copies, home-screen PNGs, Android launcher icons
+# and banners) from the marks in brand/. The outputs are committed, so run this
+# whenever a mark changes and commit the result. See brand/README.md.
 icons:
-	node scripts/make-icons.mjs
+	go run ./cmd/sand-icons
 
-# Fail if a committed PNG no longer matches the SVG it is drawn from.
+# Fail if a committed icon no longer matches the mark it is drawn from. `go
+# test ./cmd/sand-icons` runs the same check.
 icons-check:
-	node scripts/make-icons.mjs --check
+	go run ./cmd/sand-icons -check
 
 # Build Go binary (static, no CGO)
 # On Windows the output is sand.exe; on Unix it is sand.
