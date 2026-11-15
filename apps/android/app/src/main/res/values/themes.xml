@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.SandVault" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/sand_accent</item>
+        <item name="colorOnPrimary">@color/sand_bg</item>
+        <item name="colorSecondary">@color/sand_accent</item>
+        <item name="android:colorBackground">@color/sand_bg</item>
+        <item name="colorSurface">@color/sand_surface</item>
+        <item name="android:windowBackground">@color/sand_bg</item>
+        <item name="android:statusBarColor">@color/sand_bg</item>
+        <item name="android:navigationBarColor">@color/sand_bg</item>
+    </style>
+
+    <style name="Theme.SandVault.Settings" parent="Theme.Material3.Dark">
+        <item name="colorPrimary">@color/sand_accent</item>
+        <item name="colorOnPrimary">@color/sand_bg</item>
+        <item name="colorSecondary">@color/sand_accent</item>
+        <item name="android:colorBackground">@color/sand_bg</item>
+        <item name="colorSurface">@color/sand_bg</item>
+        <item name="android:windowBackground">@color/sand_bg</item>
+    </style>
+
+    <style name="Theme.SandVault.Invisible" parent="Theme.SandVault">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+</resources>

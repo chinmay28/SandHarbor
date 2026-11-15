@@ -1,0 +1,82 @@
+name: SAND Vault (Android app)
+
+# Builds the phone app and runs its tests whenever it changes, or anything it
+# packages does: in full-stack mode the APK carries the sand server itself,
+# built from cmd/ and internal/ (with the web client embedded), so a change to
+# the server is a change to the app. The page bridge's contract with the web
+# client is tested in tests/test_android_app.py.
+
+on:
+  pull_request:
+    paths:
+      - "apps/android/**"
+      - "cmd/**"
+      - "internal/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/android.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/android/**"
+      - "cmd/**"
+      - "internal/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test the APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The Go side the app depends on: the DNS and time zone the app hands
+      # the server on a phone.
+      - name: hostenv tests
+        working-directory: .
+        run: go test -count=1 ./internal/hostenv/
+
+      # Everything the app decides, as plain JVM tests.
+      - name: Unit tests
+        run: ./gradlew --no-daemon :core:test
+
+      # The runner image ships the Android SDK; ANDROID_HOME points at it.
+      - name: Lint
+        run: ./gradlew --no-daemon :app:lintDebug
+
+      - name: Build
+        run: ./gradlew --no-daemon :app:assembleRelease
+
+      # An APK without the server builds fine and then has no full-stack
+      # mode at all, so its absence fails the build.
+      - name: Check the server is in the APK
+        run: |
+          apk=$(ls app/build/outputs/apk/release/*.apk)
+          unzip -l "$apk" | grep -q "lib/arm64-v8a/libsand.so" || { echo "no libsand.so for arm64-v8a in $apk" >&2; exit 1; }
+          echo "libsand.so present for arm64-v8a"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sand-vault-apk
+          path: apps/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

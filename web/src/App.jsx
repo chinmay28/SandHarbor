@@ -4,6 +4,7 @@ import { useIsMobile } from './hooks'
 import { useNavigator } from './navigation'
 import { api } from './api'
 import LockScreen from './components/LockScreen'
+import { nativeApp, nativeAppMode } from './nativeApp'
 import AccountsPanel from './components/AccountsPanel'
 import FileBrowser from './components/FileBrowser'
 import PreviewModal, { ShardInspector } from './components/PreviewModal'
@@ -516,6 +517,14 @@ export default function App() {
             data-icon-button={mobile || undefined}
             style={mobile ? { fontSize: '16px', padding: '4px 8px', minWidth: '44px', justifyContent: 'center' } : null}
             title="Refresh" aria-label="Refresh">⟳{mobile ? '' : ' Refresh'}</Button>
+          {/* Inside the phone app: its own settings — this phone as the
+              server, or another machine's — which the vault cannot change. */}
+          {nativeApp() && (
+            <Button size="sm" variant="ghost" onClick={() => nativeApp()?.openSettings()}
+              data-icon-button={mobile || undefined}
+              style={mobile ? { fontSize: '16px', padding: '4px 8px', minWidth: '44px', justifyContent: 'center' } : null}
+              title={`App settings — ${nativeAppMode()}`} aria-label="App settings">⚙{mobile ? '' : ' App'}</Button>
+          )}
           <Button size="sm" onClick={lock}
             data-icon-button={mobile || undefined}
             style={mobile ? { fontSize: '15px', padding: '4px 8px', minWidth: '44px', justifyContent: 'center' } : null}

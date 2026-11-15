@@ -43,6 +43,8 @@ goes up in a request of its own.
 | `SAND_VAULT` | all commands | Vault path when `--vault` is not given |
 | `SAND_PROFILE` | `sand serve` | Default for `--profile` |
 | `SAND_INSTANCE` | all commands | The name this machine opens the vault under; defaults to the hostname. Set it when two machines share a hostname ([Vault management](../guide/vault-management.md)) |
+| `SAND_DNS`, `SAND_DNS_FILE` | all commands | DNS servers to use instead of the host's own, for a host with no `/etc/resolv.conf`: a list of addresses (`1.1.1.1, 2606:4700::1111`), or a file of them that is re-read when it changes; the file wins while it names any. The Android app sets both ([Android app](../design/android.md)) |
+| `SAND_TZ` | all commands | The local time zone, as an IANA name such as `Europe/Berlin`, for a host where Go cannot find it (Android). Schedules such as *daily at 03:00* follow it |
 | `SAND_OAUTH_REDIRECT` | `sand serve` | Pin the OAuth redirect URI, such as `https://vault.example.com/api/providers/oauth/callback` |
 | `SAND_GOOGLE_CLIENT_ID`, `SAND_GOOGLE_CLIENT_SECRET` | `sand serve` | Your Google OAuth app, so sign-in skips asking for one |
 | `SAND_MICROSOFT_CLIENT_ID`, `SAND_MICROSOFT_CLIENT_SECRET` | `sand serve` | The same for OneDrive (the secret is optional) |

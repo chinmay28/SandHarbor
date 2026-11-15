@@ -10,6 +10,48 @@ Each section below is the body of the corresponding GitHub release. A heading
 must name the tag exactly — a tag whose commit builds a different version is a
 tag that shouldn't be published.
 
+## v2026.11.242
+
+**Downloads:** `sand-v2026.11.242-linux-arm64` (the server),
+**`sand-vault.apk`** (new: SAND Vault for Android — on the phone, open
+`https://github.com/chinmay28/SandHarbor/releases/latest/download/sand-vault.apk`
+and install it; see [`docs/guide/android.md`](./docs/guide/android.md)) and
+**`sand-tv.apk`** (the SAND TV app for Fire TV). All are in `SHA256SUMS`.
+
+### SAND Vault for Android
+
+A phone app for the vault, in two modes you can switch between in its settings:
+
+- **Connect to a server.** The vault runs on another machine and the phone
+  opens it. Type the address, or tap **Find on this network** to list the SAND
+  servers that answer on your Wi-Fi.
+- **Run the vault on this phone.** The whole of SAND Vault runs on the phone:
+  the index, the keys, the clouds. Its lock screen creates a new vault,
+  restores one from a recovery kit, or opens a vault that already runs on
+  another machine as a second machine (import the kit with *The vault is still
+  running on another machine* ticked). Optionally it serves other devices on
+  the Wi-Fi, SAND TV included, and keeps running in the background with a
+  notification.
+
+Either way the app shows the vault's own web interface, so everything the
+browser app does, the phone app does. What the app adds is what a phone needs:
+the file picker, saving to *Downloads/SAND Vault*, the share sheet with
+**Save to Downloads** first, full-screen video, films handed to VLC, and cloud
+sign-ins in the phone's browser. Android 10 or newer; running the vault on the
+phone needs a 64-bit ARM phone.
+
+### The web interface in the app
+
+Inside the app, the vault's header and lock screen have a **⚙** button that
+opens the app's settings.
+
+### The server on hosts without DNS or a time zone
+
+`sand` reads `SAND_DNS` / `SAND_DNS_FILE` (DNS servers to use) and `SAND_TZ`
+(the local time zone) at startup. Android has neither of its own; the app sets
+them. Anywhere else they are unset and nothing changes. See
+[`docs/reference/configuration.md`](./docs/reference/configuration.md).
+
 ## v2026.11.238
 
 **Downloads:** `sand-v2026.11.238-linux-arm64` (the server) and

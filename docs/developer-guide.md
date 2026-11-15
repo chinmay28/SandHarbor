@@ -1,6 +1,6 @@
 # Developer guide
 
-How to build SAND Vault (the `sand` binary) and SAND TV (the Fire TV app),
+How to build SAND Vault (the `sand` binary), its Android app, and SAND TV (the Fire TV app),
 run them while you work on them, test them, version and release them, and find
 your way around the repository. For what the system is and why it is shaped
 this way, read [architecture.md](architecture.md) and
@@ -14,7 +14,7 @@ this way, read [architecture.md](architecture.md) and
 | Node.js | 18 or newer (CI uses 22) | the web client, `scripts/version.mjs`, `make icons` |
 | git | any, with **full history** | the version number (see [Versioning](#versioning)) |
 | Python 3 + pip | for `tests/` | the end-to-end suite (pytest, Playwright, requests) |
-| JDK 17 + Android SDK | only for `apps/firetv` | SAND TV |
+| JDK 17 + Android SDK | only for `apps/firetv` and `apps/android` | SAND TV, the Android app (which also needs Go, to build the server it carries) |
 
 There is no CGO, so a plain Go toolchain is all the binary needs. The
 committed web build means `go build ./cmd/sand` works from a bare checkout
@@ -192,12 +192,29 @@ cd apps/firetv
 ./gradlew assembleRelease     # APK in app/build/outputs/apk/release/
 ```
 
+**The Android app's tests** are plain JVM tests of `apps/android/core`, which
+holds everything the app decides (addresses, navigation, the server's command
+line and supervision, the page bridge's protocol and transfers). They need no
+Android SDK. The page side of the bridge is `tests/test_android_app.py`.
+
+```bash
+make test-android                 # or: cd apps/android && ./gradlew -PcoreOnly :core:test
+cd apps/android
+./gradlew :app:lintDebug          # Android lint
+./gradlew :app:assembleRelease    # APK, with sand for arm64-v8a built in by Go
+./gradlew :app:assembleDebug -PsandServerAbis=arm64-v8a,x86_64   # plus the emulator's
+./gradlew :app:assembleDebug -PsandServer=false                  # thin client only, no Go
+```
+
+See [the app's design](design/android.md) for how the server is packaged.
+
 ### What CI runs
 
 | Workflow | When | What |
 |---|---|---|
 | [`dco.yml`](../.github/workflows/dco.yml) | Every pull request | Every non-merge commit must carry a `Signed-off-by` matching its author exactly |
 | [`firetv.yml`](../.github/workflows/firetv.yml) | PRs and pushes to `main` touching `apps/firetv/**`, `internal/tvdiscover/**` or the workflow; manual | SAND TV: `testDebugUnitTest`, `lintDebug`, `assembleRelease`, a check that `libffmpegJNI.so` is in the APK for `armeabi-v7a` and `arm64-v8a`, and the APK as an artifact |
+| [`android.yml`](../.github/workflows/android.yml) | PRs and pushes to `main` touching `apps/android/**`, `cmd/**`, `internal/**`, `go.mod`/`go.sum` or the workflow; manual | The Android app: `internal/hostenv` tests, `:core:test`, `:app:lintDebug`, `:app:assembleRelease`, a check that `libsand.so` is in the APK for `arm64-v8a`, and the APK as an artifact |
 | [`release.yml`](../.github/workflows/release.yml) | Tags `v*`, pushes to `main`, manual | See [Releases](#releases) |
 
 **CI does not run the Go tests, `go vet`, the e2e suite or
@@ -216,8 +233,9 @@ changelog is the gate:
    On a push to `main` with no such section, the commit is not a release and
    the job stops quietly. On a tag or a manual run, a missing section is an
    error.
-3. It builds the web client, `sand-<version>-linux-arm64`, and `sand-tv.apk`
-   (stamped with the version), writes `SHA256SUMS`, and publishes a GitHub
+3. It builds the web client, the `sand` binaries, `sand-tv.apk` and
+   `sand-vault.apk` (both stamped with the version; the second carries that
+   release's server), writes `SHA256SUMS`, and publishes a GitHub
    release whose body is that changelog section. A release that already exists
    is left alone.
 
@@ -277,6 +295,7 @@ SandHarbor/
 │   ├── tuning/               sizes SAND Vault to the machine it runs on
 │   ├── tvaccess/             hands a television the key to one folder (pairing codes, tokens)
 │   ├── tvdiscover/           lets a TV on the same network find the server over UDP
+│   ├── hostenv/              DNS servers and time zone from the environment, for Android (SAND_DNS*, SAND_TZ)
 │   ├── vault/                the control plane: encrypted index, accounts, placement,
 │   │                         scatter/gather, backup, recovery, sub vaults, maintenance
 │   └── version/              the application version, stamped at link time
@@ -291,6 +310,9 @@ SandHarbor/
 │   ├── build-version.js      feeds scripts/version.mjs into the bundle
 │   └── vite.config.js        build into internal/server/dist; dev proxy for /api
 ├── apps/
+│   ├── android/              SAND Vault for Android (Gradle, AGP 8.7, minSdk 29): see design/android.md
+│   │   ├── core/                 plain Kotlin, JVM-tested: everything the app decides
+│   │   └── app/                  the Android shell: web view, page bridge, server service
 │   └── firetv/               SAND TV, a Kotlin Android app (Gradle, AGP 8.7, minSdk 22)
 │       └── app/src/
 │           ├── main/java/com/sandvault/tv/   MainActivity (WebView around /tv/), Discovery,

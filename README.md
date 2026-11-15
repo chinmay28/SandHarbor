@@ -28,6 +28,7 @@ apps around one encrypted store.
 | Component | What it is | Status |
 |---|---|---|
 | **SAND Vault** | The vault. It compresses every file, erasure-codes it into *n* parts, encrypts them, and puts each part on a **different** cloud account. Any *m* parts rebuild the file; fewer are noise. Ships as the `sand` binary: CLI, web UI, HTTP API and WebDAV share. | Available |
+| **SAND Vault for Android** | The vault on a phone: a client for a server on another machine, or the whole vault running on the phone itself, switchable in settings. See [the guide](docs/guide/android.md). | Available |
 | **SAND TV** | A Fire TV app that plays a vault folder of films, unlocked on the TV with a four-character code. | Available |
 | SAND Gallery, SAND Pod | Pictures and music, on the same vault. | Ideas |
 
@@ -36,7 +37,7 @@ choose how many grains a file becomes (*n*) and how many bring it back (*m*):
 the default is **2-of-3**, and codes range up to 20-of-30.
 
 ```
-            web UI · CLI · SAND TV · WebDAV
+     web UI · Android app · CLI · SAND TV · WebDAV
                           │
                 ┌─────────▼─────────┐
                 │   sand (server)   │  index, keys and plaintext live only here
@@ -118,8 +119,10 @@ internal/
   server/          HTTP API, sessions and the embedded web UI (server/dist)
   davfs/           WebDAV view of an unlocked vault
   tvaccess/ tvdiscover/   SAND TV pairing codes and LAN discovery
+  hostenv/         DNS and time zone for a host without them (the Android app)
   snapshot/ checksums/ filecheck/ movie/ thumb/ git/ sftp/ assistant/ tuning/ version/
 web/               React web UI (built into internal/server/dist)
+apps/android/      SAND Vault for Android: thin client or full stack (Kotlin/Gradle)
 apps/firetv/       SAND TV, the Fire TV app (Kotlin/Gradle)
 scripts/           installer, release build, deploy helpers, nginx template
 tests/             end-to-end tests (pytest: CLI, API, browser)

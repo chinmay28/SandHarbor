@@ -1,4 +1,4 @@
-.PHONY: build build-web build-go build-grind icons icons-check version release test test-cover test-e2e test-e2e-slow test-all clean
+.PHONY: build build-web build-go build-grind build-android test-android icons icons-check version release test test-cover test-e2e test-e2e-slow test-all clean
 
 # Build everything: frontend + Go binary
 build: build-web build-go
@@ -49,6 +49,17 @@ build-grind:
 			-ldflags="-s -w -X $(VERSION_PKG).Patch=$(PATCH) -X $(VERSION_PKG).Date=$(DATE)" \
 			-o grind/sand-$(VERSION_STR)-linux-$$arch ./cmd/sand; \
 	done
+
+# The SAND Vault phone app (apps/android), with this tree's sand server in it
+# for full-stack mode. Needs Go, JDK 17 and the Android SDK; the APK lands in
+# apps/android/app/build/outputs/apk/release/.
+build-android:
+	cd apps/android && ./gradlew assembleRelease \
+		-PsandVersionName=$(VERSION_STR) -PsandVersionCode=$(PATCH) -PsandVersionDate=$(DATE)
+
+# The phone app's logic, as plain JVM tests: no Android SDK needed.
+test-android:
+	cd apps/android && ./gradlew -PcoreOnly :core:test
 
 # Print the version this tree would build as
 version:
