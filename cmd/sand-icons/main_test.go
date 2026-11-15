@@ -1,127 +1,140 @@
 package main
 
 import (
+	"bytes"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 )
 
-// TestCommittedIconsMatchBrand fails when someone edits a mark in brand/ and
-// forgets `make icons`, or hand-edits a derived icon. It is the same check as
-// `make icons-check`, run wherever the Go tests run.
-func TestCommittedIconsMatchBrand(t *testing.T) {
-	root := filepath.Join("..", "..")
-	files, err := plan(root, apps)
+const repoRoot = "../.."
+
+// planned renders the repository's icons once for every test that needs them.
+var planned = sync.OnceValues(func() ([]output, error) { return plan(repoRoot, apps) })
+
+// TestCommittedIconsMatchTheArtwork fails when the artwork changes without a
+// `make icons`, or when someone hand-edits a derived icon. It is the same
+// check as `make icons-check`, run wherever the Go tests run.
+func TestCommittedIconsMatchTheArtwork(t *testing.T) {
+	files, err := planned()
 	if err != nil {
 		t.Fatal(err)
 	}
-	stale, err := staleFiles(root, files)
+	stale, err := staleFiles(repoRoot, files)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range stale {
-		t.Errorf("%s does not match its mark in brand/ — run: make icons", f)
+		t.Errorf("%s does not match %s — run: make icons", f, artPath)
 	}
 }
 
-func TestEveryAppIsDistinctAndEveryOutputHasOneOwner(t *testing.T) {
-	sources := map[string]string{}
-	owners := map[string]string{}
-	files, err := plan(filepath.Join("..", ".."), apps)
+func TestEveryOutputHasOneOwnerAndTheRightSize(t *testing.T) {
+	files, err := planned()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, a := range apps {
-		if prev, ok := sources[a.source]; ok {
-			t.Errorf("%s and %s share %s: each app gets a mark of its own", prev, a.name, a.source)
-		}
-		sources[a.source] = a.name
-	}
+	seen := map[string]bool{}
 	for _, f := range files {
-		if prev, ok := owners[f.path]; ok {
-			t.Errorf("%s is written twice (%s)", f.path, prev)
+		if seen[f.path] {
+			t.Errorf("%s is written twice", f.path)
 		}
-		owners[f.path] = f.path
+		seen[f.path] = true
+		if !f.png {
+			continue
+		}
+		cfg, err := png.DecodeConfig(bytes.NewReader(f.data))
+		if err != nil {
+			t.Fatalf("%s: %v", f.path, err)
+		}
+		// Launcher mipmaps must be exactly their density's size, or Android
+		// scales them again.
+		for _, d := range densities {
+			if !strings.Contains(f.path, "/mipmap-"+d.name+"/") {
+				continue
+			}
+			dp := 48
+			if strings.HasSuffix(f.path, "_foreground.png") {
+				dp = 108
+			}
+			if want := dp * d.scale / 4; cfg.Width != want || cfg.Height != want {
+				t.Errorf("%s is %dx%d, want %d", f.path, cfg.Width, cfg.Height, want)
+			}
+		}
 	}
 }
 
-const testMark = `<svg viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#0a0e17"/>
-  <rect x="16" y="18" width="32" height="8" rx="2" fill="#d97706"/>
-</svg>`
-
-func writeFile(t *testing.T, root, rel, content string) {
-	t.Helper()
-	path := filepath.Join(root, rel)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
+func TestEveryAndroidAppHasAnAdaptiveIcon(t *testing.T) {
+	for _, res := range []string{"apps/android/app/src/main/res", "apps/firetv/app/src/main/res"} {
+		manifest, err := os.ReadFile(filepath.Join(repoRoot, filepath.Dir(res), "AndroidManifest.xml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(manifest), `android:icon="@mipmap/ic_launcher"`) {
+			t.Errorf("%s/../AndroidManifest.xml does not use @mipmap/ic_launcher", res)
+		}
+		for _, f := range []string{"mipmap-anydpi-v26/ic_launcher.xml", "values/ic_launcher_background.xml", "mipmap-mdpi/ic_launcher.png"} {
+			if _, err := os.Stat(filepath.Join(repoRoot, res, f)); err != nil {
+				t.Errorf("%s: %v", res, err)
+			}
+		}
 	}
 }
 
-func TestPlanAndStaleness(t *testing.T) {
+func TestStaleness(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, root, "brand/x.svg", testMark)
-	for _, d := range []string{"web", "res"} {
-		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+	img := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	for i := range img.Pix {
+		img.Pix[i] = 255
+	}
+	data, err := encodePNG(img)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := []output{
+		{path: "a.png", data: data, png: true},
+		{path: "b.xml", data: []byte("<b/>")},
+		{path: "c.png", data: data, png: true},
+	}
+	if stale, _ := staleFiles(root, files); len(stale) != 3 {
+		t.Fatalf("nothing written, but stale = %v", stale)
+	}
+
+	write := func(p string, b []byte) {
+		if err := os.WriteFile(filepath.Join(root, p), b, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	x := []app{{
-		name:           "X",
-		source:         "brand/x.svg",
-		svgCopies:      []string{"web/icon.svg"},
-		homeScreenDirs: []string{"web"},
-		androidIcons:   []string{"res/ic_launcher.xml"},
-		banners:        []banner{{path: "res/banner.xml", width: 320, height: 180, scale: 2, background: "#111827"}},
-	}}
-
-	files, err := plan(root, x)
-	if err != nil {
+	// a.png: the same pixels, encoded differently (no compression). Not stale.
+	var buf bytes.Buffer
+	if err := (&png.Encoder{CompressionLevel: png.NoCompression}).Encode(&buf, img); err != nil {
 		t.Fatal(err)
 	}
-	if want := 1 + len(homeScreen) + 1 + 1; len(files) != want {
-		t.Fatalf("planned %d files, want %d", len(files), want)
-	}
+	write("a.png", buf.Bytes())
+	write("b.xml", []byte("<b>edited</b>"))
+	write("c.png", []byte("not a png"))
 
-	// Nothing written yet: everything is stale.
 	stale, err := staleFiles(root, files)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(stale) != len(files) {
-		t.Fatalf("stale = %v, want all %d", stale, len(files))
-	}
-
-	for _, f := range files {
-		writeFile(t, root, f.path, string(f.data))
-	}
-	if stale, _ := staleFiles(root, files); len(stale) != 0 {
-		t.Fatalf("freshly written files reported stale: %v", stale)
-	}
-
-	// A hand edit to a text output, and a PNG that no longer decodes.
-	writeFile(t, root, "res/ic_launcher.xml", "<vector/>")
-	writeFile(t, root, "web/icon-192.png", "not a png")
-	stale, err = staleFiles(root, files)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(stale) != 2 || stale[0] != "web/icon-192.png" || stale[1] != "res/ic_launcher.xml" {
-		t.Errorf("stale = %v, want the two edited files", stale)
+	if strings.Join(stale, ",") != "b.xml,c.png" {
+		t.Errorf("stale = %v, want b.xml and c.png", stale)
 	}
 }
 
-func TestPlanRefusesABadMark(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "brand/x.svg", `<svg viewBox="0 0 64 32"><rect width="1" height="1" fill="#000"/></svg>`)
-	_, err := plan(root, []app{{name: "X", source: "brand/x.svg", homeScreenDirs: []string{"web"}}})
-	if err == nil {
-		t.Error("a non-square mark was accepted for home-screen icons")
+func TestParseHex(t *testing.T) {
+	c, err := parseHex("#030b26")
+	if err != nil || c.R != 3 || c.G != 11 || c.B != 38 || c.A != 255 {
+		t.Errorf("parseHex = %v, %v", c, err)
 	}
-	if _, err := plan(root, []app{{name: "Y", source: "brand/missing.svg"}}); err == nil {
-		t.Error("a missing mark was accepted")
+	for _, bad := range []string{"030b26", "#030b2", "#030b266", "#zzzzzz"} {
+		if _, err := parseHex(bad); err == nil {
+			t.Errorf("parseHex(%q) accepted", bad)
+		}
 	}
 }

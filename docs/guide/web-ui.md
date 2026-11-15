@@ -255,9 +255,9 @@ in `manifest.json`). It opens without browser chrome on iOS, and on Android
 wherever the browser honours the manifest. The server serves
 `apple-touch-icon.png`, `manifest.json` and 192/512px icons, including a
 maskable one. All of them are drawn from
-[`brand/vault.svg`](../../brand/vault.svg) by
-[`cmd/sand-icons`](../../cmd/sand-icons): change the SVG, run `make icons`, and
-commit what changes.
+[`brand/icon.png`](../../brand/icon.png) by
+[`cmd/sand-icons`](../../cmd/sand-icons): replace the artwork, run
+`make icons`, and commit what changes.
 
 The shortcut is a link to your server, not a copy of anything. Nothing is cached
 offline, so a stolen phone with the icon on it gets the password prompt.

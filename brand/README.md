@@ -1,76 +1,52 @@
-# SAND Harbor marks
+# The SAND Harbor icon
 
-Every SAND Harbor app is built from the same bricks. Each app has one mark,
-drawn once as an SVG in this directory; `make icons` derives every other form
-of it (see [`cmd/sand-icons`](../cmd/sand-icons)), and `go test
-./cmd/sand-icons` fails if a committed copy has drifted.
+[`icon.png`](icon.png) is the official icon of every SAND Harbor app: a
+sandcastle of bricks on a beach, by the harbour, in the amber and navy of the
+apps' theme. SAND Vault, SAND TV, and every app after them wear the same one.
 
-| Mark | App | What the bricks say |
-|------|-----|---------------------|
-| [`vault.svg`](vault.svg) | SAND Vault | Three bricks about to click together: a file is stored as three encrypted parts on three accounts. The bottom one is dimmed because any two rebuild the file. |
-| [`tv.svg`](tv.svg) | SAND TV | One tall brick for the screen with play cut out of it, on a dimmed brick for a stand. |
+It is the only icon anyone draws. Every size and shape a platform wants is
+derived from it by `make icons` ([`cmd/sand-icons`](../cmd/sand-icons), on
+[`internal/brand`](../internal/brand)), and `go test ./cmd/sand-icons` fails if
+a committed copy has drifted from it. Never edit a derived file by hand: the
+next `make icons` puts it back.
 
-## The family rules
+## What gets made from it
 
-A new app's mark follows these, so it sits next to the others on a home
-screen and reads as part of the same set.
+| Where | What | Shape |
+|-------|------|-------|
+| `web/public/`, `internal/server/dist/` | `icon-192.png` (also the favicon and the header mark), `icon-512.png` | rounded, on transparency |
+| | `apple-touch-icon.png` | full bleed: iOS cuts its own corners |
+| | `icon-maskable-512.png` | scene pulled into the launcher's safe circle |
+| `internal/server/tvui/`, Fire TV `assets/` | `icon.png`, 256px | rounded |
+| both Android apps' `res/` | `mipmap-*/ic_launcher.png` | rounded, 48dp in every density |
+| | `mipmap-*/ic_launcher_foreground.png`, `mipmap-anydpi-v26/ic_launcher.xml`, `values/ic_launcher_background.xml` | adaptive icon: the scene in the 72dp a launcher shows, over the plate colour |
+| Fire TV `res/drawable-xhdpi/banner.png` | the 320×180dp home-screen tile | the icon centred on the plate colour |
 
-**The canvas.** A `0 0 64 64` viewBox. It is drawn at 64 but has to survive
-24px in a page header, so keep to thick shapes and wide gaps: nothing under
-about 2.5 units.
+## What the generator assumes about the artwork
 
-**The plate and the ring.** Every mark starts with the same two shapes,
-copied exactly:
+- It is a square PNG.
+- The scene sits on a flat navy **plate** that runs edge to edge with rounded
+  corners, and whatever is outside those corners (black, here) is thrown away.
+  Rounded icons get transparency there; full-bleed ones get the plate colour,
+  so a platform's own mask never shows a black corner.
+- The plate's colour and corner radius are written down in
+  [`cmd/sand-icons/apps.go`](../cmd/sand-icons/apps.go) (`plateColour`,
+  `plateRadius`). They were measured off this artwork: the colour is the
+  median of the plate's pixels, and the radius is where the plate begins on
+  the diagonal from a corner, divided by 0.293 (1 − 1/√2), as a fraction of
+  the width.
 
-```svg
-<rect width="64" height="64" rx="14" fill="#0a0e17"/>
-<rect x="8.5" y="8.5" width="47" height="47" rx="9" fill="none" stroke="#1e2d3d" stroke-width="3"/>
-```
+## Replacing the artwork
 
-The first shape covering the whole canvas is the plate; the generator squares
-it off for iOS and keeps everything else inside the ring for Android's
-maskable icon, so put all the artwork inside the ring (10..54).
-
-**Bricks.** Side-on, 32 units wide (x 16..48) — four studs on an 8-unit pitch.
-
-- A brick body is a rect with `rx="2"` (2.5 for a big one), at least 8 tall.
-- Studs are `5 × 4` with `rx="1"`, at x = 17.5, 25.5, 33.5, 41.5, sitting
-  1 unit into the body below them so the join never shows a seam.
-- A stand or base can be narrower (20 wide, centred), and needs no studs —
-  the brick above hides them.
-
-**Colour.** Only the theme's amber, from `web/src/theme.js`, and studs always
-one step brighter than the brick they sit on:
-
-| Part | Colour | Theme name |
-|------|--------|------------|
-| Plate | `#0a0e17` | `bg` |
-| Ring | `#1e2d3d` | `border` |
-| Studs on a full brick | `#f59e0b` | `accentBright` |
-| Full brick | `#d97706` | `accent` |
-| Studs on a dimmed brick | `#d97706` | `accent` |
-| Dimmed brick (the spare, the stand) | `#92400e` | `accentDim` |
-| A glyph cut into a brick | `#0a0e17` | `bg` |
-
-Use solid colours rather than `opacity` for the dimmed brick: overlapping
-translucent shapes darken where they meet.
-
-**The glyph.** What makes one app's mark different from another's is the
-arrangement of bricks, and at most one simple glyph cut into a brick in the
-plate colour — play for TV. Keep it a polygon of a few points.
-
-**Allowed SVG.** `<rect>` (with `rx`), `<polygon>`, and `<g fill="…">` for
-grouping. Colours are `#rrggbb`. Anything else is refused by the generator,
-which is deliberate: each of those shapes has an exact distance function, so
-the PNGs are antialiased exactly and the Android vector drawables are
-lossless.
+1. Replace `brand/icon.png`, keeping to the assumptions above.
+2. If the plate's colour or corner radius changed, measure them again and
+   update `apps.go`.
+3. `make icons`, look at the results (corners especially), and commit the
+   artwork with everything it redrew.
 
 ## Adding an app
 
-1. Draw `brand/<app>.svg` to the rules above. Start from `tv.svg`.
-2. Add an entry to `apps` in [`cmd/sand-icons/apps.go`](../cmd/sand-icons/apps.go)
-   naming the files it should write: SVG copies for web pages, a directory for
-   home-screen PNGs, Android launcher icons, banners.
-3. `make icons`, look at the result, commit the mark and everything it drew.
-
-Never edit a generated file by hand — the next `make icons` puts it back.
+Add an entry to `apps` in `cmd/sand-icons/apps.go` naming where its icons go.
+The helpers there already cover a web app (`webIcons`) and an Android app
+(`launcherIcons` and `adaptiveIcon`, then `android:icon="@mipmap/ic_launcher"`
+in its manifest). Then `make icons`.

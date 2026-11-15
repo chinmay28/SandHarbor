@@ -1,11 +1,11 @@
-// Command sand-icons draws every SAND Harbor app icon from its mark in brand/.
+// Command sand-icons derives every SAND Harbor app icon from the one piece of
+// artwork in brand/icon.png.
 //
-// Each app's mark is drawn once, as an SVG, and everything a platform needs is
-// derived from it: copies of the SVG for the web pages that load it, PNGs for
-// home screens (iOS will only take a raster touch icon, and a web manifest
-// wants known pixel sizes), and vector drawables for the Android apps. The
-// outputs are committed; change the SVG, run `make icons`, commit what falls
-// out, and never edit an output by hand.
+// Each platform wants the icon in its own sizes and shapes — rounded or full
+// bleed, square or a wide banner, PNGs for home screens and launcher mipmaps
+// for Android — and this writes all of them. The outputs are committed;
+// replace the artwork, run `make icons`, commit what falls out, and never
+// edit an output by hand.
 //
 // Usage:
 //
@@ -19,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
 	"image/png"
 	"io/fs"
@@ -34,37 +35,44 @@ func main() {
 	check := flag.Bool("check", false, "report stale outputs instead of writing them")
 	flag.Parse()
 
-	files, err := plan(*root, apps)
-	if err != nil {
+	if err := run(*root, *check); err != nil {
 		fmt.Fprintln(os.Stderr, "sand-icons:", err)
 		os.Exit(1)
 	}
+}
 
-	if *check {
-		stale, err := staleFiles(*root, files)
+func run(root string, check bool) error {
+	files, err := plan(root, apps)
+	if err != nil {
+		return err
+	}
+
+	if check {
+		stale, err := staleFiles(root, files)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "sand-icons:", err)
-			os.Exit(1)
+			return err
 		}
 		for _, f := range stale {
 			fmt.Fprintf(os.Stderr, "stale: %s\n", f)
 		}
 		if len(stale) > 0 {
-			fmt.Fprintf(os.Stderr, "\n%d icon file(s) out of date — run: make icons\n", len(stale))
-			os.Exit(1)
+			return fmt.Errorf("%d icon file(s) out of date — run: make icons", len(stale))
 		}
-		fmt.Println("icons match brand/")
-		return
+		fmt.Println("icons match", artPath)
+		return nil
 	}
 
 	for _, f := range files {
-		path := filepath.Join(*root, f.path)
-		if err := os.WriteFile(path, f.data, 0o644); err != nil {
-			fmt.Fprintln(os.Stderr, "sand-icons:", err)
-			os.Exit(1)
+		p := filepath.Join(root, f.path)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return err
 		}
-		fmt.Printf("%-64s %6.1f KB\n", f.path, float64(len(f.data))/1024)
+		if err := os.WriteFile(p, f.data, 0o644); err != nil {
+			return err
+		}
+		fmt.Printf("%-72s %6.1f KB\n", f.path, float64(len(f.data))/1024)
 	}
+	return nil
 }
 
 // output is one derived file: where it goes and what it holds.
@@ -76,51 +84,45 @@ type output struct {
 	png bool
 }
 
-// plan works out every output for apps without touching the disk beyond
-// reading each app's mark.
+// loadArt reads the artwork and prepares it for drawing.
+func loadArt(root string) (brand.Art, error) {
+	f, err := os.Open(filepath.Join(root, artPath))
+	if err != nil {
+		return brand.Art{}, err
+	}
+	defer f.Close()
+	img, err := png.Decode(f)
+	if err != nil {
+		return brand.Art{}, fmt.Errorf("%s: %w", artPath, err)
+	}
+	plate, err := parseHex(plateColour)
+	if err != nil {
+		return brand.Art{}, err
+	}
+	return brand.NewArt(img, plate, plateRadius)
+}
+
+// plan renders every output for apps without writing anything.
 func plan(root string, apps []app) ([]output, error) {
+	art, err := loadArt(root)
+	if err != nil {
+		return nil, err
+	}
 	var out []output
 	for _, a := range apps {
-		src, err := os.ReadFile(filepath.Join(root, a.source))
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", a.name, err)
-		}
-		mark, err := brand.Parse(src)
-		if err != nil {
-			return nil, fmt.Errorf("%s (%s): %w", a.name, a.source, err)
-		}
-		note := fmt.Sprintf("The %s mark. Generated from %s by `make icons`; edit that, not this.", a.name, a.source)
-
-		for _, p := range a.svgCopies {
-			out = append(out, output{path: p, data: src})
-		}
-		if len(a.homeScreenDirs) > 0 {
-			if mark.Width != mark.Height {
-				return nil, fmt.Errorf("%s: home-screen icons need a square mark, %s is %gx%g",
-					a.name, a.source, mark.Width, mark.Height)
-			}
-			for _, r := range homeScreen {
-				data, err := encodePNG(brand.Render(mark, r.opt))
-				if err != nil {
-					return nil, err
-				}
-				for _, dir := range a.homeScreenDirs {
-					out = append(out, output{path: filepath.ToSlash(filepath.Join(dir, r.file)), data: data, png: true})
-				}
-			}
-		}
-		for _, p := range a.androidIcons {
-			out = append(out, output{path: p, data: brand.AndroidVector(mark, note)})
-		}
-		for _, b := range a.banners {
-			bg, err := brand.ParseHex(b.background)
+		for _, ic := range a.icons {
+			img, err := ic.draw(art)
 			if err != nil {
-				return nil, fmt.Errorf("%s banner: %w", a.name, err)
+				return nil, fmt.Errorf("%s: %s: %w", a.name, ic.path, err)
 			}
-			placed := mark.Placed(b.width, b.height, b.scale, bg)
-			bnote := fmt.Sprintf("The %s launcher banner, %gx%g. Generated from %s by `make icons`; edit that, not this.",
-				a.name, b.width, b.height, a.source)
-			out = append(out, output{path: b.path, data: brand.AndroidVector(placed, bnote)})
+			data, err := encodePNG(img)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, output{path: ic.path, data: data, png: true})
+		}
+		for _, t := range a.texts {
+			out = append(out, output{path: t.path, data: t.data(art)})
 		}
 	}
 	return out, nil
@@ -149,8 +151,7 @@ func staleFiles(root string, files []output) ([]string, error) {
 		}
 		same := bytes.Equal(have, f.data)
 		if !same && f.png {
-			same, err = samePixels(have, f.data)
-			if err != nil {
+			if same, err = samePixels(have, f.data); err != nil {
 				return nil, fmt.Errorf("%s: %w", f.path, err)
 			}
 		}
@@ -183,4 +184,14 @@ func toNRGBA(img image.Image) *image.NRGBA {
 	out := image.NewNRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
 	draw.Draw(out, out.Rect, img, b.Min, draw.Src)
 	return out
+}
+
+// parseHex reads an opaque "#rrggbb" colour.
+func parseHex(v string) (color.NRGBA, error) {
+	var c color.NRGBA
+	if _, err := fmt.Sscanf(v, "#%02x%02x%02x", &c.R, &c.G, &c.B); err != nil || len(v) != 7 {
+		return color.NRGBA{}, fmt.Errorf("colour %q is not #rrggbb", v)
+	}
+	c.A = 255
+	return c, nil
 }

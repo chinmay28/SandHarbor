@@ -7,13 +7,14 @@ build: build-web build-go
 build-web:
 	cd web && npm ci && npm run build
 
-# Redraw every app icon (SVG copies, home-screen PNGs, Android launcher icons
-# and banners) from the marks in brand/. The outputs are committed, so run this
-# whenever a mark changes and commit the result. See brand/README.md.
+# Redraw every app icon (home-screen PNGs, the TV page icon, Android launcher
+# icons and banners) from the one artwork, brand/icon.png. The outputs are committed,
+# so run this whenever the artwork changes and commit the result. See
+# brand/README.md.
 icons:
 	go run ./cmd/sand-icons
 
-# Fail if a committed icon no longer matches the mark it is drawn from. `go
+# Fail if a committed icon no longer matches brand/icon.png. `go
 # test ./cmd/sand-icons` runs the same check.
 icons-check:
 	go run ./cmd/sand-icons -check
