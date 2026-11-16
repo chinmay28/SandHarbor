@@ -79,6 +79,40 @@ export function isHandheld() {
   }
 }
 
+/* Whether this page is inside an Android WebView: an app that wraps a website
+   (Homeapps, Hermit, Native Alpha and the like) rather than a browser.
+
+   A WebView is the one place neither way out works. It has no share sheet,
+   and it cannot save a blob: URL either — it hands one to Android, which has
+   no app for it and says "No app on this phone opens that link". What a
+   WebView does handle is an ordinary address answered as an attachment: it
+   passes that to Android's download manager. See downloadThroughLink.
+
+   Android marks a WebView in its user agent: "; wv)" since Lollipop, and
+   "Version/4.0" ahead of the Chrome version in every release. */
+export function isAndroidWebView(userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '') {
+  if (!/Android/.test(userAgent)) return false
+  return /; wv\)/.test(userAgent) || /Version\/\d+\.\d+ Chrome\//.test(userAgent)
+}
+
+/* Whether a download has to go out as an address rather than as bytes: a
+   WebView that cannot share. One that can (a wrapper that adds its own share
+   support) is better served by the share sheet. */
+export function needsDownloadLink() {
+  return isAndroidWebView() && !canShareFiles()
+}
+
+/* Save a file through a stream link — an address that carries its own
+   short-lived credential — asked for as an attachment. Android's download
+   manager fetches it without the page's session cookie, which it never has,
+   and the page does not move: an attachment is a download, not a navigation.
+   No bytes pass through this page, so there is no progress to report. */
+export async function downloadThroughLink(file, from = '') {
+  const link = await api.streamLink(file.id, from)
+  const url = `${link.url}${link.url.includes('?') ? '&' : '?'}download=1`
+  downloadFromLink(url, file.name)
+}
+
 /* Whether a rebuilt file should be offered to the share sheet rather than
    saved straight away.
 
@@ -132,7 +166,11 @@ export async function fetchFileBlob(file, { onProgress, watch = '', from = '' } 
   return fetchToBlob(api.contentURL(file.id, { download: true, watch, from }), onProgress)
 }
 
-export async function downloadFile(file, options) {
+export async function downloadFile(file, options = {}) {
+  if (needsDownloadLink()) {
+    await downloadThroughLink(file, options.from)
+    return
+  }
   saveBlob(await fetchFileBlob(file, options), file.name)
 }
 
