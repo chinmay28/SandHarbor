@@ -26,6 +26,7 @@ a new one is in [Adding cloud backends](../design/cloud-backends.md).
 | `internxt` | Internxt Drive, through its end-to-end encrypted API | Email and password |
 | `sftp` | Any machine with an SSH login: a VPS, a NAS, rsync.net, a Hetzner Storage Box | Host, username, and a key SAND Vault generates or your own |
 | `protoncli` | Proton Drive, through Proton's own client | Sign in (a link you open anywhere) |
+| `protonapp` | Proton Drive, through the SAND Vault Android app, for a vault running on the phone | Sign in (a link to Proton's page) |
 | `proton` | Proton Drive, through the folder its desktop app syncs | A path |
 | `icloud` | iCloud Drive, through the folder macOS or iCloud for Windows syncs | A path |
 | `mega` | MEGA, through the folder its desktop app syncs | A path |
@@ -208,6 +209,30 @@ drop-in if you installed some other way.
 
 Proton's cryptographic model changes at the end of 2026. Because SAND Vault
 runs Proton's own binary, an updated client handles the migration.
+
+#### On a phone that runs the vault
+
+Proton's client runs on Bun, which has no Android build, so a phone running
+the whole vault uses `protonapp` instead: **Proton Drive (this phone)** in the
+connect dialog, offered only there. The SAND Vault app carries Proton's own
+Drive SDK, and the vault reaches Proton through the app.
+
+- **Signing in** shows a link to Proton's own sign-in page. Follow it, sign
+  in, approve SAND Vault, and come back: the account connects by itself. SAND
+  Vault never sees your Proton password, and Proton's page handles two-factor
+  sign-in.
+- **The session lives in the vault**, encrypted like every other credential,
+  and reaches the app only while it works. A recovery kit carries the account.
+- **Each part is confirmed on Proton's servers** before it counts, as with
+  `protoncli`, and the account reports its real quota.
+- **It is local to the phone.** Another machine opening the same vault does
+  not try to reach it, as with any account reached through one machine.
+
+SAND Vault is a third-party application, not officially supported by Proton.
+Proton allows its SDK in personal, non-commercial projects; the app identifies
+itself to Proton as `external-drive-sand_vault`. Proton's cryptographic
+migration arrives through an updated SDK in an updated app. Design and
+protocol: [Proton Drive on a phone](../design/proton-android.md).
 
 ### Filen and Internxt
 

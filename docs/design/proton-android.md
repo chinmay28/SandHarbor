@@ -1,6 +1,6 @@
 # Proton Drive on a phone that runs the vault
 
-> Status: built, not yet tested on a device. See [the checklist](#first-run-on-a-phone).
+> Status: built and unit-tested; not yet run against Proton on a device. See [the checklist](#first-run-on-a-phone).
 
 The `protoncli` backend reaches Proton through Proton's own command-line
 client (see [cloud-backends.md](cloud-backends.md#tier-4--driving-the-services-own-client--done-for-proton)).
@@ -103,8 +103,17 @@ What that means here:
 |---|---|
 | The backend | `internal/provider/protonapp.go` |
 | The sign-in endpoint | `internal/server/handlers_proton.go` |
-| Bridge protocol, sign-in link and payload, session, app version | `apps/android/core/.../proton/` |
-| The bridge server and the SDK | `apps/android/app/.../proton/` |
+| The session, and the book of spent refresh tokens | `apps/android/core/.../proton/ProtonSession.kt` |
+| The sign-in link and its payload; the app version | `apps/android/core/.../proton/ForkSignIn.kt` |
+| Proton's account API and the refresh keeper | `apps/android/core/.../proton/ProtonApi.kt` |
+| Sign-ins under way | `apps/android/core/.../proton/SignInFlows.kt` |
+| The bridge server | `apps/android/core/.../proton/ProtonBridge.kt` |
+| The Drive SDK store, key unlocking, the SDK's HTTP | `apps/android/app/.../proton/` |
+
+Everything in `core` is plain Kotlin with JVM tests. The `app` part needs
+Proton's native libraries, so it runs only on a phone. They are packaged only
+for the ABIs that carry a server (arm64, and x86_64 for an emulator when
+built with it), about 20 MB on top of the APK.
 
 ## First run on a phone
 
