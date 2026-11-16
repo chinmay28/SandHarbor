@@ -51,14 +51,15 @@ func fakeAndroidApp(t *testing.T) {
 	t.Setenv(provider.AppBridgeTokenEnv, "tok")
 }
 
-// TestProtonAppSignInConnectsAnAccount is the phone's whole path, through the
-// same status and complete endpoints every other sign-in uses.
+// TestProtonAppSignInConnectsAnAccount is the phone's whole path: inside the
+// app, the one Proton sign-in goes through the app, through the same status
+// and complete endpoints every other sign-in uses.
 func TestProtonAppSignInConnectsAnAccount(t *testing.T) {
 	fakeAndroidApp(t)
 	c := newTestClient(t)
 	c.setup("correct horse battery staple", 0)
 
-	w, start := c.json(http.MethodPost, "/api/providers/protonapp/signin", map[string]any{
+	w, start := c.json(http.MethodPost, "/api/providers/proton/signin", map[string]any{
 		"options": map[string]string{"folder": "/my-files/sand"},
 	})
 	if w.Code != http.StatusOK {
@@ -86,24 +87,37 @@ func TestProtonAppSignInConnectsAnAccount(t *testing.T) {
 		t.Fatalf("complete: %d %v", w.Code, done)
 	}
 	account, _ := done["provider"].(map[string]any)
-	if account["kind"] != string(provider.KindProtonApp) {
+	if account["kind"] != string(provider.KindProtonCLI) {
 		t.Fatalf("connected a %v", account["kind"])
+	}
+	// One account for every machine: not stamped as living here.
+	if host, _ := account["host"].(string); host != "" {
+		t.Fatalf("a Proton account was stamped as local to %q", host)
 	}
 	options, _ := account["options"].(map[string]any)
 	if options["session"] == "the-session" {
 		t.Fatal("the Proton session was handed back to the browser in the clear")
 	}
-}
 
-// TestProtonAppSignInOutsideTheAppSaysSo: a Pi has no app to sign in through.
-func TestProtonAppSignInOutsideTheAppSaysSo(t *testing.T) {
-	t.Setenv(provider.AppBridgeEnv, "")
-	t.Setenv(provider.AppBridgeTokenEnv, "")
-	c := newTestClient(t)
-	c.setup("correct horse battery staple", 0)
-
-	w, body := c.json(http.MethodPost, "/api/providers/protonapp/signin", map[string]any{})
-	if w.Code != http.StatusBadRequest || body["code"] != "PROTON_NO_APP" {
-		t.Fatalf("start outside the app: %d %v", w.Code, body)
+	// Stored as this machine's own sign-in: reached here, not offered a
+	// sign-in here as though it were another machine's.
+	w, list := c.json(http.MethodGet, "/api/providers", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list: %d %v", w.Code, list)
+	}
+	accounts, _ := list["providers"].([]any)
+	found := false
+	for _, raw := range accounts {
+		a, _ := raw.(map[string]any)
+		if a["id"] != account["id"] {
+			continue
+		}
+		found = true
+		if a["sign_in_here"] == true || a["elsewhere"] != nil || a["online"] != true {
+			t.Fatalf("the account signed in here reports %v", a)
+		}
+	}
+	if !found {
+		t.Fatalf("the account is not listed: %v", list)
 	}
 }

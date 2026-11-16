@@ -540,13 +540,19 @@ result back. The code is `instance.go`, `reach.go`, `merge.go` and `sync.go`.
 
 Every machine opens vaults under a name: `SAND_INSTANCE`, or the hostname.
 Accounts on a backend reached *through* the machine rather than over the network
-(`provider.Spec.Local`: the local folder, the synced-folder family, iCloud,
-Proton's client) record the machine that connected them (`Config.Host`). Another
+(`provider.Spec.Local`: the local folder, the synced-folder family, iCloud)
+record the machine that connected them (`Config.Host`). Another
 machine does not try that path: the account is reported as living on that
 machine rather than down, the health figure leaves it out
 (`HealthReport.Elsewhere`), and its shards are marked `elsewhere` rather than
 missing. An account from before machines had names has no `Host`, and the first
 machine that finds the folder claims it.
+
+Proton Drive through Proton's own code is the third shape: one account that
+every machine reaches by a sign-in of its own (`provider.Spec.SignedInOn`).
+The stored session names the machine that signed in; the account is reachable
+on that machine and *signed in elsewhere* on the rest, which are offered to sign
+in too. See [Proton Drive on a phone](proton-android.md#one-account-on-every-machine).
 
 The index keeps a register of machines that have written it
 (`Manifest.Instances`): name, last write, and which accounts it can reach. From

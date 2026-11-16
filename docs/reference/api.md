@@ -286,7 +286,6 @@ unlocked vault; **quiet** is a session check that does not count as use;
 | POST | `/api/providers/oauth/complete` | session | Turn a sign-in into an account |
 | POST | `/api/providers/oauth/reauthorize` | session | Spend a sign-in on an existing account |
 | POST | `/api/providers/proton/signin` | session | Begin a Proton client sign-in |
-| POST | `/api/providers/protonapp/signin` | session | Begin a Proton sign-in through the Android app |
 | GET | `/api/system/folders` | session | Folders on the server machine |
 | POST | `/api/ssh/keypair` | session | Generate an SSH key pair |
 | GET · POST | `/api/subvaults` | session | List · create sub vaults |
@@ -732,18 +731,12 @@ suggested_name?}` (`suggested_name` once `ready`).
 
 #### POST /api/providers/proton/signin
 
-`{"options": {"folder": "…", …}, "provider_id?": "…"}`. Starts the
-`proton-drive` client in the background and answers at once with `{flow_id,
-expires_in}`; poll `GET /api/providers/oauth/{flow_id}`, whose `sign_in_url` is
-the link to open, then complete or reauthorize as above. `400
-PROTON_NO_CLIENT`.
-
-#### POST /api/providers/protonapp/signin
-
-The same request and answer, for a `protonapp` account: the SAND Vault Android
-app does the signing in, through Proton's own sign-in page, and the link it
-produces arrives as `sign_in_url`. `400 PROTON_NO_APP` on a server the app did
-not start. See [Proton Drive on a phone](../design/proton-android.md).
+`{"options": {"folder": "…", …}, "provider_id?": "…"}`. Starts this machine's
+Proton sign-in in the background — the `proton-drive` client on a computer, the
+Android app inside it — and answers at once with `{flow_id, expires_in}`; poll `GET /api/providers/oauth/{flow_id}`, whose `sign_in_url` is
+the link to open, then complete or reauthorize as above. The session it stores
+is this machine's own; on another machine the account reports
+`sign_in_here: true` until it is signed in there too. `400 PROTON_NO_CLIENT`.
 
 ## Sub vaults
 

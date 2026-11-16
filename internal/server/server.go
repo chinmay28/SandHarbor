@@ -633,11 +633,10 @@ func (s *Server) Handler() (http.Handler, error) {
 		// Folders on this machine, for the backends configured with a path.
 		"GET /api/system/folders": s.handleSystemFolders,
 
-		"POST /api/providers/proton/signin":    s.handleProtonSignIn,
-		"POST /api/providers/protonapp/signin": s.handleProtonAppSignIn,
-		"POST /api/providers/oauth/start":      s.handleOAuthStart,
-		"POST /api/providers/oauth/exchange":   s.handleOAuthExchange,
-		"POST /api/providers/oauth/complete":   s.handleOAuthComplete,
+		"POST /api/providers/proton/signin":  s.handleProtonSignIn,
+		"POST /api/providers/oauth/start":    s.handleOAuthStart,
+		"POST /api/providers/oauth/exchange": s.handleOAuthExchange,
+		"POST /api/providers/oauth/complete": s.handleOAuthComplete,
 		// The same finished sign-in, spent on an account that is already
 		// connected: new credentials for the same ID, the same name and the
 		// same parts. What answers a revoked consent or a deleted OAuth client

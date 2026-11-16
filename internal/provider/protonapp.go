@@ -2,12 +2,11 @@ package provider
 
 // Proton Drive, reached through the SAND Vault Android app.
 //
-// The third Proton backend, and the one for a vault running on a phone. The
-// `protoncli` backend drives Proton's command-line client, which runs on Bun,
-// which has no Android build; the synced-folder one needs a desktop app. What
-// a phone does have is the app SAND runs inside, and Proton publishes its
-// Drive SDK for Android (me.proton.drive:sdk). So the app carries the SDK and
-// this backend asks the app.
+// The route a Proton Drive account takes on a phone running the vault (see
+// proton.go for how a route is chosen). Proton's command-line client runs on
+// Bun, which has no Android build; what a phone does have is the app SAND runs
+// inside, and Proton publishes its Drive SDK for Android (me.proton.drive:sdk).
+// So the app carries the SDK and this route asks the app.
 //
 // The app listens on loopback and hands its address and a token to the server
 // it starts (SAND_APP_BRIDGE, SAND_APP_BRIDGE_TOKEN), so the conversation is
@@ -53,55 +52,9 @@ const (
 	// server's flow lasts a little longer than the app's wait.
 	ProtonAppSignInTimeout = 12 * time.Minute
 
-	protonAppDefaultFolder = "/my-files/sand"
-
 	protonAppSessionHeader = "X-Sand-Proton-Session"
 	protonAppFolderHeader  = "X-Sand-Proton-Folder"
 )
-
-func init() {
-	Register(Spec{
-		Kind:  KindProtonApp,
-		Label: "Proton Drive (this phone)",
-		Description: "A Proton Drive account, reached through the SAND Vault app on this phone, " +
-			"which carries Proton's own Drive SDK. Each part is confirmed on Proton's servers " +
-			"before it counts as stored. SAND Vault is a third-party application, not officially " +
-			"supported by Proton.",
-		DocsURL: "https://github.com/chinmay28/SandHarbor/blob/main/docs/design/proton-android.md",
-		SignInLink: &SignInLinkSpec{
-			SignInLabel: "Sign in to Proton Drive",
-			StartPath:   "/api/providers/protonapp/signin",
-			Note: "A link to Proton's own sign-in page appears below. Follow it, sign in and " +
-				"approve SAND Vault; this page carries on by itself once you have. SAND Vault " +
-				"never sees your Proton password. It is a third-party application, not " +
-				"officially supported by Proton.",
-		},
-		// Beside the other Proton that signs in.
-		Order: 14,
-		// Reached through this phone's app, so only from this phone.
-		Local: true,
-		// Only where the app is there to ask.
-		Offered: AppBridgeAvailable,
-		Fields: []FieldSpec{
-			{
-				Key:      "folder",
-				Label:    "Folder",
-				Default:  protonAppDefaultFolder,
-				Required: true,
-				Help: "Where in Proton Drive the parts go. Created if it does not exist. " +
-					"Your own files live under /my-files.",
-			},
-			{
-				Key:      "session",
-				Label:    "Signed-in session",
-				Secret:   true,
-				Advanced: true,
-				Help: "Filled in by signing in; there is nothing useful to type here. " +
-					"Kept in the vault, encrypted, and handed to the app only while it works.",
-			},
-		},
-	}, newProtonAppProvider)
-}
 
 // AppBridgeAvailable reports whether this server was started by the Android
 // app, with a bridge to ask.
@@ -140,12 +93,17 @@ type protonAppProvider struct {
 	mu      sync.Mutex
 	session string
 	sink    func(map[string]string)
+
+	// wrap tags a session with whose it is before it goes back to the vault.
+	wrap func(string) string
 }
 
-func newProtonAppProvider(cfg Config) (Provider, error) {
+// newProtonAppProvider is the app's route, with the session already taken out
+// of its envelope (proton.go); wrap puts a refreshed one back in.
+func newProtonAppProvider(cfg Config, session string, wrap func(string) string) (Provider, error) {
 	folder := protonCLINormalizeFolder(cfg.Option("folder"))
 	if folder == "" {
-		return nil, fmt.Errorf("proton drive: the folder must be inside the account, e.g. %s", protonAppDefaultFolder)
+		folder = protonCLIDefaultFolder
 	}
 	bridge, token, _ := appBridgeFromEnv()
 	return &protonAppProvider{
@@ -153,7 +111,8 @@ func newProtonAppProvider(cfg Config) (Provider, error) {
 		bridge:  bridge,
 		token:   token,
 		folder:  folder,
-		session: cfg.Option("session"),
+		session: session,
+		wrap:    wrap,
 	}, nil
 }
 
@@ -185,7 +144,7 @@ func (p *protonAppProvider) rotated(session string) {
 	sink := p.sink
 	p.mu.Unlock()
 	if sink != nil {
-		sink(map[string]string{"session": session})
+		sink(map[string]string{"session": p.wrap(session)})
 	}
 }
 
@@ -414,7 +373,7 @@ type ProtonAppSignInResult struct {
 // link through onURL as soon as there is one, and waits for somebody to
 // follow it. The app does the waiting on Proton; this asks the app how it is
 // going until it says done, failed, or ctx ends.
-func ProtonAppSignIn(ctx context.Context, onURL func(string)) (ProtonAppSignInResult, error) {
+func ProtonAppSignIn(ctx context.Context, machine string, onURL func(string)) (ProtonAppSignInResult, error) {
 	bridge, token, _ := appBridgeFromEnv()
 	out, _, err := appBridgeDo(ctx, bridge, token, http.MethodPost, "/proton/v1/signin", nil, nil, []byte("{}"))
 	if err != nil {
@@ -464,7 +423,8 @@ func ProtonAppSignIn(ctx context.Context, onURL func(string)) (ProtonAppSignInRe
 				return ProtonAppSignInResult{}, errors.New("the Proton sign-in finished without a session")
 			}
 			return ProtonAppSignInResult{
-				Options: map[string]string{"session": state.Session},
+				// This machine's own sign-in (proton.go).
+				Options: map[string]string{"session": wrapProtonSession(ProtonRouteApp, machine, state.Session)},
 				Email:   strings.TrimSpace(state.Email),
 			}, nil
 		case "failed":

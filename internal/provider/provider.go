@@ -38,15 +38,11 @@ const (
 	KindInternxt Kind = "internxt"
 	KindZoho     Kind = "zoho"
 
-	// Proton Drive again, reached through Proton's own command-line client
-	// rather than through the folder its desktop app syncs. See protoncli.go
-	// for why one service has two backends.
+	// Proton Drive again, reached through Proton's own code — its
+	// command-line client on a computer, or its Drive SDK inside the Android
+	// app — rather than through the folder its desktop app syncs. The kind's
+	// name is the CLI's because that route came first; see proton.go.
 	KindProtonCLI Kind = "protoncli"
-
-	// Proton Drive a third way: through the SAND Vault Android app, which
-	// carries Proton's own Drive SDK, for a vault running on the phone. See
-	// protonapp.go.
-	KindProtonApp Kind = "protonapp"
 
 	// The rest of the synced-folder backends, registered from one table in
 	// syncfolder.go.
@@ -672,15 +668,18 @@ type Spec struct {
 	// first, then the ones needing credentials, then the ones on disk.
 	Order int `json:"-"`
 
-	// Offered, when set, says whether the connect dialog lists this backend
-	// on this machine. Nil means everywhere, which is right for almost every
-	// backend: one that needs something installed fails its Ping with the fix
-	// rather than vanishing (see protoncli.go). This is for the other kind —
-	// a backend that only exists inside one app, like Proton Drive through
-	// the Android app, where offering it on a Raspberry Pi would be offering
-	// something that cannot be had there at all. An account already connected
-	// is unaffected: SpecFor and New still know the kind.
-	Offered func() bool `json:"-"`
+	// SignedInOn, when set, makes an account one that every machine opening
+	// the vault reaches by its own sign-in, rather than one that lives on one
+	// machine (Local) or anywhere (neither). It names the machine whose
+	// sign-in the account's stored credentials are, and whether a sign-in
+	// made that way is one this machine could use at all. The vault reaches
+	// the account only where both hold; everywhere else it is signed in
+	// elsewhere, and can be signed in there too. See proton.go.
+	SignedInOn func(cfg Config) (machine string, routeHere bool) `json:"-"`
+
+	// PerMachine is SignedInOn != nil, for the browser: such an account is
+	// offered "sign in on this machine" where it is not yet.
+	PerMachine bool `json:"per_machine,omitempty"`
 }
 
 // IsLocal reports whether accounts of this kind live on one machine (see
@@ -690,6 +689,18 @@ type Spec struct {
 func IsLocal(kind Kind) bool {
 	spec, ok := SpecFor(kind)
 	return ok && spec.Local
+}
+
+// SignedInOn reports, for an account of a per-machine kind (Spec.SignedInOn),
+// the machine whose sign-in it holds and whether this machine could use one
+// made that way. perMachine is false for every other kind.
+func SignedInOn(cfg Config) (machine string, routeHere, perMachine bool) {
+	spec, ok := SpecFor(cfg.Kind)
+	if !ok || spec.SignedInOn == nil {
+		return "", false, false
+	}
+	machine, routeHere = spec.SignedInOn(cfg)
+	return machine, routeHere, true
 }
 
 // SignInLinkSpec describes a sign-in the browser watches rather than performs.
@@ -712,6 +723,7 @@ type SignInLinkSpec struct {
 // deployment was started filled in, so no caller ever sees a half-answered
 // spec.
 func (s Spec) resolved() Spec {
+	s.PerMachine = s.SignedInOn != nil
 	if s.OAuth == nil {
 		return s
 	}
@@ -739,17 +751,14 @@ func Register(spec Spec, factory func(Config) (Provider, error)) {
 	registry[spec.Kind] = registration{spec: spec, factory: factory}
 }
 
-// Specs returns every registered backend spec this machine offers (see
-// Spec.Offered), in the order the connect dialog should offer them.
+// Specs returns every registered backend spec, in the order the connect dialog
+// should offer them.
 func Specs() []Spec {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 
 	out := make([]Spec, 0, len(registry))
 	for _, reg := range registry {
-		if reg.spec.Offered != nil && !reg.spec.Offered() {
-			continue
-		}
 		out = append(out, reg.spec.resolved())
 	}
 	sort.Slice(out, func(i, j int) bool {

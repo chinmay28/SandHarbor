@@ -55,18 +55,22 @@ import (
 func init() {
 	Register(Spec{
 		Kind:  KindProtonCLI,
-		Label: "Proton Drive (app)",
-		Description: "A Proton Drive account, reached through Proton's own command-line client. " +
-			"Unlike the synced-folder route this confirms each part has reached Proton rather " +
-			"than only the folder, and it works on a machine with no desktop app — but it needs " +
-			"the `proton-drive` binary installed. The Linux quick-start installer builds it for you.",
+		Label: "Proton Drive (signed in)",
+		Description: "A Proton Drive account, reached through Proton's own code: its command-line " +
+			"client on a computer (the Linux quick-start installer builds it), or its Drive SDK " +
+			"inside the SAND Vault Android app. Unlike the synced-folder route this confirms each " +
+			"part has reached Proton rather than only a folder. One account serves every machine " +
+			"that opens the vault; each signs in for itself. SAND Vault is a third-party " +
+			"application, not officially supported by Proton.",
 		DocsURL: "https://github.com/ProtonDriveApps/sdk/tree/main/cli",
 		SignInLink: &SignInLinkSpec{
 			SignInLabel: "Sign in to Proton",
 			StartPath:   "/api/providers/proton/signin",
-			Note: "Proton's client prints a link and waits for you to follow it. " +
-				"You can open it on any device — a phone, another computer — which is " +
-				"how a machine with no browser of its own connects an account.",
+			Note: "A link to Proton's own sign-in page appears below. Follow it — on any " +
+				"device, which is how a machine with no browser connects — sign in and " +
+				"approve, and this page carries on by itself. SAND Vault never sees your " +
+				"Proton password. The sign-in is this machine's own: another machine that " +
+				"opens this vault signs in for itself.",
 		},
 		// With the backends you sign in to, which is where the connect dialog
 		// puts it — not beside the synced-folder Proton, which the dialog files
@@ -74,9 +78,9 @@ func init() {
 		// meets in a different section however these are numbered. Last of the
 		// sign-ins, since it is the only one needing something installed.
 		Order: 14,
-		// The client, its sign-in state and its binary are all on this
-		// machine, which is where the account is reachable from.
-		Local: true,
+		// Reached from every machine that has a route to Proton and has signed
+		// in there itself; see proton.go.
+		SignedInOn: protonSignedInOn,
 		Fields: []FieldSpec{
 			{
 				Key:      "folder",
@@ -91,7 +95,7 @@ func init() {
 				Label:    "proton-drive binary",
 				Default:  protonCLIDefaultBinary,
 				Advanced: true,
-				Help: "Found on PATH by name, or give the full path to it. " +
+				Help: "Computers only: found on PATH by name, or give the full path to it. " +
 					"Build it from github.com/ProtonDriveApps/sdk, or let scripts/quickstart.sh do it.",
 			},
 			{
@@ -109,10 +113,10 @@ func init() {
 				Secret:   true,
 				Advanced: true,
 				Help: "Filled in by signing in; there is nothing useful to type here. " +
-					"It is kept in the vault rather than on disk — see the notes in the docs.",
+					"It is kept in the vault rather than on disk, and is this machine's own.",
 			},
 		},
-	}, newProtonCLIProvider)
+	}, newProtonProvider)
 }
 
 const (
@@ -159,6 +163,16 @@ const (
 // with a sentence about how to fix it, rather than a constructor error the
 // dialog turns into "could not add account".
 func newProtonCLIProvider(cfg Config) (Provider, error) {
+	route, machine, session := unwrapProtonSession(cfg.Option("session"), cfg.Host)
+	if route != ProtonRouteCLI {
+		session = ""
+	}
+	return newProtonCLIRoute(cfg, session, func(s string) string { return wrapProtonSession(ProtonRouteCLI, machine, s) })
+}
+
+// newProtonCLIRoute is the client's route with the session already taken out
+// of its envelope (proton.go); wrap puts a rotated one back in.
+func newProtonCLIRoute(cfg Config, session string, wrap func(string) string) (Provider, error) {
 	// A blank folder falls back rather than failing. The field is declared
 	// required, so a connect form cannot leave it empty; what can is a sign-in,
 	// which happens before anybody has chosen a folder and has no business
@@ -187,7 +201,8 @@ func newProtonCLIProvider(cfg Config) (Provider, error) {
 		binary:   binary,
 		folder:   folder,
 		stateDir: abs,
-		session:  cfg.Option("session"),
+		session:  session,
+		wrap:     wrap,
 		uids:     map[string]string{},
 	}, nil
 }
@@ -257,6 +272,9 @@ type protonCLIProvider struct {
 
 	// sink is where a rotated session goes to be written back to the vault.
 	sink func(map[string]string)
+
+	// wrap tags a session with whose it is before it goes back to the vault.
+	wrap func(string) string
 
 	// uids maps a part's key to the node UID Proton knows it by, and warmed
 	// says the folder has been read once to fill it. See nodeRefLocked for why
@@ -334,7 +352,7 @@ func (p *protonCLIProvider) harvest() {
 	}
 	p.session = rotated
 	if p.sink != nil {
-		p.sink(map[string]string{"session": rotated})
+		p.sink(map[string]string{"session": p.wrap(rotated)})
 	}
 }
 

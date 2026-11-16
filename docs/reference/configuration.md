@@ -52,7 +52,7 @@ goes up in a request of its own.
 | `SAND_BOX_CLIENT_ID`, `SAND_BOX_CLIENT_SECRET` | `sand serve` | The same for Box |
 | `SAND_ZOHO_CLIENT_ID`, `SAND_ZOHO_CLIENT_SECRET` | `sand serve` | The same for Zoho WorkDrive |
 | `SAND_PROTON_STATE_DIR` | `protoncli` backend | Root for each Proton account's client cache and transient session. Defaults to `<user cache dir>/sand/proton`, which a sandboxed service cannot write to. The quick-start unit sets `/var/lib/sand/proton` |
-| `SAND_APP_BRIDGE`, `SAND_APP_BRIDGE_TOKEN` | `sand serve` inside the Android app | Set by the app, not by hand: where its bridge to Proton Drive listens on loopback, and the token it requires. Their presence is what offers the `protonapp` backend |
+| `SAND_APP_BRIDGE`, `SAND_APP_BRIDGE_TOKEN` | `sand serve` inside the Android app | Set by the app, not by hand: where its bridge to Proton Drive listens on loopback, and the token it requires. Their presence makes Proton Drive accounts go through the app |
 | `SAND_SMART_REPORT` | `sand serve`, `sand smart-scan` | The SMART report path. Default `/var/lib/sand/smart.json` |
 | `GOMEMLIMIT` | `sand serve` | If set, it is obeyed. Otherwise the server sets the Go memory limit to 85% of what the cgroup (or the machine) allows |
 | `GIT_SSH_COMMAND` | git mirroring | If set, it is used as is. Otherwise git runs ssh with `-o BatchMode=yes`, so it never prompts |

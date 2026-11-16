@@ -554,6 +554,14 @@ func (v *Vault) probeRestored(ctx context.Context, cfg provider.Config) (status,
 	// A disk on the machine the kit came from, when that machine goes on
 	// running the vault. Its path is not expected here and is not tried.
 	if v.livesElsewhere(cfg) {
+		// An account each machine signs in to for itself, holding the kit's
+		// machine's sign-in: fine where it is, and offered here too.
+		if _, ok := v.SignInElsewhere(cfg); ok {
+			v.mu.RLock()
+			on := v.awayLocked(cfg)
+			v.mu.RUnlock()
+			return KitAccountElsewhere, fmt.Sprintf("signed in on %s; sign in here too to read its parts from this machine", on), ""
+		}
 		return KitAccountElsewhere, fmt.Sprintf("lives on %s; files with parts on it are read there", cfg.Host), ""
 	}
 	// A path-configured backend is worth checking before the backend is even

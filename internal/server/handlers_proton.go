@@ -38,6 +38,31 @@ func (s *Server) handleProtonSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The sign-in is this machine's own (provider/proton.go): tagged with its
+	// name, so that another machine opening the vault never uses it.
+	machine := ""
+	if v, err := s.Vault(); err == nil {
+		machine = v.Instance()
+	}
+
+	// Inside the Android app, Proton is reached through the app, which does
+	// the signing in itself.
+	if provider.ProtonRouteHere() == provider.ProtonRouteApp {
+		s.startLinkSignIn(w, r, cfg, provider.ProtonAppSignInTimeout, func(flowID string) {
+			ctx, cancel := context.WithTimeout(context.Background(), provider.ProtonAppSignInTimeout)
+			defer cancel()
+			res, err := provider.ProtonAppSignIn(ctx, machine, func(url string) {
+				s.oauthFlows.setSignInURL(flowID, url)
+			})
+			if err != nil {
+				s.oauthFlows.finish(flowID, nil, "", err.Error())
+				return
+			}
+			s.oauthFlows.finish(flowID, res.Options, res.Email, "")
+		})
+		return
+	}
+
 	// Fail before the flow exists if the client is not installed, so the answer
 	// is a sentence naming the fix rather than a flow that polls its way to the
 	// same news a moment later.
@@ -47,35 +72,7 @@ func (s *Server) handleProtonSignIn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.startLinkSignIn(w, r, cfg, provider.ProtonCLILoginTimeout, func(flowID string) {
-		s.runProtonSignIn(flowID, cfg)
-	})
-}
-
-// handleProtonAppSignIn is the same for Proton Drive through the Android app
-// (provider/protonapp.go): the app does the signing in, against Proton's own
-// sign-in page, and this waits on the app rather than on a client process.
-func (s *Server) handleProtonAppSignIn(w http.ResponseWriter, r *http.Request) {
-	cfg, ok := s.linkSignInConfig(w, r, provider.KindProtonApp, "folder")
-	if !ok {
-		return
-	}
-	if !provider.AppBridgeAvailable() {
-		writeError(w, http.StatusBadRequest,
-			"Proton Drive (this phone) signs in through the SAND Vault Android app, and this server is not running inside it",
-			"PROTON_NO_APP")
-		return
-	}
-	s.startLinkSignIn(w, r, cfg, provider.ProtonAppSignInTimeout, func(flowID string) {
-		ctx, cancel := context.WithTimeout(context.Background(), provider.ProtonAppSignInTimeout)
-		defer cancel()
-		res, err := provider.ProtonAppSignIn(ctx, func(url string) {
-			s.oauthFlows.setSignInURL(flowID, url)
-		})
-		if err != nil {
-			s.oauthFlows.finish(flowID, nil, "", err.Error())
-			return
-		}
-		s.oauthFlows.finish(flowID, res.Options, res.Email, "")
+		s.runProtonSignIn(flowID, cfg, machine)
 	})
 }
 
@@ -179,11 +176,11 @@ func (s *Server) startLinkSignIn(w http.ResponseWriter, r *http.Request, cfg pro
 
 // runProtonSignIn drives the client and records what came of it against the
 // flow, for the browser to pick up on its next poll.
-func (s *Server) runProtonSignIn(flowID string, cfg provider.Config) {
+func (s *Server) runProtonSignIn(flowID string, cfg provider.Config, machine string) {
 	ctx, cancel := context.WithTimeout(context.Background(), provider.ProtonCLILoginTimeout)
 	defer cancel()
 
-	options, err := provider.ProtonCLISignIn(ctx, cfg, func(url string) {
+	options, err := provider.ProtonCLISignIn(ctx, cfg, machine, func(url string) {
 		s.oauthFlows.setSignInURL(flowID, url)
 	})
 	if err != nil {

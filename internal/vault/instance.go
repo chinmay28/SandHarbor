@@ -85,6 +85,9 @@ func (v *Vault) SetInstance(name string) {
 // not seen at the last unlock — and is not counted as here either, though it
 // is still tried (see livesElsewhere): a ping that answers is what claims it.
 func (v *Vault) reachableHere(cfg provider.Config) bool {
+	if perMachine, here, _ := v.signedInHere(cfg); perMachine {
+		return here
+	}
 	if !provider.IsLocal(cfg.Kind) {
 		return true
 	}
@@ -96,7 +99,38 @@ func (v *Vault) reachableHere(cfg provider.Config) bool {
 // never pinged from here — the path would be tried on the wrong machine and
 // the failure would say nothing true about the account.
 func (v *Vault) livesElsewhere(cfg provider.Config) bool {
+	if perMachine, here, _ := v.signedInHere(cfg); perMachine {
+		return !here
+	}
 	return provider.IsLocal(cfg.Kind) && cfg.Host != "" && cfg.Host != v.instance
+}
+
+// signedInHere answers for an account every machine reaches by its own
+// sign-in (provider.Spec.SignedInOn — Proton Drive): whether it is that kind,
+// whether the sign-in it holds is this machine's and usable here, and whose
+// it is. Such an account is reachable here only on this machine's own
+// sign-in; on every other machine it is signed in elsewhere — never pinged,
+// since a sign-in shared between machines would have them spend one
+// single-use refresh token in turn and sign each other out. A sign-in that
+// names no machine predates machine names, and is taken to be this one's.
+func (v *Vault) signedInHere(cfg provider.Config) (perMachine, here bool, on string) {
+	machine, routeHere, perMachine := provider.SignedInOn(cfg)
+	if !perMachine {
+		return false, false, ""
+	}
+	return true, routeHere && (machine == "" || machine == v.instance), machine
+}
+
+// SignInElsewhere reports, for an account this machine could reach with a
+// sign-in of its own but does not hold one for, which machine it is signed in
+// on ("" when none is known). ok is false for every other account. The
+// browser offers "sign in here" from it.
+func (v *Vault) SignInElsewhere(cfg provider.Config) (machine string, ok bool) {
+	perMachine, here, on := v.signedInHere(cfg)
+	if !perMachine || here {
+		return "", false
+	}
+	return on, true
 }
 
 // claimAnswered stamps this machine's name on every unclaimed local account
@@ -167,6 +201,9 @@ func (v *Vault) homeOfLocked(cfg provider.Config) string {
 // awayLocked is the machine an account known to live elsewhere lives on. The
 // caller holds the read lock.
 func (v *Vault) awayLocked(cfg provider.Config) string {
+	if perMachine, here, on := v.signedInHere(cfg); perMachine && !here && on != "" && on != v.instance {
+		return on
+	}
 	if home := v.homeOfLocked(cfg); home != "" && home != v.instance {
 		return home
 	}
@@ -266,12 +303,8 @@ func (v *Vault) Instances() ([]InstanceInfo, error) {
 }
 
 // localRootOf is the folder a local account is reached through on the machine
-// it lives on: the directory field for the folder-backed kinds, and the state
-// directory for Proton's client, whose sign-in lives there.
+// it lives on: the directory field of the folder-backed kinds.
 func localRootOf(cfg provider.Config) string {
-	if cfg.Kind == provider.KindProtonCLI {
-		return provider.ExpandHome(cfg.Option("state_dir"))
-	}
 	return provider.ExpandHome(cfg.Option("path"))
 }
 

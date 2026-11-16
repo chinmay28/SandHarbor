@@ -156,9 +156,15 @@ func (f *fakeBridge) serveSignIn(w http.ResponseWriter, r *http.Request, path st
 	}
 }
 
+// newProtonAppForTest builds a Proton account the way the vault does, on a
+// machine with the app's bridge, holding a session the app made on "phone".
 func newProtonAppForTest(t *testing.T, session string) *protonAppProvider {
 	t.Helper()
-	p, err := New(Config{ID: "acct", Kind: KindProtonApp, Options: map[string]string{"session": session}})
+	stored := ""
+	if session != "" {
+		stored = wrapProtonSession(ProtonRouteApp, "phone", session)
+	}
+	p, err := New(Config{ID: "acct", Kind: KindProtonCLI, Options: map[string]string{"session": stored}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +238,14 @@ func TestProtonAppPassesARefreshedSessionToTheVaultOnce(t *testing.T) {
 	fake, _ := newFakeBridge(t)
 	p := newProtonAppForTest(t, "old")
 	var saved []string
-	p.OnCredentialChange(func(u map[string]string) { saved = append(saved, u["session"]) })
+	p.OnCredentialChange(func(u map[string]string) {
+		// What goes back to the vault is still this machine's, by this route.
+		route, machine, inner := unwrapProtonSession(u["session"], "")
+		if route != ProtonRouteApp || machine != "phone" {
+			t.Errorf("refreshed session tagged %s/%s", route, machine)
+		}
+		saved = append(saved, inner)
+	})
 
 	fake.rotateTo = "new"
 	if err := p.Ping(context.Background()); err != nil {
@@ -297,37 +310,15 @@ func TestProtonAppRefusesKeysOutsideTheFolder(t *testing.T) {
 func TestProtonAppNeedsTheApp(t *testing.T) {
 	t.Setenv(AppBridgeEnv, "")
 	t.Setenv(AppBridgeTokenEnv, "")
-	p := newProtonAppForTest(t, "s")
-	err := p.Ping(context.Background())
+	// The vault never builds this route without the app (proton.go picks the
+	// client's); built anyway, it says why it cannot work.
+	p, err := newProtonAppProvider(Config{Kind: KindProtonCLI}, "s", func(s string) string { return s })
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = p.Ping(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "Android app") {
 		t.Fatalf("Ping without the app = %v", err)
-	}
-}
-
-func TestProtonAppIsOfferedOnlyInsideTheApp(t *testing.T) {
-	offered := func() bool {
-		for _, s := range Specs() {
-			if s.Kind == KindProtonApp {
-				return true
-			}
-		}
-		return false
-	}
-	t.Setenv(AppBridgeEnv, "")
-	t.Setenv(AppBridgeTokenEnv, "")
-	if offered() {
-		t.Fatal("offered on a machine with no app")
-	}
-	if _, ok := SpecFor(KindProtonApp); !ok {
-		t.Fatal("an account already connected must still be known")
-	}
-	if !IsLocal(KindProtonApp) {
-		t.Fatal("the phone's Proton must be local to the phone")
-	}
-	t.Setenv(AppBridgeEnv, "http://127.0.0.1:1")
-	t.Setenv(AppBridgeTokenEnv, "t")
-	if !offered() {
-		t.Fatal("not offered inside the app")
 	}
 }
 
@@ -339,15 +330,16 @@ func TestProtonAppSignIn(t *testing.T) {
 	fake, _ := newFakeBridge(t)
 	fake.signInStates = []string{"pending", "pending", "done"}
 	var link string
-	res, err := ProtonAppSignIn(context.Background(), func(u string) { link = u })
+	res, err := ProtonAppSignIn(context.Background(), "phone", func(u string) { link = u })
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(link, "https://account.proton.me/") {
 		t.Errorf("link = %q", link)
 	}
-	if res.Options["session"] != `{"v":1,"uid":"u"}` || res.Email != "someone@proton.me" {
-		t.Errorf("result = %+v", res)
+	route, machine, inner := unwrapProtonSession(res.Options["session"], "")
+	if route != ProtonRouteApp || machine != "phone" || inner != `{"v":1,"uid":"u"}` || res.Email != "someone@proton.me" {
+		t.Errorf("result = %+v (%s/%s/%s)", res, route, machine, inner)
 	}
 	if fake.polls != 3 {
 		t.Errorf("polled %d times, want 3", fake.polls)
@@ -357,7 +349,7 @@ func TestProtonAppSignIn(t *testing.T) {
 func TestProtonAppSignInFailure(t *testing.T) {
 	fake, _ := newFakeBridge(t)
 	fake.signInStates = []string{"failed"}
-	_, err := ProtonAppSignIn(context.Background(), nil)
+	_, err := ProtonAppSignIn(context.Background(), "phone", nil)
 	if err == nil || !strings.Contains(err.Error(), "the link expired") {
 		t.Fatalf("err = %v", err)
 	}
@@ -371,7 +363,7 @@ func TestProtonAppSignInGivesUp(t *testing.T) {
 	newFakeBridge(t) // pending for ever
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	_, err := ProtonAppSignIn(ctx, nil)
+	_, err := ProtonAppSignIn(ctx, "phone", nil)
 	if err == nil || !strings.Contains(err.Error(), "not finished in time") {
 		t.Fatalf("err = %v", err)
 	}
