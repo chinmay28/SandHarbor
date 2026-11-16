@@ -10,6 +10,60 @@ Each section below is the body of the corresponding GitHub release. A heading
 must name the tag exactly — a tag whose commit builds a different version is a
 tag that shouldn't be published.
 
+## v2026.11.250
+
+**Downloads:** `sand-v2026.11.250-linux-arm64` (the server),
+**`sand-vault.apk`** (SAND Vault for Android — on the phone, open
+`https://github.com/chinmay28/SandHarbor/releases/latest/download/sand-vault.apk`;
+it installs over the previous version) and **`sand-tv.apk`** (the SAND TV app
+for Fire TV). All are in `SHA256SUMS`.
+
+### Make missing thumbnails, for a folder and everything below it
+
+**🗂 Organize and automate → Make missing thumbnails** gives pictures and PDFs
+that arrived without a thumbnail (from the command line, over WebDAV, or before
+thumbnails existed) their picture in one go, without opening each one. It runs
+in the background in the browser tab, with a strip above the file list showing
+progress and a **Stop** button. It now covers the folder it is started on
+**and every folder below it**.
+
+Large folders now keep all their thumbnails. A folder used to keep at most 512,
+so in a bigger folder the files listed last lost theirs as soon as they were
+stored, and running the tool again only made the same pictures again. A folder
+now keeps up to 2,048. In a folder with more than that, the dialog counts the
+files left out instead of drawing pictures that would be dropped. Uploads also
+store all of a request's thumbnails at once instead of rewriting the folder's
+pack once per file.
+
+### SAND Vault for Android: Proton Drive on the phone
+
+A vault running on the phone can use Proton Drive accounts, through Proton's
+own Drive SDK, signing in with a link to Proton's page. A Proton account the
+vault already has from another machine shows **Sign in here**: each machine
+signs in for itself and then reads the same parts. Every APK now carries its
+real release version. This route has not yet been run end to end on a device;
+see `docs/design/proton-android.md`.
+
+### SAND Vault for Android: fits the screen
+
+Settings has its own toolbar and no longer runs under the status bar, and long
+titles wrap instead of being cut off. One switch at the top of Settings, *Run
+the vault on this phone*, moves between a thin client and the full vault, and
+asks for a server address if there is none. The web interface no longer lays out
+wider than the phone, and PDFs no longer redraw in a loop as a scrollbar comes
+and goes.
+
+### Phone header
+
+On phones the header shows a bigger mark and *SAND Vault* on one line, with the
+version in small print beneath it.
+
+### Downloads inside Android WebView apps
+
+Apps that wrap a website in an Android WebView could not save a download ("No
+app on this phone opens that link"). There, **Download** now goes through a
+short-lived link that Android's download manager can fetch.
+
 ## v2026.11.244
 
 **Downloads:** `sand-v2026.11.244-linux-arm64` (the server),
