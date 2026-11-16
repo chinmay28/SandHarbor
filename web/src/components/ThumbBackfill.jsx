@@ -11,9 +11,9 @@ import { formatElapsed } from './ScanProgress'
 /* "Make missing thumbnails", from the organizer, and the strip that carries the
    run once its dialog is closed.
 
-   The dialog plans from the folder's own listing — the files directly in it,
-   not the folders below — and counts what it would do before offering to do
-   it, as every organizer tool does. Starting closes it: the run belongs to the
+   The dialog plans from the folder and every folder below it — one request for
+   the whole tree — and counts what it would do before offering to do it, as
+   every organizer tool does. Starting closes it: the run belongs to the
    page from then on (see thumbJob.js), and the strip above the file list is
    where it shows. */
 
@@ -23,11 +23,16 @@ export function MakeThumbnails({ path, vault = '', onClose }) {
   const job = useThumbJob()
   const [plan, setPlan] = useState(null)
   const [error, setError] = useState(null)
+  const [perFolder, setPerFolder] = useState(0)
 
   useEffect(() => {
     let live = true
-    api.list(path, vault)
-      .then((listing) => { if (live) setPlan(planBackfill(listing, thumbnailKind, MAX_SOURCE_BYTES)) })
+    api.missingThumbs(path, vault)
+      .then((missing) => {
+        if (!live) return
+        setPerFolder(missing?.per_folder || 0)
+        setPlan(planBackfill(missing, thumbnailKind, MAX_SOURCE_BYTES))
+      })
       .catch((err) => { if (live) setError(err.message) })
     return () => { live = false }
   }, [path, vault])
@@ -51,9 +56,9 @@ export function MakeThumbnails({ path, vault = '', onClose }) {
       {plan && (
         <>
           <p style={lead}>
-            Every picture and PDF directly in {here} that has no thumbnail is read back
-            from its clouds, drawn small in this browser, and its thumbnail stored. Folders
-            below are left alone — open one and run this there.
+            Every picture and PDF in {here}, and in every folder below it, that has no
+            thumbnail is read back from its clouds, drawn small in this browser, and its
+            thumbnail stored.
           </p>
 
           {busy ? (
@@ -63,11 +68,13 @@ export function MakeThumbnails({ path, vault = '', onClose }) {
             </Banner>
           ) : plan.files.length === 0 ? (
             <Banner tone="success">
-              Nothing to make — every picture and PDF here already has its thumbnail.
+              Nothing to make — every picture and PDF here and below already has its thumbnail.
             </Banner>
           ) : (
             <Banner tone="info">
-              {plural(plan.files.length, 'file')} here {plan.files.length === 1 ? 'has' : 'have'} no thumbnail.
+              {plural(plan.files.length, 'file')}
+              {plan.folders > 1 ? ` in ${plural(plan.folders, 'folder')}` : ' here'}
+              {plan.files.length === 1 ? ' has' : ' have'} no thumbnail.
             </Banner>
           )}
 
@@ -75,6 +82,14 @@ export function MakeThumbnails({ path, vault = '', onClose }) {
             <p style={note}>
               {plural(plan.tooLarge, 'file')} over {Math.round(MAX_SOURCE_BYTES / (1024 * 1024))} MB
               {plan.tooLarge === 1 ? ' is' : ' are'} left out: drawing a picture that large costs more than the thumbnail is worth.
+            </p>
+          )}
+
+          {plan.overFull > 0 && (
+            <p style={note}>
+              {plural(plan.overFull, 'file')} {plan.overFull === 1 ? 'is' : 'are'} left out: a folder
+              keeps at most {perFolder.toLocaleString()} thumbnails, and the ones past that are the
+              files it lists last.
             </p>
           )}
 

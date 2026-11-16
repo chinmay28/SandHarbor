@@ -306,6 +306,7 @@ unlocked vault; **quiet** is a session check that does not count as use;
 | GET | `/api/stream/{token}/network` | ticket | How the server is connected, for SAND TV's Stats panel |
 | GET · PUT | `/api/files/{id}/thumb` | session | Thumbnail |
 | POST | `/api/thumbs` | session | Store a batch of thumbnails |
+| GET | `/api/thumbs/missing` | session | Files under a folder with no thumbnail |
 | GET | `/api/files/{id}/health` | session | Per-part reachability |
 | POST | `/api/files/{id}/move` | session | Rename or move a file |
 | POST | `/api/files/move` | session | Move a batch |
@@ -866,6 +867,15 @@ and re-encoded as `PUT /api/files/{id}/thumb` does. → `200 {stored, rejected}`
 `rejected` mapping each ID whose picture could not be read to the reason. An ID
 that names no file is skipped. More than 32 parts, or a body that is not
 multipart → `400 BAD_REQUEST`.
+
+#### GET /api/thumbs/missing
+
+`?path=&vault=`. Every file in the folder and in every folder below it that has
+no stored thumbnail, from the index alone, whatever its kind. → `{folders: [{dir,
+room, files}], per_folder}`, one row per folder with something missing, sorted by
+path. `files` is in name order, which is the order a folder's pack keeps
+pictures in once it is full; `room` is how many more it will keep (`per_folder`,
+2048, less what it holds). A folder that does not exist is an error.
 
 #### GET /api/degraded
 

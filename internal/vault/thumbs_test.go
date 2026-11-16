@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -449,4 +450,98 @@ func TestSetThumbsByIDRefusesWhileLocked(t *testing.T) {
 	if _, err := v.SetThumbsByID(context.Background(), map[string][]byte{"x": []byte("y")}); !errors.Is(err, ErrLocked) {
 		t.Errorf("SetThumbsByID locked = %v, want ErrLocked", err)
 	}
+}
+
+// injectFiles records files in the index without storing anything, which is all
+// a thumbnail needs of them: a pack is stored per folder, apart from the files.
+func injectFiles(v *Vault, dir string, n int) []string {
+	ids := make([]string, n)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("%s#%05d", dir, i)
+		v.manifest.Entries = append(v.manifest.Entries, &Entry{
+			ID: ids[i], Dir: dir, Name: fmt.Sprintf("IMG_%05d.JPG", i),
+		})
+	}
+	return ids
+}
+
+// A month of phone photos backfilled a batch at a time keeps every picture. At
+// 512 a pack quietly trimmed the folder's last hundred, and every run after
+// drew them again only for them to be trimmed again.
+func TestBackfillOfALargeFolderKeepsEveryPicture(t *testing.T) {
+	v, _ := newTestVault(t, 3)
+	ctx := context.Background()
+	ids := injectFiles(v, "/", 616)
+
+	for i := 0; i < len(ids); i += 32 {
+		batch := map[string][]byte{}
+		for _, id := range ids[i:min(i+32, len(ids))] {
+			batch[id] = []byte("t")
+		}
+		if _, err := v.SetThumbsByID(ctx, batch); err != nil {
+			t.Fatalf("SetThumbsByID: %v", err)
+		}
+	}
+	if got := len(v.ThumbIDs(MainScope, "/")); got != len(ids) {
+		t.Errorf("%d of %d pictures kept", got, len(ids))
+	}
+	gaps, err := v.MissingThumbs(MainScope, "/")
+	if err != nil {
+		t.Fatalf("MissingThumbs: %v", err)
+	}
+	if len(gaps) != 0 {
+		t.Errorf("MissingThumbs after a full backfill = %d folders, want none", len(gaps))
+	}
+}
+
+// MissingThumbs reports the folder asked about and everything below it, and
+// nothing beside it — and within a folder, in the order a pack keeps them.
+func TestMissingThumbsWalksTheTreeBelow(t *testing.T) {
+	v, _ := newTestVault(t, 3)
+	ctx := context.Background()
+
+	top := injectFiles(v, "/photos", 3)
+	deep := injectFiles(v, "/photos/2024/aug", 2)
+	injectFiles(v, "/photosphere", 1) // shares a prefix, is not below
+	injectFiles(v, "/music", 1)
+
+	if _, err := v.SetThumbsByID(ctx, map[string][]byte{top[1]: []byte("t")}); err != nil {
+		t.Fatalf("SetThumbsByID: %v", err)
+	}
+
+	gaps, err := v.MissingThumbs(MainScope, "/photos")
+	if err != nil {
+		t.Fatalf("MissingThumbs: %v", err)
+	}
+	if len(gaps) != 2 {
+		t.Fatalf("got %d folders, want 2: %+v", len(gaps), gaps)
+	}
+	if gaps[0].Dir != "/photos" || gaps[1].Dir != "/photos/2024/aug" {
+		t.Errorf("folders = %s, %s", gaps[0].Dir, gaps[1].Dir)
+	}
+	if ids := entryIDs(gaps[0].Files); strings.Join(ids, " ") != top[0]+" "+top[2] {
+		t.Errorf("/photos missing %v, want %v", ids, []string{top[0], top[2]})
+	}
+	if gaps[0].Room != MaxPackEntries-1 {
+		t.Errorf("/photos room = %d, want %d", gaps[0].Room, MaxPackEntries-1)
+	}
+	if ids := entryIDs(gaps[1].Files); strings.Join(ids, " ") != strings.Join(deep, " ") {
+		t.Errorf("/photos/2024/aug missing %v, want %v", ids, deep)
+	}
+
+	if _, err := v.MissingThumbs(MainScope, "/nowhere"); err == nil {
+		t.Error("MissingThumbs of a folder that does not exist succeeded")
+	}
+	v.Lock()
+	if _, err := v.MissingThumbs(MainScope, "/"); !errors.Is(err, ErrLocked) {
+		t.Errorf("a locked vault answered %v, want ErrLocked", err)
+	}
+}
+
+func entryIDs(entries []*Entry) []string {
+	out := make([]string, len(entries))
+	for i, e := range entries {
+		out[i] = e.ID
+	}
+	return out
 }

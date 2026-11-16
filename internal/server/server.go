@@ -749,6 +749,8 @@ func (s *Server) Handler() (http.Handler, error) {
 		// A folder's worth of thumbnails in one request, written one pack
 		// per folder. See handleThumbsSet.
 		"POST /api/thumbs": s.handleThumbsSet,
+		// Which files under a folder still want a picture. See handleThumbsMissing.
+		"GET /api/thumbs/missing": s.handleThumbsMissing,
 
 		// The whole folder tree in one answer, which is what choosing a
 		// destination needs — GET /api/files walks one level at a time.

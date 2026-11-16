@@ -220,12 +220,14 @@ sand checksums verify --limit 50  # read no faster than 50 MB/s
 A picture or PDF uploaded through the browser gets its thumbnail at upload. One
 that arrived another way (from the command line, over WebDAV, or before
 thumbnails existed) keeps its icon until somebody opens it. **Make missing
-thumbnails** gives every such file in the folder its picture in one go.
+thumbnails** gives every such file in the folder, and in every folder below it,
+its picture in one go.
 
-It counts the pictures and PDFs **directly in this folder** that have no
-thumbnail, then reads each one back from its clouds, draws it small, and stores
-the thumbnail. Folders below are left alone; open one and run it there. Files
-over 80 MB are left out and counted.
+It counts the pictures and PDFs in this folder **and all its subfolders** that
+have no thumbnail, then reads each one back from its clouds, draws it small, and
+stores the thumbnail. Files over 80 MB are left out and counted. A folder keeps
+at most 2,048 thumbnails; in a folder with more pictures than that, the ones it
+lists last are left out and counted rather than drawn and then dropped.
 
 The dialog closes as soon as the run starts. A strip above the file list shows
 how far it has got, with a **Stop** button, and the pictures appear in the list

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/chinmay28/SandHarbor/internal/thumb"
+	"github.com/chinmay28/SandHarbor/internal/vault"
 )
 
 // samplePNG is what the browser hands the server: a small picture it drew on a
@@ -388,5 +389,76 @@ func TestThumbBatchWantsMultipart(t *testing.T) {
 	w := c.do(http.MethodPost, "/api/thumbs", bytes.NewReader([]byte("{}")), "application/json")
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("a JSON body = %d, want 400", w.Code)
+	}
+}
+
+// The backfill plans from this: every file under a folder that has no picture,
+// folder by folder, with the room each folder's pack has left.
+func TestThumbsMissingCoversTheFolderAndEverythingBelow(t *testing.T) {
+	c := newTestClient(t)
+	c.setup("correct horse battery staple", 3)
+	c.mkdir("/photos")
+	c.mkdir("/photos/aug")
+	c.mkdir("/other")
+
+	pictured := c.uploadWithThumb("a.jpg", "/photos", []byte("a"), samplePNG(t, 8, 8))["id"].(string)
+	bare := c.upload("b.jpg", "/photos", []byte("b"))["id"].(string)
+	deep := c.upload("c.jpg", "/photos/aug", []byte("c"))["id"].(string)
+	c.upload("d.jpg", "/other", []byte("d"))
+
+	w, resp := c.json(http.MethodGet, "/api/thumbs/missing?path=/photos", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/thumbs/missing: %d %v", w.Code, resp)
+	}
+	if per, _ := resp["per_folder"].(float64); int(per) != vault.MaxPackEntries {
+		t.Errorf("per_folder = %v, want %d", resp["per_folder"], vault.MaxPackEntries)
+	}
+	folders, _ := resp["folders"].([]any)
+	got := map[string][]string{}
+	for _, raw := range folders {
+		f := raw.(map[string]any)
+		for _, file := range f["files"].([]any) {
+			got[f["dir"].(string)] = append(got[f["dir"].(string)], file.(map[string]any)["id"].(string))
+		}
+		if dir := f["dir"]; dir == "/photos" {
+			if room, _ := f["room"].(float64); int(room) != vault.MaxPackEntries-1 {
+				t.Errorf("/photos room = %v, want %d", f["room"], vault.MaxPackEntries-1)
+			}
+		}
+	}
+	want := map[string][]string{"/photos": {bare}, "/photos/aug": {deep}}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("missing = %v, want %v (and never %s)", got, want, pictured)
+	}
+
+	if w, _ := c.json(http.MethodGet, "/api/thumbs/missing?path=/nowhere", nil); w.Code == http.StatusOK {
+		t.Error("a folder that does not exist answered 200")
+	}
+}
+
+// Every preview in a many-file upload is kept, now that they are stored
+// together at the end of the request rather than one pack rewrite per file.
+func TestUploadOfManyStoresEveryPreview(t *testing.T) {
+	c := newTestClient(t)
+	c.setup("correct horse battery staple", 3)
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	for i := 0; i < 3; i++ {
+		part, _ := mw.CreateFormFile("files[]", fmt.Sprintf("p%d.jpg", i))
+		part.Write([]byte(fmt.Sprintf("photo %d", i)))
+		thumbPart, _ := mw.CreateFormFile(fmt.Sprintf("thumb-%d", i), "thumb.jpg")
+		thumbPart.Write(samplePNG(t, 16, 16))
+	}
+	mw.WriteField("path", "/")
+	mw.Close()
+
+	w := c.do(http.MethodPost, "/api/files", &buf, mw.FormDataContentType())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("upload: %d %s", w.Code, w.Body.String())
+	}
+	_, listing := c.json(http.MethodGet, "/api/files?path=/", nil)
+	if thumbs, _ := listing["thumbs"].([]any); len(thumbs) != 3 {
+		t.Errorf("listing thumbs = %v, want all three", thumbs)
 	}
 }
