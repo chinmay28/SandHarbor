@@ -10,10 +10,9 @@ import { APP_VERSION } from '../version'
 export function Brand({ size = 'md', inline = false }) {
   const large = size === 'lg'
 
-  /* The phone header's lockup: a bigger mark and the name on one line, and
-     no version. Two lines of text beside a 26px mark made the mark the
-     smallest thing in the row and the version its own column; on a phone the
-     version lives at the foot of the accounts drawer instead.
+  /* The phone header's lockup: a bigger mark, the name, and the version in
+     small print tucked under it — present, but sized as the footnote it is
+     rather than a line competing with the name.
 
      The name scales with the screen rather than being dropped: on a 360px
      phone with the app's own settings button in the row, this is what is
@@ -27,11 +26,22 @@ export function Brand({ size = 'md', inline = false }) {
           aria-hidden="true"
           style={{ width: '34px', height: '34px', borderRadius: '8px', display: 'block', flexShrink: 0 }}
         />
-        <Wordmark
-          fontSize="clamp(12.5px, 4vw, 17px)"
-          tracking="clamp(1px, 0.55vw, 4px)"
-          scriptGap="2px"
-        />
+        <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1, minWidth: 0 }}>
+          <Wordmark
+            fontSize="clamp(12.5px, 4vw, 17px)"
+            tracking="clamp(1px, 0.55vw, 4px)"
+            scriptGap="2px"
+          />
+          <span style={{
+            fontFamily: FONT.mono,
+            fontVariantNumeric: 'tabular-nums',
+            fontSize: '8.5px',
+            letterSpacing: '0.04em',
+            color: COLORS.textMuted,
+            whiteSpace: 'nowrap',
+            marginTop: '1px',
+          }}>{APP_VERSION}</span>
+        </span>
       </span>
     )
   }
