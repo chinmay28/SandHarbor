@@ -7,29 +7,41 @@ import { APP_VERSION } from '../version'
    belongs here rather than in a footer — it's the first thing you want when
    something looks wrong, and it tells you at a glance whether the build you're
    looking at is the one you just deployed. */
-export function Brand({ size = 'md', markOnly = false }) {
+export function Brand({ size = 'md', inline = false }) {
   const large = size === 'lg'
 
-  /* The mark and the version, without the wordmark, for a header with no
-     room to spare: the mark still says which app this is, and the version is
-     what this lockup is for when something looks wrong. */
-  if (markOnly) {
+  /* The phone header's lockup: a bigger mark, the name, and the version in
+     small print tucked under it — present, but sized as the footnote it is
+     rather than a line competing with the name.
+
+     The name scales with the screen rather than being dropped: on a 360px
+     phone with the app's own settings button in the row, this is what is
+     left between the menu button and the controls. */
+  if (inline) {
     return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
         <img
           src="/icon-192.png"
-          alt="SAND Vault"
-          style={{ width: '26px', height: '26px', borderRadius: '6px', display: 'block' }}
+          alt=""
+          aria-hidden="true"
+          style={{ width: '34px', height: '34px', borderRadius: '8px', display: 'block', flexShrink: 0 }}
         />
-        <span style={{
-          fontFamily: FONT.mono,
-          fontVariantNumeric: 'tabular-nums',
-          fontSize: '10px',
-          fontWeight: 500,
-          letterSpacing: '0.05em',
-          color: COLORS.textMuted,
-          whiteSpace: 'nowrap',
-        }}>{APP_VERSION}</span>
+        <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1, minWidth: 0 }}>
+          <Wordmark
+            fontSize="clamp(12.5px, 4vw, 17px)"
+            tracking="clamp(1px, 0.55vw, 4px)"
+            scriptGap="2px"
+          />
+          <span style={{
+            fontFamily: FONT.mono,
+            fontVariantNumeric: 'tabular-nums',
+            fontSize: '8.5px',
+            letterSpacing: '0.04em',
+            color: COLORS.textMuted,
+            whiteSpace: 'nowrap',
+            marginTop: '1px',
+          }}>{APP_VERSION}</span>
+        </span>
       </span>
     )
   }
@@ -70,47 +82,11 @@ export function Brand({ size = 'md', markOnly = false }) {
             The wordmark never wraps, so on a narrow screen it is the thing
             that decides how wide the header has to be — size and tracking come
             down with the viewport rather than pushing everything else off. */}
-        <span style={{
-          display: 'inline-flex',
-          alignItems: 'baseline',
-          fontSize: large ? 'clamp(20px, 6.4vw, 26px)' : 'clamp(13.5px, 4.4vw, 17px)',
-          whiteSpace: 'nowrap',
-        }}>
-          <span style={{
-            fontFamily: FONT.mono,
-            fontWeight: 700,
-            letterSpacing: large ? 'clamp(4px, 1.7vw, 7px)' : 'clamp(2px, 1vw, 4px)',
-            color: COLORS.accent,
-          }}>SAND</span>
-          <span style={{
-            fontFamily: FONT.script,
-            // Scripts sit small for their point size, and a swash can start
-            // left of where the glyph is measured from — hence the size bump
-            // and the room on the left for it to lean into. Tuned against the
-            // face in web/fonts, where this lands the script's x-height near
-            // SAND's cap height without letting it shout the mono down. It is
-            // the one number to touch if the face ever changes — a script with
-            // a smaller x-height wants noticeably more.
-            fontSize: '1.35em',
-            // The size bump would otherwise make this the tallest thing on the
-            // line and push the row's top edge up above SAND's caps, with
-            // nothing but leading in the gap — which is what threw the mark's
-            // centring off. This brings the script's line box back down to the
-            // same height as SAND's (1.35 × 0.85 ≈ 1.15), so the row is as
-            // tall as the name and no taller. The glyphs can overhang it;
-            // nothing here clips.
-            lineHeight: 0.85,
-            fontWeight: 500,
-            // Deliberately not italic. Every face in the stack is already
-            // written on a slant, so asking for italic on top of that makes
-            // the browser synthesise a second one — a script sheared over
-            // again, which is exactly as bad as it sounds.
-            letterSpacing: '0.01em',
-            paddingLeft: '0.08em',
-            marginLeft: large ? '5px' : '3px',
-            color: COLORS.textDim,
-          }}>Vault</span>
-        </span>
+        <Wordmark
+          fontSize={large ? 'clamp(20px, 6.4vw, 26px)' : 'clamp(13.5px, 4.4vw, 17px)'}
+          tracking={large ? 'clamp(4px, 1.7vw, 7px)' : 'clamp(2px, 1vw, 4px)'}
+          scriptGap={large ? '5px' : '3px'}
+        />
         <span style={{
           fontFamily: FONT.mono,
           // Tabular figures so the number doesn't shimmy as the patch count
@@ -123,6 +99,55 @@ export function Brand({ size = 'md', markOnly = false }) {
           marginTop: '2px',
         }}>{APP_VERSION}</span>
       </span>
+    </span>
+  )
+}
+
+/* SAND Vault, in its two hands — see the note in Brand. Sized by whoever
+   places it, since the header, the lock screen and a phone each want it at a
+   different size. */
+function Wordmark({ fontSize, tracking, scriptGap }) {
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'baseline',
+      fontSize,
+      whiteSpace: 'nowrap',
+    }}>
+      <span style={{
+        fontFamily: FONT.mono,
+        fontWeight: 700,
+        letterSpacing: tracking,
+        color: COLORS.accent,
+      }}>SAND</span>
+      <span style={{
+        fontFamily: FONT.script,
+        // Scripts sit small for their point size, and a swash can start
+        // left of where the glyph is measured from — hence the size bump
+        // and the room on the left for it to lean into. Tuned against the
+        // face in web/fonts, where this lands the script's x-height near
+        // SAND's cap height without letting it shout the mono down. It is
+        // the one number to touch if the face ever changes — a script with
+        // a smaller x-height wants noticeably more.
+        fontSize: '1.35em',
+        // The size bump would otherwise make this the tallest thing on the
+        // line and push the row's top edge up above SAND's caps, with
+        // nothing but leading in the gap — which is what threw the mark's
+        // centring off. This brings the script's line box back down to the
+        // same height as SAND's (1.35 × 0.85 ≈ 1.15), so the row is as
+        // tall as the name and no taller. The glyphs can overhang it;
+        // nothing here clips.
+        lineHeight: 0.85,
+        fontWeight: 500,
+        // Deliberately not italic. Every face in the stack is already
+        // written on a slant, so asking for italic on top of that makes
+        // the browser synthesise a second one — a script sheared over
+        // again, which is exactly as bad as it sounds.
+        letterSpacing: '0.01em',
+        paddingLeft: '0.08em',
+        marginLeft: scriptGap,
+        color: COLORS.textDim,
+      }}>Vault</span>
     </span>
   )
 }
