@@ -305,6 +305,7 @@ unlocked vault; **quiet** is a session check that does not count as use;
 | GET | `/stream/{token}`, `/stream/{token}/{name}` | ticket | Play a stream link |
 | GET | `/api/stream/{token}/network` | ticket | How the server is connected, for SAND TV's Stats panel |
 | GET · PUT | `/api/files/{id}/thumb` | session | Thumbnail |
+| POST | `/api/thumbs` | session | Store a batch of thumbnails |
 | GET | `/api/files/{id}/health` | session | Per-part reachability |
 | POST | `/api/files/{id}/move` | session | Rename or move a file |
 | POST | `/api/files/move` | session | Move a batch |
@@ -854,6 +855,16 @@ chunks_sampled?, chunk_count?, replica?}`.
 
 `GET` → `image/jpeg`, or `404 NO_THUMBNAIL`. `PUT` with the JPEG as the body
 stores one → `201 {"status": "stored"}`; `400 BAD_THUMBNAIL`.
+
+#### POST /api/thumbs
+
+Stores up to 32 thumbnails in one request, writing each folder's pack once
+rather than once per picture. The body is `multipart/form-data` with one part per
+picture, each part's form name the ID of the file it pictures. Each is decoded
+and re-encoded as `PUT /api/files/{id}/thumb` does. → `200 {stored, rejected}`,
+`rejected` mapping each ID whose picture could not be read to the reason. An ID
+that names no file is skipped. More than 32 parts, or a body that is not
+multipart → `400 BAD_REQUEST`.
 
 #### GET /api/degraded
 

@@ -191,8 +191,9 @@ function JobStrip({ kind, useJob, title, describe, outcome, changed, mobile, onC
 
 /* A running job: a title, a 3px bar, and the count — and who is still being
    waited on — under the bar, since on a phone there is no room beside the
-   title. A null fraction is a bar that only says "still going". */
-function RunCard({ title, label, detail, fraction }) {
+   title. A null fraction is a bar that only says "still going". `action`, if
+   given, sits at the right — a Stop, for a run this page can stop. */
+export function RunCard({ title, label, detail, fraction, action }) {
   const determinate = typeof fraction === 'number'
   return (
     <div
@@ -233,6 +234,7 @@ function RunCard({ title, label, detail, fraction }) {
           {label}{detail ? ` · ${detail}` : ''}
         </div>
       </div>
+      {action}
     </div>
   )
 }

@@ -746,6 +746,9 @@ func (s *Server) Handler() (http.Handler, error) {
 		"DELETE /api/files/{id}/replica": s.handleReplicaDrop,
 		"GET /api/files/{id}/thumb":      s.handleFileThumb,
 		"PUT /api/files/{id}/thumb":      s.handleFileThumbSet,
+		// A folder's worth of thumbnails in one request, written one pack
+		// per folder. See handleThumbsSet.
+		"POST /api/thumbs": s.handleThumbsSet,
 
 		// The whole folder tree in one answer, which is what choosing a
 		// destination needs — GET /api/files walks one level at a time.

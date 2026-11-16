@@ -92,7 +92,7 @@ them.
 | `◀` `▶` `↑` | Back, Forward and Up through the folders you have walked. Also `Alt+←`, `Alt+→`, `Alt+↑`. The trail is held in memory and goes when the vault locks. |
 | Breadcrumbs | Jump to any folder above this one |
 | `🎬` | Film details for this folder and everything under it; lit when they are on. See [Films](films.md). |
-| `🗂` | **Organize and automate**: tidying, duplicates, corruption checks, checksums, snapshots, and the folder's standing instructions. It lights when the folder has a maintenance policy and turns amber when the last run found something. See [Folder tools](folder-tools.md). |
+| `🗂` | **Organize and automate**: tidying, duplicates, corruption checks, checksums, missing thumbnails, snapshots, and the folder's standing instructions. It lights when the folder has a maintenance policy and turns amber when the last run found something. See [Folder tools](folder-tools.md). |
 | `▦` / `▤` | Grid or list |
 | `⇅` | Sort by name, size, date or kind. Each opens in the direction it is usually wanted and reverses when chosen again; folders always lead. The view and the sort are remembered. |
 | `✓` | Selection mode |
@@ -198,7 +198,10 @@ good for twelve hours (or until the vault locks), for a download manager or
 first page). It is made in the browser at upload and stored like any other data,
 encrypted and split across your accounts, one small pack per folder. A video gets
 one from a frame while you watch it, since nothing can picture a film at upload
-time without decoding it. A film in a films folder gets its poster.
+time without decoding it. A film in a films folder gets its poster. A folder of
+pictures that have none (uploaded from the command line or over WebDAV) gets them
+all at once from `🗂` → **Make missing thumbnails**; see
+[Folder tools](folder-tools.md#making-missing-thumbnails).
 
 ## Auto-lock
 

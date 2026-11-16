@@ -2,8 +2,8 @@
 
 `🗂` in the toolbar (**Organize and automate**) acts on the folder you are
 standing in and everything under it. This page covers its entries: six that tidy
-the tree, three that check whether files still come back right, and two for
-snapshots. It also covers the figures a folder's own menu shows. The two
+the tree, three that check whether files still come back right, one that makes
+missing thumbnails, and two for snapshots. It also covers the figures a folder's own menu shows. The two
 standing instructions at the bottom of the menu have pages of their own:
 
 | Entry | Covered in |
@@ -11,6 +11,7 @@ standing instructions at the bottom of the menu have pages of their own:
 | Flatten into this folder, File into folders by date, Remove empty folders, Remove files by type, Select files by type, Find duplicates | [Tidying a folder](#tidying-a-folder), [Finding duplicates](#finding-duplicates) |
 | Find and fix corrupt files | [Finding corrupt files](#finding-corrupt-files-and-fixing-them) |
 | Check files against their checksums, Calculate missing checksums | [Checksums](#checksums-and-the-ledger) |
+| Make missing thumbnails | [Thumbnails](#making-missing-thumbnails) |
 | Take a snapshot, Restore a snapshot | [Snapshots](#snapshots-of-a-folder) |
 | Look after this folder | [Maintenance](maintenance.md) |
 | Repositories kept here | [Repositories](repositories.md) |
@@ -213,6 +214,28 @@ sand checksums verify /photos     # check files against their checksums
 sand checksums compute /photos    # calculate the missing ones
 sand checksums verify --limit 50  # read no faster than 50 MB/s
 ```
+
+## Making missing thumbnails
+
+A picture or PDF uploaded through the browser gets its thumbnail at upload. One
+that arrived another way (from the command line, over WebDAV, or before
+thumbnails existed) keeps its icon until somebody opens it. **Make missing
+thumbnails** gives every such file in the folder its picture in one go.
+
+It counts the pictures and PDFs **directly in this folder** that have no
+thumbnail, then reads each one back from its clouds, draws it small, and stores
+the thumbnail. Folders below are left alone; open one and run it there. Files
+over 80 MB are left out and counted.
+
+The dialog closes as soon as the run starts. A strip above the file list shows
+how far it has got, with a **Stop** button, and the pictures appear in the list
+as each batch is stored. You can keep browsing, including into other folders,
+while it runs. One runs at a time.
+
+The run happens **in the browser tab**, not on the server, because only a
+browser can decode HEIC photos, honour a photo's rotation, and draw a PDF's first
+page. Closing the tab ends it. Nothing is lost except the pictures not yet sent:
+run it again and it carries on with the files that still have none.
 
 ## Snapshots of a folder
 

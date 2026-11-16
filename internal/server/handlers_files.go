@@ -852,6 +852,86 @@ func (s *Server) handleFileThumbSet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "stored"})
 }
 
+// maxThumbBatch is the most pictures one POST /api/thumbs carries. Each one is
+// normalized in memory, so the cap is what bounds a request at a few dozen
+// small JPEGs; the browser sends a folder's backfill in batches under it.
+const maxThumbBatch = 32
+
+// handleThumbsSet stores a batch of thumbnails at once — what the organizer's
+// "Make missing thumbnails" sends as it works through a folder. The body is
+// multipart/form-data, one part per picture, each part's form name the ID of
+// the file it pictures.
+//
+// It exists because PUT /api/files/{id}/thumb, called once per file, rewrites
+// that folder's whole pack every time — see vault.SetThumbs — and a folder of
+// four hundred photos would be four hundred rewrites of a growing pack. A batch
+// is one rewrite per folder it touches.
+//
+// Each picture is normalized on its own, so one the server cannot read is
+// reported against its ID and the rest are still stored.
+func (s *Server) handleThumbsSet(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxThumbBatch*(thumb.MaxInputBytes+4096))
+
+	mr, err := r.MultipartReader()
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "expected multipart/form-data, one part per thumbnail", "BAD_REQUEST")
+		return
+	}
+
+	normalized := map[string][]byte{}
+	rejected := map[string]string{}
+	parts := 0
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "could not read the thumbnails", "BAD_REQUEST")
+			return
+		}
+		id := part.FormName()
+		if id == "" {
+			part.Close()
+			continue
+		}
+		parts++
+		if parts > maxThumbBatch {
+			part.Close()
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("at most %d thumbnails a request", maxThumbBatch), "BAD_REQUEST")
+			return
+		}
+
+		data, err := io.ReadAll(io.LimitReader(part, thumb.MaxInputBytes+1))
+		part.Close()
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "could not read the thumbnails", "BAD_REQUEST")
+			return
+		}
+		if len(data) > thumb.MaxInputBytes {
+			rejected[id] = fmt.Sprintf("thumbnail is larger than %d bytes", thumb.MaxInputBytes)
+			continue
+		}
+		img, err := thumb.Normalize(data)
+		if err != nil {
+			rejected[id] = err.Error()
+			continue
+		}
+		normalized[id] = img
+	}
+
+	ctx, cancel := contextWithTimeout(r, 5*time.Minute)
+	defer cancel()
+
+	v, _ := s.Vault()
+	stored, err := v.SetThumbsByID(ctx, normalized)
+	if err != nil {
+		vaultErrorResponse(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"stored": stored, "rejected": rejected})
+}
+
 func (s *Server) handleFileDelete(w http.ResponseWriter, r *http.Request) {
 	// Detached: once the erasing has begun the entry is going to leave the
 	// index whether or not the client is still there to hear about it, so

@@ -1133,6 +1133,16 @@ export const api = {
     return true
   }),
 
+  /* Stores a batch of pictures at once — a Map of file id → JPEG blob, at most
+     32 — writing each folder's pack once rather than once a picture. What the
+     organizer's "Make missing thumbnails" sends. Resolves {stored, rejected},
+     rejected naming the ids whose picture the server could not read. */
+  putThumbs: (pictures) => {
+    const form = new FormData()
+    for (const [id, blob] of pictures) form.append(id, blob, 'thumb.jpg')
+    return request('/api/thumbs', { method: 'POST', formData: form })
+  },
+
   /* Film details, for the folders that ask for them.
      ---------------------------------------------------------------------
      Every call here goes to the local server exactly like the rest of this
