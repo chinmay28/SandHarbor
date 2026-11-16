@@ -230,7 +230,7 @@ export function previewKind(mime = '', name = '') {
   if (type.startsWith('audio/')) return 'audio'
   if (type === 'application/pdf') return 'pdf'
   if (type.startsWith('text/') || TEXTUAL.has(type)) return 'text'
-  if (/\.(txt|md|json|ya?ml|toml|ini|conf|log|csv|tsv|go|js|jsx|ts|tsx|py|rs|c|h|cpp|java|rb|sh)$/i.test(name)) {
+  if (/\.(txt|md|json|ya?ml|toml|ini|conf|log|csv|tsv|go|js|jsx|ts|tsx|py|rs|c|h|cpp|java|rb|sh|aae|plist|xml)$/i.test(name)) {
     return 'text'
   }
   return null

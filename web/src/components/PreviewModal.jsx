@@ -18,6 +18,7 @@ import FilmDetails, { FilmSummary, filmLabel } from './FilmDetails'
 import { Banner, Button, Modal, Spinner } from './ui'
 import { ReadFromChoice } from './Replication'
 import { describeCheck } from './CheckFiles'
+import { isSidecar, photoFor } from '../aae'
 
 /* How much of the visible viewport a preview may take before the modal's own
    chrome and the buttons under it start being pushed off. */
@@ -111,6 +112,12 @@ export default function PreviewModal({
     return list
   }, [kind, gallery, file, hasThumb])
   const viewerStart = Math.max(0, images.findIndex((entry) => entry.file.id === file.id))
+
+  /* An Apple edit sidecar is a question about the picture it edits, so that
+     picture is offered first and the property list itself is drawn under it
+     as the text it is. See aae.js. */
+  const sidecar = isSidecar(file.name)
+  const photo = useMemo(() => (sidecar ? photoFor(file.name, gallery) : null), [sidecar, file.name, gallery])
 
   /* Which files the viewer has already stored a picture for, so a slide show
      looping a folder does not upload the same thumbnail every lap. */
@@ -293,6 +300,8 @@ export default function PreviewModal({
         onClose={onClose}
         width={920}
       >
+        {sidecar && <SidecarPhoto photo={photo} mobile={mobile} onOpen={() => onNavigate?.(photo)} />}
+
         <div style={{
           position: 'relative',
           background: COLORS.bg,
@@ -594,6 +603,60 @@ export default function PreviewModal({
         )}
       </Modal>
     </>
+  )
+}
+
+/* The picture an .aae sidecar belongs to, above the sidecar's own text: its
+   thumbnail when it has one, its name, and the way to it. A sidecar whose
+   picture is not in the folder says so rather than leaving the XML to speak
+   for itself. */
+function SidecarPhoto({ photo, mobile, onOpen }) {
+  const box = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    flexWrap: mobile ? 'wrap' : 'nowrap',
+    padding: '10px 12px',
+    marginBottom: '12px',
+    background: COLORS.surfaceRaised,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: '8px',
+    fontFamily: FONT.sans,
+    fontSize: '13px',
+    lineHeight: 1.5,
+    color: COLORS.textMuted,
+  }
+  if (!photo) {
+    return (
+      <div style={box}>
+        <span style={{ fontSize: '22px', opacity: 0.6 }}>🖼</span>
+        <span>
+          Edits Apple Photos made to a picture, which is not in this folder.
+          Keep the two together and opening this shows the picture.
+        </span>
+      </div>
+    )
+  }
+  return (
+    <div style={box}>
+      {photo.hasThumb ? (
+        <img
+          src={api.thumbURL(photo.file.id)}
+          alt=""
+          style={{ width: '56px', height: '56px', objectFit: 'cover', borderRadius: '6px', cursor: 'pointer' }}
+          onClick={onOpen}
+        />
+      ) : <span style={{ fontSize: '22px', opacity: 0.6 }}>🖼</span>}
+      <span style={{ flex: 1, minWidth: 0, wordBreak: 'break-word' }}>
+        Edits Apple Photos made to <strong style={{ color: COLORS.text }}>{photo.file.name}</strong>.
+      </span>
+      <Button
+        variant="primary"
+        onClick={onOpen}
+        title={`Open ${photo.file.name}`}
+        style={mobile ? { flex: 1, justifyContent: 'center' } : null}
+      >🖼 View the photo</Button>
+    </div>
   )
 }
 
