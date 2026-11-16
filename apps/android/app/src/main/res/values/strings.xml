@@ -47,7 +47,9 @@
 
     <!-- Settings -->
     <string name="pref_cat_mode">How the app reaches your vault</string>
-    <string name="pref_mode">Mode</string>
+    <string name="pref_mode_switch">Run the vault on this phone</string>
+    <string name="pref_mode_summary_phone">Full stack: the index, the keys and the clouds are all on this phone. Turn off to open a vault that runs on another machine.</string>
+    <string name="pref_mode_summary_remote">Thin client: the vault runs on another machine and this phone opens it. Turn on to run the whole vault here.</string>
     <string name="pref_cat_remote">Server on another machine</string>
     <string name="pref_address">Server address</string>
     <string name="pref_find">Find servers on this network</string>
@@ -79,12 +81,4 @@
     <string name="status_failed">Not running: exited with status %1$d. See the server log.</string>
     <string name="status_unavailable">No vault server in this build</string>
 
-    <string-array name="mode_entries">
-        <item>Connect to a server (thin client)</item>
-        <item>Run the vault on this phone (full stack)</item>
-    </string-array>
-    <string-array name="mode_values">
-        <item>remote</item>
-        <item>on_phone</item>
-    </string-array>
 </resources>

@@ -66,7 +66,7 @@ no ⚙ button.
 
 | Setting | Mode | What it does |
 |---|---|---|
-| Mode | both | Connect to a server, or run the vault on this phone. Each mode keeps its own settings, so switching back finds them as you left them. |
+| Run the vault on this phone | both | The switch at the top of the settings. On: full stack. Off: thin client, opening a server on another machine — if no address is set yet, the app asks for one as you switch. Each mode keeps its own settings, so switching back finds them as you left them. |
 | Server address, Find servers | thin client | Which server the app opens. |
 | Serve other devices on this network | full stack | Off: only this phone can reach its vault. On: a laptop's browser, SAND TV or another phone on the same Wi-Fi can open it at `http://<phone's address>:8123`, with the vault password. The connection is not encrypted, as with any SAND server on plain HTTP. |
 | Keep running when the app is closed | full stack | Off: the vault stops when you leave the app. On: uploads, scheduled checks and repairs carry on, and other devices can still reach it; a notification says it is running and has a **Stop** button. |

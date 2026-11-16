@@ -7,8 +7,32 @@ import { APP_VERSION } from '../version'
    belongs here rather than in a footer — it's the first thing you want when
    something looks wrong, and it tells you at a glance whether the build you're
    looking at is the one you just deployed. */
-export function Brand({ size = 'md' }) {
+export function Brand({ size = 'md', markOnly = false }) {
   const large = size === 'lg'
+
+  /* The mark and the version, without the wordmark, for a header with no
+     room to spare: the mark still says which app this is, and the version is
+     what this lockup is for when something looks wrong. */
+  if (markOnly) {
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+        <img
+          src="/icon-192.png"
+          alt="SAND Vault"
+          style={{ width: '26px', height: '26px', borderRadius: '6px', display: 'block' }}
+        />
+        <span style={{
+          fontFamily: FONT.mono,
+          fontVariantNumeric: 'tabular-nums',
+          fontSize: '10px',
+          fontWeight: 500,
+          letterSpacing: '0.05em',
+          color: COLORS.textMuted,
+          whiteSpace: 'nowrap',
+        }}>{APP_VERSION}</span>
+      </span>
+    )
+  }
 
   return (
     <span style={{

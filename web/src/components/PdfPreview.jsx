@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { COLORS, FONT } from '../theme'
 import { useIsMobile } from '../hooks'
 import { PDF_OPTIONS, loadPDFJS } from '../pdfjs'
+import { nextFitWidth } from '../fitWidth'
 import { Banner, Spinner } from './ui'
 import ReadStatus from './ReadStatus'
 
@@ -37,10 +38,6 @@ const MAX_CANVAS_PIXELS = 4e6
    for one bigger range beats it asking for four of its default size. */
 const RANGE_CHUNK = 256 * 1024
 
-/* Below this much movement a resize is the scrollbar appearing or a phone's
-   address bar sliding away, and re-rendering the page for it is wasted work. */
-const RESIZE_SLOP = 4
-
 /* The margin around the page, and so what "fits the width" has to leave room
    for: fitting to the viewer's full width instead puts the page's own edge
    under a scrollbar it caused. */
@@ -71,14 +68,13 @@ export default function PdfPreview({ url, name, onFirstPage, watch = '' }) {
 
   /* The width the page is fitted to is the viewer's, measured rather than
      assumed: the modal is one width on a desktop and another on a phone, and
-     both change when the window does. */
+     both change when the window does. Not every change is followed, though:
+     see fitWidth.js for the redraw loop a scrollbar can otherwise start. */
   useLayoutEffect(() => {
     const el = boxRef.current
     if (!el) return
 
-    const measure = () => setWidth((prev) => (
-      Math.abs(el.clientWidth - prev) < RESIZE_SLOP ? prev : el.clientWidth
-    ))
+    const measure = () => setWidth((prev) => nextFitWidth(prev, el.clientWidth))
     measure()
 
     const observer = new ResizeObserver(measure)
@@ -253,6 +249,9 @@ export default function PdfPreview({ url, name, onFirstPage, watch = '' }) {
           overflow: 'auto',
           // A phone scrolls a zoomed page around rather than reflowing it.
           WebkitOverflowScrolling: 'touch',
+          // The viewer's own scrollbar has its room kept whether or not it is
+          // showing, so it appearing never changes the width measured above.
+          scrollbarGutter: 'stable',
           background: COLORS.bg,
         }}
       >

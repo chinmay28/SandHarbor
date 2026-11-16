@@ -223,7 +223,11 @@ class MainActivity : AppCompatActivity() {
             allowContentAccess = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             builtInZoomControls = false
-            loadWithOverviewMode = true
+            // The page is laid out for the phone (its viewport tag says
+            // device-width). Overview mode would instead zoom out to whatever
+            // is widest on it, so a single element a few pixels too wide
+            // rescaled the whole app and set every width on it moving.
+            loadWithOverviewMode = false
             useWideViewPort = true
         }
         // The page reads "Android" in the user agent to hand films to VLC.

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { COLORS, FONT, assignAccountColors, formatBytes } from './theme'
-import { useIsMobile } from './hooks'
+import { useIsMobile, useMediaQuery } from './hooks'
 import { useNavigator } from './navigation'
 import { api } from './api'
 import LockScreen from './components/LockScreen'
@@ -20,6 +20,10 @@ import { Brand, DevMark } from './components/Brand'
 import { Banner, Button } from './components/ui'
 import { UnlockSubVault } from './components/SubVaults'
 import { setCurrentKey } from './keys'
+
+/* Below this the header's controls and the full wordmark do not fit side by
+   side, and the wordmark makes way. */
+const CRAMPED_QUERY = '(max-width: 400px)'
 
 /* Where the sub vault view preference lives in this browser: the blanket
    answer, and the sub vaults that have been decided one at a time. Neither is
@@ -109,6 +113,9 @@ export default function App() {
   const [subVaultChoices, setSubVaultChoices] = useState(loadSubVaultChoices)
 
   const mobile = useIsMobile()
+  /* Narrower than the header's controls plus the full wordmark — a 360px
+     phone, once the Android app's own settings button joins the row. */
+  const cramped = useMediaQuery(CRAMPED_QUERY)
   const unlocked = !!status?.unlocked
   const subVaults = status?.sub_vaults || []
 
@@ -450,10 +457,10 @@ export default function App() {
         <header style={{
           display: 'flex',
           alignItems: 'center',
-          // Tighter on a phone than it looks like it wants to be: the three
-          // header controls are now full 44px targets, and the room for them
-          // comes out of the spacing between them.
-          gap: mobile ? '6px' : '14px',
+          // Tighter on a phone than it looks like it wants to be: the header
+          // controls are full 44px targets, which already keeps them apart,
+          // and the room for them comes out of the spacing between them.
+          gap: mobile ? '2px' : '14px',
           padding: mobile ? '8px 10px' : '10px 20px',
           borderBottom: `1px solid ${COLORS.border}`,
           background: COLORS.surface,
@@ -478,7 +485,13 @@ export default function App() {
               : { fontSize: '15px', padding: '4px 10px' }}
           >☰</Button>
 
-          <Brand />
+          {/* The one thing in the row that may give way. Everything else is a
+              control, and a control pushed off the right-hand edge is one
+              nobody can reach — which is how the lock button went missing
+              in the Android app. */}
+          <span style={{ minWidth: 0, flexShrink: 1, overflow: 'hidden', display: 'flex' }}>
+            <Brand markOnly={cramped} />
+          </span>
 
           {/* The tagline is the first thing to go: on a phone it can only wrap
               into a column beside the wordmark. */}
@@ -897,6 +910,13 @@ function Shell({ children }) {
         }
         @supports (height: 100dvh) { :root { --app-height: 100dvh; } }
         html { -webkit-text-size-adjust: 100%; }
+        /* Nothing may make the page wider than the screen. On a phone —
+           Chrome, and the Android app's web view above all — one element too
+           wide does not just scroll sideways: the layout viewport grows to
+           fit it, so every dialog, the PDF viewer among them, is laid out
+           wider than the glass and gets re-measured as that settles. Clipped
+           here so a stray overflow costs a few pixels, not the layout. */
+        html, body { overflow-x: hidden; }
         /* WebKit draws its own clear button inside a search field, which would
            sit on top of the app's — and only appears in that one browser. */
         input[type="search"]::-webkit-search-cancel-button,
