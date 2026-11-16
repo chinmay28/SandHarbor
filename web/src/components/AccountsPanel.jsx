@@ -14,6 +14,7 @@ import { RekeyCard } from './Rekey'
 import ReclaimVault from './ReclaimVault'
 import VaultSettings from './VaultSettings'
 import { DevMark } from './Brand'
+import { APP_VERSION } from '../version'
 
 /* One number and the word for what it counts. The figure carries the weight —
    it is what someone glances down here to read — and the label under it is
@@ -485,10 +486,19 @@ export default function AccountsPanel({
           />
         </div>
 
-        {/* Turned out of the header on a phone, it lands here. */}
+        {/* Turned out of the header on a phone, these land here: the
+            developer mark, and the version the phone's one-line lockup has
+            no room for. */}
         {mobile && (
-          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '18px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', marginTop: '18px' }}>
             <DevMark bare />
+            <span style={{
+              fontFamily: FONT.mono,
+              fontVariantNumeric: 'tabular-nums',
+              fontSize: '11px',
+              letterSpacing: '0.05em',
+              color: COLORS.textMuted,
+            }}>SAND Vault {APP_VERSION}</span>
           </div>
         )}
       </div>
