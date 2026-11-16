@@ -23,7 +23,7 @@ const JPEG_QUALITY = 0.8
 
 /* Past this, decoding the source costs more than the picture is worth on a
    phone. The file still uploads; it just keeps its icon. */
-const MAX_SOURCE_BYTES = 80 * 1024 * 1024
+export const MAX_SOURCE_BYTES = 80 * 1024 * 1024
 
 /* Which files get a picture. Everything else — audio, text, archives — is
    better served by the glyph it already has. */

@@ -3107,6 +3107,60 @@ class TestChecksums:
         expect(dialog.get_by_role("button", name="Calculate 0 checksums")).to_be_disabled()
 
 
+class TestMakeMissingThumbnails:
+    """Organize and automate → Make missing thumbnails gives a folder's pictures
+    theirs without opening each one.
+
+    The files go in through the API with no picture, which is what the command
+    line and WebDAV leave behind.
+    """
+
+    def test_the_folder_gets_its_pictures_in_the_background(self, app):
+        make_folder(app, "unpictured")
+        pictures = [list(png_bytes(40, 30, rgb)) for rgb in ((200, 40, 40), (40, 200, 40))]
+        app.evaluate(
+            """async (pics) => {
+                 const files = [...pics.map((b, i) => [`shot${i}.png`, new Uint8Array(b), 'image/png']),
+                                ['readme.txt', new TextEncoder().encode('words'), 'text/plain']]
+                 for (const [name, bytes, type] of files) {
+                   const form = new FormData()
+                   form.append('files[]', new Blob([bytes], { type }), name)
+                   form.append('path', '/unpictured')
+                   const resp = await fetch('/api/files', { method: 'POST', body: form })
+                   if (!resp.ok) throw new Error(await resp.text())
+                 }
+               }""",
+            pictures,
+        )
+        app.get_by_text("unpictured").first.click()
+        app.wait_for_load_state("networkidle")
+        app.get_by_text("shot0.png").first.wait_for(timeout=20000)
+
+        def thumbs():
+            return app.evaluate(
+                "async () => (await (await fetch('/api/files?path=/unpictured')).json()).thumbs || []")
+
+        assert thumbs() == []
+
+        app.locator('button[aria-label="Organize and automate this folder"]').click()
+        app.get_by_role("button", name=re.compile("Make missing thumbnails")).click()
+        dialog = app.get_by_role("dialog", name="Make missing thumbnails")
+        expect(dialog.get_by_text("2 files here have no thumbnail.")).to_be_visible(timeout=20000)
+        dialog.get_by_role("button", name="Make 2 thumbnails").click()
+
+        # The dialog is gone the moment the run starts; the strip says how it went.
+        expect(dialog).to_have_count(0)
+        expect(app.get_by_text("2 thumbnails made in /unpictured.")).to_be_visible(timeout=60000)
+        assert len(thumbs()) == 2
+        expect(app.locator('img[src*="/thumb"]')).to_have_count(2, timeout=20000)
+
+        # Pressed again, there is nothing left to do.
+        app.locator('button[aria-label="Organize and automate this folder"]').click()
+        app.get_by_role("button", name=re.compile("Make missing thumbnails")).click()
+        dialog = app.get_by_role("dialog", name="Make missing thumbnails")
+        expect(dialog.get_by_text(re.compile("Nothing to make"))).to_be_visible(timeout=20000)
+
+
 class TestHEICPictures:
     """A HEIC photograph opens in a browser that cannot decode HEIC.
 

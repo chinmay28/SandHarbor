@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -299,5 +300,93 @@ func TestAFolderPictureMustBeSomethingInsideTheFolder(t *testing.T) {
 	_, listing := c.json(http.MethodGet, "/api/files?path=/", nil)
 	if art, _ := listing["folder_art"].(map[string]any); art["/films"] != nil {
 		t.Errorf("a folder with nothing picturable inside it offers something: %v", art["/films"])
+	}
+}
+
+// postThumbs sends a batch of pictures the way the organizer's backfill does:
+// one multipart part per picture, named by the ID of the file it pictures.
+func (c *testClient) postThumbs(pictures map[string][]byte) (int, map[string]any) {
+	c.t.Helper()
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	for id, data := range pictures {
+		part, err := mw.CreateFormFile(id, "thumb.jpg")
+		if err != nil {
+			c.t.Fatalf("CreateFormFile: %v", err)
+		}
+		part.Write(data)
+	}
+	mw.Close()
+
+	w := c.do(http.MethodPost, "/api/thumbs", &buf, mw.FormDataContentType())
+	var resp map[string]any
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	return w.Code, resp
+}
+
+func TestThumbBatchStoresEachAndReportsTheRest(t *testing.T) {
+	c := newTestClient(t)
+	c.setup("correct horse battery staple", 3)
+
+	good := c.upload("good.jpg", "/", []byte("a photo"))["id"].(string)
+	also := c.upload("also.png", "/", []byte("another"))["id"].(string)
+	bad := c.upload("bad.jpg", "/", []byte("a third"))["id"].(string)
+
+	code, resp := c.postThumbs(map[string][]byte{
+		good: samplePNG(t, 640, 480),
+		also: samplePNG(t, 64, 64),
+		bad:  []byte("not an image at all"),
+	})
+	if code != http.StatusOK {
+		t.Fatalf("POST /api/thumbs: %d %v", code, resp)
+	}
+	if stored, _ := resp["stored"].(float64); stored != 2 {
+		t.Errorf("stored = %v, want 2", resp["stored"])
+	}
+	rejected, _ := resp["rejected"].(map[string]any)
+	if _, ok := rejected[bad]; !ok || len(rejected) != 1 {
+		t.Errorf("rejected = %v, want only %s", rejected, bad)
+	}
+
+	for _, id := range []string{good, also} {
+		w := c.do(http.MethodGet, "/api/files/"+id+"/thumb", nil, "")
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET thumb %s: %d %s", id, w.Code, w.Body.String())
+		}
+		img, err := jpeg.Decode(bytes.NewReader(w.Body.Bytes()))
+		if err != nil {
+			t.Fatalf("stored thumbnail is not a JPEG: %v", err)
+		}
+		if b := img.Bounds(); b.Dx() > thumb.Size || b.Dy() > thumb.Size {
+			t.Errorf("stored thumbnail is %dx%d, over %d", b.Dx(), b.Dy(), thumb.Size)
+		}
+	}
+	if w := c.do(http.MethodGet, "/api/files/"+bad+"/thumb", nil, ""); w.Code != http.StatusNotFound {
+		t.Errorf("GET thumb of the rejected one: %d, want 404", w.Code)
+	}
+}
+
+func TestThumbBatchRefusesMoreThanTheCap(t *testing.T) {
+	c := newTestClient(t)
+	c.setup("correct horse battery staple", 3)
+
+	tiny := samplePNG(t, 2, 2)
+	pictures := map[string][]byte{}
+	for i := 0; i <= maxThumbBatch; i++ {
+		pictures[fmt.Sprintf("id-%d", i)] = tiny
+	}
+	if code, _ := c.postThumbs(pictures); code != http.StatusBadRequest {
+		t.Errorf("a batch over the cap = %d, want 400", code)
+	}
+}
+
+func TestThumbBatchWantsMultipart(t *testing.T) {
+	c := newTestClient(t)
+	c.setup("correct horse battery staple", 3)
+
+	w := c.do(http.MethodPost, "/api/thumbs", bytes.NewReader([]byte("{}")), "application/json")
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("a JSON body = %d, want 400", w.Code)
 	}
 }

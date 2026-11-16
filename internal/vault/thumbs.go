@@ -243,6 +243,67 @@ func (v *Vault) SetThumbs(ctx context.Context, scope Scope, dir string, thumbs m
 	return v.savePack(ctx, scope, dir, next)
 }
 
+// SetThumbsByID stores a batch of thumbnails named only by file ID, writing
+// each folder's pack once however many of the batch it holds. It is what a
+// caller that made pictures for a folder's files — the browser, backfilling a
+// folder from the organizer — sends, without knowing or caring which vault or
+// folder each file is filed in.
+//
+// It reports how many were stored. IDs that name no file are skipped rather
+// than refused, as SetThumbs skips strays: a file deleted while its picture was
+// being made should not throw away the rest of the batch. A pack that cannot be
+// written fails the call, with the folders written before it kept.
+func (v *Vault) SetThumbsByID(ctx context.Context, thumbs map[string][]byte) (int, error) {
+	type folder struct {
+		scope Scope
+		dir   string
+	}
+
+	v.mu.RLock()
+	if v.dataKey == nil {
+		v.mu.RUnlock()
+		return 0, ErrLocked
+	}
+	groups := map[folder]map[string][]byte{}
+	for id, data := range thumbs {
+		if len(data) == 0 || len(data) > MaxThumbBytes {
+			continue
+		}
+		scope, entry, ok := v.scopeOfEntryLocked(id)
+		if !ok {
+			continue
+		}
+		key := folder{scope, entry.Dir}
+		if groups[key] == nil {
+			groups[key] = map[string][]byte{}
+		}
+		groups[key][id] = data
+	}
+	v.mu.RUnlock()
+
+	// In a fixed order, so a failure partway leaves the same folders written
+	// whichever way the map happened to iterate.
+	keys := make([]folder, 0, len(groups))
+	for key := range groups {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].scope != keys[j].scope {
+			return keys[i].scope < keys[j].scope
+		}
+		return keys[i].dir < keys[j].dir
+	})
+
+	stored := 0
+	for _, key := range keys {
+		if err := v.SetThumbs(ctx, key.scope, key.dir, groups[key]); err != nil {
+			return stored, err
+		}
+		stored += len(groups[key])
+	}
+	return stored, nil
+}
+
 // trimPack keeps a pack under the entry ceiling, dropping the thumbnails of
 // whichever files are no longer in the folder first and then the ones the
 // folder lists last. keep is never dropped — it is the one just stored.

@@ -10,6 +10,7 @@ import { FolderRepos } from './FolderRepos'
 import CheckFiles from './CheckFiles'
 import Checksums from './Checksums'
 import Snapshots from './Snapshots'
+import { MakeThumbnails } from './ThumbBackfill'
 
 /* Everything you do to a folder rather than to a row in it.
 
@@ -42,6 +43,13 @@ import Snapshots from './Snapshots'
                      checksum, paced and pausable. And Calculate missing
                      checksums, for the files that have none. See
                      Checksums.jsx.
+
+   One fills in what the listing is missing:
+
+     · Make missing thumbnails — read back every picture and PDF directly in
+                     this folder that has no thumbnail, draw one here in the
+                     browser, and store it. It runs in the background, in this
+                     tab, while the folder is browsed. See ThumbBackfill.jsx.
 
    Two put the folder somewhere else whole, and bring it back:
 
@@ -130,7 +138,7 @@ export function OrganizerMenu({ path, automation, repoCount = 0, onClose, onPick
   return (
     <ActionSheet
       title="Organize and automate"
-      subtitle={`Six ways to tidy ${here} and everything under it, each counting what it would do before it does any of it — three ways to ask whether the files there still come back right — a snapshot of it all to take or to restore — and two standing instructions that keep going afterwards.`}
+      subtitle={`Six ways to tidy ${here} and everything under it, each counting what it would do before it does any of it — three ways to ask whether the files there still come back right — thumbnails for the pictures that have none — a snapshot of it all to take or to restore — and two standing instructions that keep going afterwards.`}
       onClose={onClose}
       items={[
         {
@@ -195,6 +203,13 @@ export function OrganizerMenu({ path, automation, repoCount = 0, onClose, onPick
           label: 'Calculate missing checksums',
           hint: 'Give a checksum to every file under here that has none, and list them all in checksums.gz',
           onSelect: () => onPick('sums-compute'),
+        },
+        {
+          key: 'thumbs',
+          glyph: '🖼',
+          label: 'Make missing thumbnails',
+          hint: 'Draw a thumbnail for every picture and PDF in this folder that has none — in the background, while you keep browsing',
+          onSelect: () => onPick('thumbs'),
         },
         {
           key: 'snap-take',
@@ -274,7 +289,8 @@ export function OrganizerTool({ tool, path, vault, providers = [], onClose, onDo
   const bydate = tool === 'bydate'
   const sums = tool === 'sums-verify' || tool === 'sums-compute'
   const snaps = tool === 'snap-take' || tool === 'snap-restore'
-  const standing = tool === 'automate' || tool === 'repos' || tool === 'check' || sums || snaps
+  const thumbs = tool === 'thumbs'
+  const standing = tool === 'automate' || tool === 'repos' || tool === 'check' || sums || snaps || thumbs
 
   useEffect(() => {
     if (dupes || bydate || standing) return undefined
@@ -330,6 +346,14 @@ export function OrganizerTool({ tool, path, vault, providers = [], onClose, onDo
         onChanged={onDone}
       />
     )
+  }
+
+  /* The thumbnail backfill reads the folder's own listing, which says which
+     files already have a picture — a survey does not. Its dialog closes as the
+     run starts, and the strip over the file list refreshes the listing as the
+     pictures land, so it has no onDone of its own to call. */
+  if (thumbs) {
+    return <MakeThumbnails path={path} vault={vault} onClose={onClose} />
   }
 
   if (tool === 'repos') {

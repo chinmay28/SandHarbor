@@ -336,3 +336,117 @@ func TestDeleteManyDropsTheThumbnailsOfTheBatch(t *testing.T) {
 		t.Errorf("ThumbIDs = %v, want [%s]", ids, keep.ID)
 	}
 }
+
+// A batch named only by ID lands in each file's own folder and vault, every
+// picture readable afterwards, and the IDs that name nothing are let go.
+func TestSetThumbsByIDFilesEachPictureWhereItsFileIs(t *testing.T) {
+	v, _ := newTestVault(t, 3)
+	ctx := context.Background()
+
+	upload := func(scope Scope, dir, name string) string {
+		t.Helper()
+		entry, _, err := v.Upload(ctx, scope, dir, name, []byte(name), UploadOptions{})
+		if err != nil {
+			t.Fatalf("Upload %s: %v", name, err)
+		}
+		return entry.ID
+	}
+	sub := Scope(createSubVault(t, v, "private", subPassword))
+	if err := v.Mkdirs(MainScope, []string{"/album"}); err != nil {
+		t.Fatalf("Mkdirs: %v", err)
+	}
+
+	here := upload(MainScope, "/", "here.jpg")
+	there := upload(MainScope, "/album", "there.jpg")
+	hidden := upload(sub, "/", "hidden.jpg")
+
+	stored, err := v.SetThumbsByID(ctx, map[string][]byte{
+		here:      []byte("here-thumb"),
+		there:     []byte("there-thumb"),
+		hidden:    []byte("hidden-thumb"),
+		"no-such": []byte("stray"),
+		"":        []byte("blank"),
+	})
+	if err != nil {
+		t.Fatalf("SetThumbsByID: %v", err)
+	}
+	if stored != 3 {
+		t.Errorf("stored = %d, want 3", stored)
+	}
+
+	for id, want := range map[string]string{here: "here-thumb", there: "there-thumb", hidden: "hidden-thumb"} {
+		got, err := v.Thumb(ctx, id)
+		if err != nil {
+			t.Errorf("Thumb(%s): %v", id, err)
+			continue
+		}
+		if string(got) != want {
+			t.Errorf("Thumb(%s) = %q, want %q", id, got, want)
+		}
+	}
+	if ids := v.ThumbIDs(MainScope, "/album"); len(ids) != 1 || ids[0] != there {
+		t.Errorf("ThumbIDs(/album) = %v, want [%s]", ids, there)
+	}
+	if ids := v.ThumbIDs(sub, "/"); len(ids) != 1 || ids[0] != hidden {
+		t.Errorf("ThumbIDs(sub /) = %v, want [%s]", ids, hidden)
+	}
+}
+
+// A second batch into the same folder adds to the pack rather than replacing
+// it, which is what lets a long backfill go up a few dozen at a time.
+func TestSetThumbsByIDKeepsWhatThePackAlreadyHeld(t *testing.T) {
+	v, _ := newTestVault(t, 3)
+	ctx := context.Background()
+
+	var ids []string
+	for _, name := range []string{"one.jpg", "two.jpg", "three.jpg"} {
+		entry, _, err := v.Upload(ctx, MainScope, "/", name, []byte(name), UploadOptions{})
+		if err != nil {
+			t.Fatalf("Upload: %v", err)
+		}
+		ids = append(ids, entry.ID)
+	}
+
+	if _, err := v.SetThumbsByID(ctx, map[string][]byte{ids[0]: []byte("1")}); err != nil {
+		t.Fatalf("first batch: %v", err)
+	}
+	if _, err := v.SetThumbsByID(ctx, map[string][]byte{ids[1]: []byte("2"), ids[2]: []byte("3")}); err != nil {
+		t.Fatalf("second batch: %v", err)
+	}
+	if got := v.ThumbIDs(MainScope, "/"); len(got) != 3 {
+		t.Errorf("ThumbIDs = %v, want all three", got)
+	}
+}
+
+// Oversized and empty pictures are skipped, not stored and not counted.
+func TestSetThumbsByIDSkipsWhatIsNotAThumbnail(t *testing.T) {
+	v, _ := newTestVault(t, 3)
+	ctx := context.Background()
+
+	entry, _, err := v.Upload(ctx, MainScope, "/", "photo.jpg", []byte("x"), UploadOptions{})
+	if err != nil {
+		t.Fatalf("Upload: %v", err)
+	}
+	stored, err := v.SetThumbsByID(ctx, map[string][]byte{entry.ID: make([]byte, MaxThumbBytes+1)})
+	if err != nil {
+		t.Fatalf("SetThumbsByID: %v", err)
+	}
+	if stored != 0 {
+		t.Errorf("stored = %d, want 0", stored)
+	}
+	if _, err := v.Thumb(ctx, entry.ID); !errors.Is(err, ErrNoThumb) {
+		t.Errorf("Thumb = %v, want ErrNoThumb", err)
+	}
+
+	if stored, err := v.SetThumbsByID(ctx, nil); err != nil || stored != 0 {
+		t.Errorf("empty batch = %d, %v; want 0, nil", stored, err)
+	}
+}
+
+func TestSetThumbsByIDRefusesWhileLocked(t *testing.T) {
+	v, _ := newTestVault(t, 3)
+	v.Lock()
+	if _, err := v.SetThumbsByID(context.Background(), map[string][]byte{"x": []byte("y")}); !errors.Is(err, ErrLocked) {
+		t.Errorf("SetThumbsByID locked = %v, want ErrLocked", err)
+	}
+}
