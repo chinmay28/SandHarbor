@@ -43,6 +43,11 @@ const (
 	// for why one service has two backends.
 	KindProtonCLI Kind = "protoncli"
 
+	// Proton Drive a third way: through the SAND Vault Android app, which
+	// carries Proton's own Drive SDK, for a vault running on the phone. See
+	// protonapp.go.
+	KindProtonApp Kind = "protonapp"
+
 	// The rest of the synced-folder backends, registered from one table in
 	// syncfolder.go.
 	KindMega       Kind = "mega"
@@ -666,6 +671,16 @@ type Spec struct {
 	// Order sorts the backends in the connect dialog: the ones you sign in to
 	// first, then the ones needing credentials, then the ones on disk.
 	Order int `json:"-"`
+
+	// Offered, when set, says whether the connect dialog lists this backend
+	// on this machine. Nil means everywhere, which is right for almost every
+	// backend: one that needs something installed fails its Ping with the fix
+	// rather than vanishing (see protoncli.go). This is for the other kind —
+	// a backend that only exists inside one app, like Proton Drive through
+	// the Android app, where offering it on a Raspberry Pi would be offering
+	// something that cannot be had there at all. An account already connected
+	// is unaffected: SpecFor and New still know the kind.
+	Offered func() bool `json:"-"`
 }
 
 // IsLocal reports whether accounts of this kind live on one machine (see
@@ -724,14 +739,17 @@ func Register(spec Spec, factory func(Config) (Provider, error)) {
 	registry[spec.Kind] = registration{spec: spec, factory: factory}
 }
 
-// Specs returns every registered backend spec, in the order the connect dialog
-// should offer them.
+// Specs returns every registered backend spec this machine offers (see
+// Spec.Offered), in the order the connect dialog should offer them.
 func Specs() []Spec {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 
 	out := make([]Spec, 0, len(registry))
 	for _, reg := range registry {
+		if reg.spec.Offered != nil && !reg.spec.Offered() {
+			continue
+		}
 		out = append(out, reg.spec.resolved())
 	}
 	sort.Slice(out, func(i, j int) bool {
