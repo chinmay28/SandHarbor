@@ -31,6 +31,11 @@ jobs:
         working-directory: apps/firetv
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The APK is versioned vYEAR.MONTH.PATCH with PATCH the commit
+          # count (apps/sand-version.gradle.kts); a shallow checkout has no
+          # real count and builds as patch 0.
+          fetch-depth: 0
 
       - uses: actions/setup-java@v4
         with:

@@ -20,6 +20,7 @@
  *   node scripts/version.mjs            # print e.g. v2026.10.311
  *   node scripts/version.mjs --patch    # print just the commit count (311)
  *   node scripts/version.mjs --date     # print the commit's month (2026-10), for version.Date
+ *   node scripts/version.mjs --all      # all three, one per line: version, patch, month
  *   import { appVersion } from './scripts/version.mjs'
  */
 import { execFileSync } from 'node:child_process';
@@ -105,17 +106,26 @@ export function commitCount() {
  * Note `--patch` / commitCount() and `--date` / commitMonth() stay bare: those
  * feed `-ldflags -X` as the values of `version.Patch` and `version.Date`.
  */
-export function appVersion() {
+export function appVersion(patch = commitCount()) {
   const { year, month } = yearMonth();
-  return `v${year}.${month}.${commitCount()}`;
+  return `v${year}.${month}.${patch}`;
+}
+
+/** Version, patch and month together, asking git for the count once. */
+function allParts() {
+  const patch = commitCount();
+  return [appVersion(patch), patch, commitMonth()];
 }
 
 // Invoked directly (by the build scripts), print rather than export.
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  // --all is for builds that need every part and should ask git once: the
+  // Android apps' Gradle builds (apps/sand-version.gradle.kts).
   process.stdout.write(
-    process.argv.includes('--patch') ? commitCount()
-      : process.argv.includes('--date') ? commitMonth()
-        : appVersion(),
+    process.argv.includes('--all') ? allParts().join('\n')
+      : process.argv.includes('--patch') ? commitCount()
+        : process.argv.includes('--date') ? commitMonth()
+          : appVersion(),
   );
   process.stdout.write('\n');
 }

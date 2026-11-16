@@ -14,6 +14,13 @@ plugins {
 //                                 emulator); arm64-v8a by default
 //   -PsandGo=/path/to/go          the go command, if it is not on PATH
 val repoRoot = rootProject.projectDir.resolve("../..").canonicalFile
+
+// vYEAR.MONTH.PATCH from git on every build, or the release's -P values.
+apply(from = rootProject.file("../sand-version.gradle.kts"))
+val sandVersionName = extra["sandVersionName"] as String
+val sandVersionCode = extra["sandVersionCode"] as Int
+val sandServerPatch = extra["sandServerPatch"] as String
+val sandVersionDate = extra["sandVersionDate"] as String
 val withServer = (findProperty("sandServer") as String?) != "false"
 val serverAbis = ((findProperty("sandServerAbis") as String?) ?: "arm64-v8a")
     .split(',').map { it.trim() }.filter { it.isNotEmpty() }
@@ -41,10 +48,11 @@ android {
         // file needs no storage permission.
         minSdk = 29
         targetSdk = 35
-        // Stamped by the release workflow as SAND TV is: the release's
-        // version as the name, its commit count as the code.
-        versionCode = (findProperty("sandVersionCode") as String?)?.toInt() ?: 1
-        versionName = (findProperty("sandVersionName") as String?) ?: "dev"
+        // The release's version as the name and its commit count as the
+        // code — on every build, not only the release workflow's; see
+        // apps/sand-version.gradle.kts.
+        versionCode = sandVersionCode
+        versionName = sandVersionName
         buildConfigField("boolean", "HAS_SERVER", withServer.toString())
     }
 
@@ -94,8 +102,9 @@ android {
 }
 
 if (withServer) {
-    val version = (findProperty("sandVersionCode") as String?) ?: "0"
-    val date = (findProperty("sandVersionDate") as String?) ?: ""
+    // The server in the APK reports the version the APK does.
+    val version = sandServerPatch
+    val date = sandVersionDate
     val versionPkg = "github.com/chinmay28/SandHarbor/internal/version"
     val buildAll = tasks.register("buildSandServer")
     for (abi in serverAbis) {

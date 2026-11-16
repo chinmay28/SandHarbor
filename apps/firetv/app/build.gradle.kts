@@ -3,6 +3,11 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// vYEAR.MONTH.PATCH from git on every build, or the release's -P values.
+apply(from = rootProject.file("../sand-version.gradle.kts"))
+val sandVersionName = extra["sandVersionName"] as String
+val sandVersionCode = extra["sandVersionCode"] as Int
+
 android {
     namespace = "com.sandvault.tv"
     compileSdk = 35
@@ -12,12 +17,12 @@ android {
         // Fire OS 5 (the first Fire TV Stick) is API 22; everything since is newer.
         minSdk = 22
         targetSdk = 34
-        // The release workflow stamps the app with the release it ships in:
-        // the vault's own version as the name, and its commit count — which
-        // only ever grows — as the code, so each release installs over the
-        // last. A local build is 1 / "dev".
-        versionCode = (project.findProperty("sandVersionCode") as String?)?.toInt() ?: 1
-        versionName = (project.findProperty("sandVersionName") as String?) ?: "dev"
+        // The vault's own version as the name, and its commit count — which
+        // only ever grows — as the code, so each build installs over the
+        // last. Worked out from git on every build, or taken from the release
+        // workflow's -P values; see apps/sand-version.gradle.kts.
+        versionCode = sandVersionCode
+        versionName = sandVersionName
 
         // Fire TVs are ARM — 32-bit userspace on most sticks, 64-bit on the
         // newest. The FFmpeg decoder ships x86 builds too, for emulators,
