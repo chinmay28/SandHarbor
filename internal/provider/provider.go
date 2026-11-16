@@ -38,9 +38,10 @@ const (
 	KindInternxt Kind = "internxt"
 	KindZoho     Kind = "zoho"
 
-	// Proton Drive again, reached through Proton's own command-line client
-	// rather than through the folder its desktop app syncs. See protoncli.go
-	// for why one service has two backends.
+	// Proton Drive again, reached through Proton's own code — its
+	// command-line client on a computer, or its Drive SDK inside the Android
+	// app — rather than through the folder its desktop app syncs. The kind's
+	// name is the CLI's because that route came first; see proton.go.
 	KindProtonCLI Kind = "protoncli"
 
 	// The rest of the synced-folder backends, registered from one table in
@@ -666,6 +667,26 @@ type Spec struct {
 	// Order sorts the backends in the connect dialog: the ones you sign in to
 	// first, then the ones needing credentials, then the ones on disk.
 	Order int `json:"-"`
+
+	// SignedInOn, when set, makes an account one that every machine opening
+	// the vault reaches by its own sign-in, rather than one that lives on one
+	// machine (Local) or anywhere (neither). It names the machine whose
+	// sign-in the account's stored credentials are, and whether a sign-in
+	// made that way is one this machine could use at all. The vault reaches
+	// the account only where both hold; everywhere else it is signed in
+	// elsewhere, and can be signed in there too. See proton.go.
+	SignedInOn func(cfg Config) (machine string, routeHere bool) `json:"-"`
+
+	// AdoptSignIn makes the sign-in an account carries this machine's own, if
+	// this machine's route can use it — for a vault restored from a recovery
+	// kit onto a machine that replaces the one the kit came from, which is no
+	// longer there to use it. ok is false when it cannot be adopted, and the
+	// account then needs a sign-in here. Only meaningful with SignedInOn.
+	AdoptSignIn func(cfg Config, machine string) (adopted Config, ok bool) `json:"-"`
+
+	// PerMachine is SignedInOn != nil, for the browser: such an account is
+	// offered "sign in on this machine" where it is not yet.
+	PerMachine bool `json:"per_machine,omitempty"`
 }
 
 // IsLocal reports whether accounts of this kind live on one machine (see
@@ -675,6 +696,32 @@ type Spec struct {
 func IsLocal(kind Kind) bool {
 	spec, ok := SpecFor(kind)
 	return ok && spec.Local
+}
+
+// SignedInOn reports, for an account of a per-machine kind (Spec.SignedInOn),
+// the machine whose sign-in it holds and whether this machine could use one
+// made that way. perMachine is false for every other kind.
+func SignedInOn(cfg Config) (machine string, routeHere, perMachine bool) {
+	spec, ok := SpecFor(cfg.Kind)
+	if !ok || spec.SignedInOn == nil {
+		return "", false, false
+	}
+	machine, routeHere = spec.SignedInOn(cfg)
+	return machine, routeHere, true
+}
+
+// AdoptSignIn hands an account's sign-in to this machine where its kind
+// allows (Spec.AdoptSignIn). Every other account comes back as it was, with
+// ok true: there is nothing about it that belongs to one machine.
+func AdoptSignIn(cfg Config, machine string) (Config, bool) {
+	spec, ok := SpecFor(cfg.Kind)
+	if !ok || spec.SignedInOn == nil {
+		return cfg, true
+	}
+	if spec.AdoptSignIn == nil {
+		return cfg, false
+	}
+	return spec.AdoptSignIn(cfg, machine)
 }
 
 // SignInLinkSpec describes a sign-in the browser watches rather than performs.
@@ -697,6 +744,7 @@ type SignInLinkSpec struct {
 // deployment was started filled in, so no caller ever sees a half-answered
 // spec.
 func (s Spec) resolved() Spec {
+	s.PerMachine = s.SignedInOn != nil
 	if s.OAuth == nil {
 		return s
 	}

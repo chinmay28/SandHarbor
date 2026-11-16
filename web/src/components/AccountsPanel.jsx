@@ -687,7 +687,18 @@ function AccountCard({ provider, providers, isDefault, resuming, onRemove, onCha
           </div>
         )}
         <UsageLine provider={provider} />
-        {elsewhere && (
+        {elsewhere && provider.sign_in_here && (
+          /* One account for every machine, each signing in for itself (Proton
+             Drive): signed in elsewhere so far, and a tap from being here too.
+             The Edit panel is where the sign-in lives. */
+          <div style={{ color: COLORS.textDim, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span title="Each machine that opens this vault signs in to this account for itself; until this one does, files whose parts are only here are read on the machine that has">
+              ⇢ signed in on {elsewhere}
+            </span>
+            <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>Sign in here</Button>
+          </div>
+        )}
+        {elsewhere && !provider.sign_in_here && (
           <div title="A local folder is reachable only from the machine it is plugged into; files whose parts are on it are greyed out here and readable there" style={{ color: COLORS.textDim }}>
             ⇢ on {elsewhere} — reachable from that machine
           </div>

@@ -842,7 +842,7 @@ function Reauthorize({ provider, spec, disabled, onDone }) {
          its client, its state directory — so the browser sends nothing but the
          account's ID and the server reads the rest off the account. */
       if (spec.sign_in_link) {
-        const resp = await api.protonSignIn({ providerId: provider.id })
+        const resp = await api.linkSignIn(spec.sign_in_link.start_path, { providerId: provider.id })
         const started = { id: resp.flow_id, kind: provider.kind, provider_id: provider.id }
         rememberFlow(started)
         setFlow(started)

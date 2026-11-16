@@ -8,6 +8,7 @@ import com.sandvault.app.core.Origin
 import com.sandvault.app.core.ServerLaunch
 import com.sandvault.app.core.ServerState
 import com.sandvault.app.core.ServerSupervisor
+import com.sandvault.app.proton.ProtonBridgeHost
 import com.sandvault.app.core.StaleServers
 import java.io.File
 import java.net.HttpURLConnection
@@ -105,6 +106,8 @@ object LocalServer {
             machineName = store.machineName(c),
             dnsFile = dnsFile(context),
             timeZone = TimeZone.getDefault().id,
+            // Proton Drive through this app; see proton/ProtonBridgeHost.kt.
+            bridge = ProtonBridgeHost.ensure(),
         )
     }
 

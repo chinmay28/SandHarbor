@@ -185,6 +185,8 @@ export const KIND_ICONS = {
   zoho: '◫',
   icloud: '◇',
   proton: '◉',
+  protoncli: '◉',
+  protonapp: '◉',
   mega: '⊙',
   jottacloud: '❖',
   synccom: '⇄',

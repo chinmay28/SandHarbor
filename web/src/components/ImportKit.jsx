@@ -385,6 +385,8 @@ function ImportReport({ report: initial, onClose }) {
      that has just gone green would be the report contradicting itself. */
   const [report, setReport] = useState(initial)
   const complete = report.lost === 0
+  /* Accounts each machine signs in to for itself, which this one still has to. */
+  const signInHere = (report.accounts || []).filter((a) => a.status === 'sign_in_here')
 
   /* The repair dialog edits a real account, not the summary row the report is
      drawn from — so the accounts are fetched once here. The import has already
@@ -496,11 +498,25 @@ function ImportReport({ report: initial, onClose }) {
         ))}
       </div>
 
+      {signInHere.length > 0 && (
+        /* Not a failure — the restore did what it could — but the one thing
+           left that only a person can do: these accounts are signed in to by
+           each machine for itself (Proton Drive), and this one has not yet. */
+        <Banner tone="warn">
+          Sign in to <strong>{signInHere.map((a) => a.name).join(', ')}</strong> on this machine.
+          Each machine signs in to {signInHere.length === 1 ? 'this account' : 'these accounts'} for
+          itself, so the sign-in in the kit could not be used here. Until you do, files whose parts are
+          there are read on the machine that is signed in. Use <strong>SIGN IN HERE</strong> on
+          {signInHere.length === 1 ? ' its row' : ' each row'} below.
+        </Banner>
+      )}
+
       {report.elsewhere > 0 && (
         <Banner tone="info">
-          <strong>{report.elsewhere.toLocaleString()} file(s)</strong> have their parts on disks that
-          live with the other machine running this vault. They are greyed out here and read there;
-          everything on the clouds opens from either machine.
+          <strong>{report.elsewhere.toLocaleString()} file(s)</strong> have their parts on accounts
+          reached only from the other machine running this vault — a disk plugged into it, or an
+          account not signed in here yet. They are greyed out here and read there; everything on
+          the clouds opens from either machine.
         </Banner>
       )}
 
@@ -690,7 +706,7 @@ function AccountRow({ account, config, providers, loading, onRepaired, onReconci
             disabled={loading || !config}
             onClick={() => setEditing(true)}
           >
-            {loading ? '…' : REPAIR_LABEL[account.repair]}
+            {loading ? '…' : account.status === 'sign_in_here' ? 'SIGN IN HERE' : REPAIR_LABEL[account.repair]}
           </Button>
         )}
       </div>

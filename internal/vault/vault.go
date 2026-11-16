@@ -1940,6 +1940,11 @@ type ProviderStatus struct {
 	// here, and the card says where it is instead. See instance.go.
 	Elsewhere string `json:"elsewhere,omitempty"`
 
+	// SignInHere says the account is one every machine reaches by its own
+	// sign-in (Proton Drive), and this machine has none yet: Elsewhere is the
+	// machine that does, and the card offers to sign in here too.
+	SignInHere bool `json:"sign_in_here,omitempty"`
+
 	Shards int            `json:"shards"`
 	Stored int64          `json:"stored"`
 	Usage  provider.Usage `json:"usage"`
@@ -1999,6 +2004,12 @@ func (v *Vault) ProviderStatuses(ctx context.Context) ([]ProviderStatus, error) 
 			// Not a cloud that is down: a disk that is plugged into a
 			// different machine. Said as such, and not asked.
 			statuses[i].Elsewhere = v.awayLocked(cfg)
+			if _, ok := v.SignInElsewhere(cfg); ok {
+				statuses[i].SignInHere = true
+				if statuses[i].Elsewhere == "" {
+					statuses[i].Elsewhere = "another machine"
+				}
+			}
 			continue
 		}
 		p, err := v.buildProvider(cfg)

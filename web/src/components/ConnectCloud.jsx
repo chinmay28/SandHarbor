@@ -122,7 +122,7 @@ export default function ConnectCloud({ onClose, onConnected }) {
          below is what picks that up. The settings typed so far travel with it,
          since one of them may be where that client lives. */
       if (spec.sign_in_link) {
-        const resp = await api.protonSignIn({ options: settingsOnly(spec, values) })
+        const resp = await api.linkSignIn(spec.sign_in_link.start_path, { options: settingsOnly(spec, values) })
         const started = { id: resp.flow_id, kind: spec.kind }
         rememberFlow(started)
         setFlow(started)

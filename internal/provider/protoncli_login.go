@@ -43,7 +43,7 @@ const ProtonCLILoginTimeout = 15 * time.Minute
 // they are verified. Nothing here pings anything: this function's business is
 // getting a session, and whether that session can reach the folder is the same
 // question asked of every other credential and answered in the same place.
-func ProtonCLISignIn(ctx context.Context, cfg Config, onURL func(string)) (map[string]string, error) {
+func ProtonCLISignIn(ctx context.Context, cfg Config, machine string, onURL func(string)) (map[string]string, error) {
 	// An account being connected for the first time has no ID yet, and so no
 	// state directory of its own to derive from one. Giving it the fallback
 	// would hand the same directory to every account connected this way in
@@ -75,7 +75,13 @@ func ProtonCLISignIn(ctx context.Context, cfg Config, onURL func(string)) (map[s
 	if !ok {
 		return nil, fmt.Errorf("proton drive: unexpected backend %T", p)
 	}
-	return client.signIn(ctx, onURL)
+	options, err := client.signIn(ctx, onURL)
+	if err != nil {
+		return nil, err
+	}
+	// The sign-in is this machine's own (proton.go).
+	options["session"] = wrapProtonSession(ProtonRouteCLI, machine, options["session"])
+	return options, nil
 }
 
 func (p *protonCLIProvider) signIn(ctx context.Context, onURL func(string)) (map[string]string, error) {

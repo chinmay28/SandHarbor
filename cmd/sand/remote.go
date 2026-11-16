@@ -738,7 +738,9 @@ reporting that it has been signed out:
 				cfg.Options["binary"] = binary
 			}
 
-			options, err := provider.ProtonCLISignIn(cmd.Context(), cfg, func(url string) {
+			// This machine's own sign-in, tagged with its name: another machine
+			// opening the vault signs in for itself (provider/proton.go).
+			options, err := provider.ProtonCLISignIn(cmd.Context(), cfg, v.Instance(), func(url string) {
 				fmt.Printf("\nSign in to Proton at:\n\n  %s\n\n"+
 					"You can open that on another device. Waiting for you to finish…\n", url)
 			})

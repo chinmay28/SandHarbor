@@ -601,8 +601,8 @@ func TestProtonCLIRotatedSessionReachesTheVault(t *testing.T) {
 	if len(rotated) == 0 {
 		t.Fatal("the rotated session was never published to the vault")
 	}
-	if got := rotated[len(rotated)-1]["session"]; got != "stub-session-v2" {
-		t.Fatalf("published session = %q, want the rotated one", got)
+	if _, _, got := unwrapProtonSession(rotated[len(rotated)-1]["session"], ""); got != "stub-session-v2" {
+		t.Fatalf("published session = %q, want the rotated one", rotated[len(rotated)-1]["session"])
 	}
 	// And the backend goes on using the new one rather than staging the old
 	// one again on the next call.
@@ -762,15 +762,17 @@ func TestProtonCLISignIn(t *testing.T) {
 			"binary":    binary,
 			"state_dir": filepath.Join(t.TempDir(), "state"),
 		},
-	}, func(url string) { shown = url })
+	}, "raspberrypi", func(url string) { shown = url })
 	if err != nil {
 		t.Fatalf("ProtonCLISignIn: %v", err)
 	}
 	if !strings.HasPrefix(shown, "https://account.proton.me/") {
 		t.Fatalf("sign-in URL = %q", shown)
 	}
-	if options["session"] != "freshly-signed-in" {
-		t.Fatalf("session = %q", options["session"])
+	// The client's session, as this machine's own.
+	route, machine, session := unwrapProtonSession(options["session"], "")
+	if route != ProtonRouteCLI || machine != "raspberrypi" || session != "freshly-signed-in" {
+		t.Fatalf("session = %q (%s/%s/%s)", options["session"], route, machine, session)
 	}
 	// The folder and the binary belong to whoever asked for the sign-in.
 	// Handing them back would write this run's defaults into the account as
@@ -799,15 +801,15 @@ func TestProtonCLISignInOfAnUnsavedAccountUsesItsOwnDirectory(t *testing.T) {
 		options, err := ProtonCLISignIn(context.Background(), Config{
 			Kind:    KindProtonCLI,
 			Options: map[string]string{"binary": binary},
-		}, nil)
+		}, "pi", nil)
 		if err != nil {
 			t.Fatalf("ProtonCLISignIn: %v", err)
 		}
-		if options["session"] != session {
-			t.Fatalf("session = %q, want %q — the sign-in read another account's",
-				options["session"], session)
+		_, _, got := unwrapProtonSession(options["session"], "")
+		if got != session {
+			t.Fatalf("session = %q, want %q — the sign-in read another account's", got, session)
 		}
-		seen[options["session"]] = true
+		seen[got] = true
 	}
 	if len(seen) != 2 {
 		t.Fatalf("the two sign-ins produced %d distinct sessions", len(seen))

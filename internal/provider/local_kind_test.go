@@ -5,9 +5,12 @@ import "testing"
 // Which backends live on one machine is a fact every other machine opening the
 // vault leans on: it decides which accounts are pinged, and whose parts count
 // as readable from here. So the list is pinned.
+//
+// Proton Drive through Proton's own code is not on it: one account serves
+// every machine that has signed in to it, each by its own route (proton.go).
 func TestLocalKindsAreTheOnesReachedThroughThisMachine(t *testing.T) {
 	local := map[Kind]bool{
-		KindLocal: true, KindICloud: true, KindProtonCLI: true,
+		KindLocal: true, KindICloud: true,
 		KindProton: true, KindMega: true, KindJottacloud: true,
 		KindSyncCom: true, KindTresorit: true, KindIcedrive: true,
 	}
