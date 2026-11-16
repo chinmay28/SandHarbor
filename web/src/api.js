@@ -509,13 +509,14 @@ export const api = {
       },
     }),
   oauthStatus: (flowId) => request(`/api/providers/oauth/${encodeURIComponent(flowId)}`),
-  /* A sign-in that cannot send the browser anywhere. Proton's client prints a
-     link and waits, so this returns a flow to poll and the link turns up on a
-     later poll rather than here — it does not exist until the client has been
-     run. Everything after that is the OAuth path: same status, same complete,
-     same reauthorize. */
-  protonSignIn: ({ options = {}, providerId = '' } = {}) =>
-    request('/api/providers/proton/signin', {
+  /* A sign-in that cannot send the browser anywhere — Proton's, through its
+     client or through the Android app. Each prints a link and waits, so this
+     returns a flow to poll and the link turns up on a later poll rather than
+     here. Everything after that is the OAuth path: same status, same
+     complete, same reauthorize. The endpoint is the spec's own
+     (sign_in_link.start_path), since each such backend has its own. */
+  linkSignIn: (startPath, { options = {}, providerId = '' } = {}) =>
+    request(startPath, {
       method: 'POST',
       body: { options, provider_id: providerId },
     }),

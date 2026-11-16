@@ -100,9 +100,23 @@ What happens:
 | `needs_path` | the folder isn't at that path on this machine | **FIND IT** |
 | `unreachable` | network, DNS, a bucket that's gone | retry later |
 | `elsewhere` | a local disk on the machine the vault still runs on (second-instance import) | none needed |
+| `sign_in_here` | a Proton Drive account that this machine has to sign in to for itself (see below) | **SIGN IN HERE** |
 
 An account that fails doesn't stop the import. The report can be reopened from
 the accounts panel later.
+
+**Proton Drive accounts** carry the sign-in of the machine that made it. Each
+machine signs in to Proton for itself, because two machines sharing one
+sign-in would sign each other out.
+
+- **Restoring in place of a lost machine:** the kit's sign-in becomes this
+  machine's, and the account works as any other does, when this machine reaches
+  Proton the same way (Proton's client on a computer).
+- **When it can't** (a second-instance import, where the other machine goes on
+  using its sign-in, or a computer's sign-in restored onto a phone): the report
+  says so at the top, the account reads `sign_in_here`, and **SIGN IN HERE**
+  opens its sign-in. Until then, its parts are read on the machine that is
+  signed in.
 
 Notes:
 

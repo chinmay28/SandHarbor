@@ -108,6 +108,12 @@ switching back opens it again.
   [recovery kit](recovery.md#recovery-kit) first, and keep it off the phone.
 - **Local-folder accounts** are folders inside the app's own storage, so they
   vanish with the app. Use real clouds on a phone.
+- **Proton Drive** works through Proton's own Drive SDK inside the app,
+  signing in with a link to Proton's page; the `proton-drive` client a Linux
+  server uses does not run on Android. A Proton account the vault already has
+  from another machine shows **Sign in here**: each machine signs in for
+  itself, and then reads the same parts. See
+  [Proton Drive](accounts.md#one-account-every-machine).
 - **When the phone sleeps**, Android slows down background work, even with *Keep
   running* on. Big uploads go fastest with the screen on or the phone charging.
 - **Mobile data.** The vault talks to your clouds over whatever network the

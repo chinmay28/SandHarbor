@@ -196,7 +196,10 @@ the next pull carries it over.
 **What doesn't travel:**
 
 - Account credentials. A cloud connected on one machine has to be connected by
-  hand on the other.
+  hand on the other. A Proton Drive account the other machine already
+  has is the exception: it is listed there as **signed in on <machine>**, and
+  **Sign in here** makes it this machine's too, under the same account, so its
+  parts are readable on both.
 - The inside of a sub vault. It appears shut on the other machine and opens with
   its own password. Deleting a sub vault on one machine deletes it everywhere,
   and files stored into it elsewhere since your last pull aren't counted by that

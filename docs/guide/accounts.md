@@ -25,7 +25,7 @@ a new one is in [Adding cloud backends](../design/cloud-backends.md).
 | `filen` | Filen, through its end-to-end encrypted API | Email and password |
 | `internxt` | Internxt Drive, through its end-to-end encrypted API | Email and password |
 | `sftp` | Any machine with an SSH login: a VPS, a NAS, rsync.net, a Hetzner Storage Box | Host, username, and a key SAND Vault generates or your own |
-| `protoncli` | Proton Drive, through Proton's own client | Sign in (a link you open anywhere) |
+| `protoncli` | Proton Drive, through Proton's own code: its client on a computer, its SDK in the Android app. One account for every machine; each signs in for itself | Sign in (a link you open anywhere) |
 | `proton` | Proton Drive, through the folder its desktop app syncs | A path |
 | `icloud` | iCloud Drive, through the folder macOS or iCloud for Windows syncs | A path |
 | `mega` | MEGA, through the folder its desktop app syncs | A path |
@@ -208,6 +208,39 @@ drop-in if you installed some other way.
 
 Proton's cryptographic model changes at the end of 2026. Because SAND Vault
 runs Proton's own binary, an updated client handles the migration.
+
+#### On a phone that runs the vault
+
+Proton's client runs on Bun, which has no Android build. A phone running the
+whole vault reaches Proton through the SAND Vault app instead, which carries
+Proton's own Drive SDK. It is the same account type, **Proton Drive (signed
+in)**: the route is the phone's business, not the account's.
+
+- **Signing in** shows a link to Proton's own sign-in page. Follow it, sign
+  in, approve SAND Vault, and come back: the account connects by itself. SAND
+  Vault never sees your Proton password, and Proton's page handles two-factor
+  sign-in.
+- **The session lives in the vault**, encrypted like every other credential,
+  and reaches the app only while it works. A recovery kit carries the account.
+- **Each part is confirmed on Proton's servers** before it counts, as with
+  `protoncli`, and the account reports its real quota.
+
+#### One account, every machine
+
+A Proton account connected on your Raspberry Pi is the same account on your
+phone, and the reverse. Each machine signs in for itself: a Proton session
+cannot be shared between machines without them signing each other out. Until
+a machine has, its account card says **signed in on raspberrypi** with a
+**Sign in here** button, and files whose parts are only on that account are
+read on the machine that has signed in. Once it has, they are readable on both.
+Accounts connected before this release keep working on the machine that
+connected them, and can be signed in on the others the same way.
+
+SAND Vault is a third-party application, not officially supported by Proton.
+Proton allows its SDK in personal, non-commercial projects; the app identifies
+itself to Proton as `external-drive-sand_vault`. Proton's cryptographic
+migration arrives through an updated SDK in an updated app. Design and
+protocol: [Proton Drive on a phone](../design/proton-android.md).
 
 ### Filen and Internxt
 

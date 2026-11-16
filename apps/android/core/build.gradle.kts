@@ -20,5 +20,8 @@ dependencies {
     // only the JVM the tests run on needs the jar.
     compileOnly("org.json:json:20240303")
     testImplementation("org.json:json:20240303")
+    // The app's bridge to Proton (core/proton/ProtonBridge.kt): a small HTTP
+    // server in plain Java, so it runs in the app and in these tests alike.
+    api("org.nanohttpd:nanohttpd:2.3.1")
     testImplementation("junit:junit:4.13.2")
 }

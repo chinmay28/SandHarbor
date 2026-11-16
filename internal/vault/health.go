@@ -128,6 +128,10 @@ type CloudHealth struct {
 	// machine can reach. See instance.go.
 	Elsewhere string `json:"elsewhere,omitempty"`
 
+	// SignInHere: an account every machine reaches by its own sign-in, which
+	// this one has not made yet (see ProviderStatus.SignInHere).
+	SignInHere bool `json:"sign_in_here,omitempty"`
+
 	// Took is how long the answer took, in milliseconds. Kept because a cloud
 	// that answers in eleven seconds is on its way to being a cloud that does
 	// not answer, and that is visible here before it is visible anywhere else.
@@ -413,6 +417,12 @@ func (v *Vault) pingAll(ctx context.Context, configs []provider.Config) []CloudH
 			v.mu.RLock()
 			found[i].Elsewhere = v.awayLocked(cfg)
 			v.mu.RUnlock()
+			if _, ok := v.SignInElsewhere(cfg); ok {
+				found[i].SignInHere = true
+				if found[i].Elsewhere == "" {
+					found[i].Elsewhere = "another machine"
+				}
+			}
 			found[i].CheckedAt = time.Now()
 			continue
 		}

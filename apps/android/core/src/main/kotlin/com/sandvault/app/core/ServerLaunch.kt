@@ -30,6 +30,9 @@ data class ServerLaunch(
 
     /** An IANA zone name, e.g. "Europe/Berlin". */
     val timeZone: String,
+
+    /** The app's bridge to Proton, when it is running; see core/proton/ProtonBridge.kt. */
+    val bridge: com.sandvault.app.core.proton.BridgeEndpoint? = null,
 ) {
     val vaultFile: File get() = File(dataDir, "vault.sand")
 
@@ -61,6 +64,9 @@ data class ServerLaunch(
         // Two phones would both be "localhost" otherwise — the hostname
         // Android gives every app — and two machines of one name are refused.
         if (machineName.isNotBlank()) put("SAND_INSTANCE", machineName.trim())
+        // Where the server reaches Proton Drive through the app. An
+        // environment variable reaches the child process alone.
+        bridge?.let { putAll(it.environment()) }
     }
 }
 

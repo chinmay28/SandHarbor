@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/chinmay28/SandHarbor/internal/provider"
 )
@@ -29,11 +30,61 @@ import (
 // flow to poll. The client is left running in the background: it is waiting for
 // somebody to visit the URL, and that wait is measured in minutes.
 func (s *Server) handleProtonSignIn(w http.ResponseWriter, r *http.Request) {
+	// An account signing back in does it with its own settings: its folder, its
+	// client, and above all its own state directory, so that the session lands
+	// where that account's client will look for it.
+	cfg, ok := s.linkSignInConfig(w, r, provider.KindProtonCLI, "folder", "binary", "state_dir")
+	if !ok {
+		return
+	}
+
+	// The sign-in is this machine's own (provider/proton.go): tagged with its
+	// name, so that another machine opening the vault never uses it.
+	machine := ""
+	if v, err := s.Vault(); err == nil {
+		machine = v.Instance()
+	}
+
+	// Inside the Android app, Proton is reached through the app, which does
+	// the signing in itself.
+	if provider.ProtonRouteHere() == provider.ProtonRouteApp {
+		s.startLinkSignIn(w, r, cfg, provider.ProtonAppSignInTimeout, func(flowID string) {
+			ctx, cancel := context.WithTimeout(context.Background(), provider.ProtonAppSignInTimeout)
+			defer cancel()
+			res, err := provider.ProtonAppSignIn(ctx, machine, func(url string) {
+				s.oauthFlows.setSignInURL(flowID, url)
+			})
+			if err != nil {
+				s.oauthFlows.finish(flowID, nil, "", err.Error())
+				return
+			}
+			s.oauthFlows.finish(flowID, res.Options, res.Email, "")
+		})
+		return
+	}
+
+	// Fail before the flow exists if the client is not installed, so the answer
+	// is a sentence naming the fix rather than a flow that polls its way to the
+	// same news a moment later.
+	if err := protonClientAvailable(cfg); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error(), "PROTON_NO_CLIENT")
+		return
+	}
+
+	s.startLinkSignIn(w, r, cfg, provider.ProtonCLILoginTimeout, func(flowID string) {
+		s.runProtonSignIn(flowID, cfg, machine)
+	})
+}
+
+// linkSignInConfig reads a request to start a sign-in by link: the settings
+// the connect form has so far, or — for an account signing back in — that
+// account's own, as named by carry. It answers the request itself when it
+// cannot go on.
+func (s *Server) linkSignInConfig(w http.ResponseWriter, r *http.Request, kind provider.Kind, carry ...string) (provider.Config, bool) {
 	var req struct {
-		// Options are what the connect form has been filled in with so far —
-		// the folder, and a path to the client if it is not on PATH. The
-		// sign-in needs the second and is indifferent to the first, but both
-		// travel with the flow so that finishing it does not have to ask again.
+		// Options are what the connect form has been filled in with so far.
+		// They travel with the flow so that finishing it does not have to ask
+		// again.
 		Options map[string]string `json:"options"`
 
 		// ProviderID turns this into a repair of an account already connected,
@@ -43,7 +94,7 @@ func (s *Server) handleProtonSignIn(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error(), "BAD_REQUEST")
-		return
+		return provider.Config{}, false
 	}
 
 	options := map[string]string{}
@@ -51,19 +102,16 @@ func (s *Server) handleProtonSignIn(w http.ResponseWriter, r *http.Request) {
 		options[key] = value
 	}
 
-	// An account signing back in does it with its own settings: its folder, its
-	// client, and above all its own state directory, so that the session lands
-	// where that account's client will look for it.
 	if req.ProviderID != "" {
 		v, err := s.Vault()
 		if err != nil {
 			vaultErrorResponse(w, err)
-			return
+			return provider.Config{}, false
 		}
 		accounts, err := v.Providers()
 		if err != nil {
 			vaultErrorResponse(w, err)
-			return
+			return provider.Config{}, false
 		}
 		var found *provider.Config
 		for i := range accounts {
@@ -75,22 +123,22 @@ func (s *Server) handleProtonSignIn(w http.ResponseWriter, r *http.Request) {
 		if found == nil {
 			writeError(w, http.StatusBadRequest,
 				fmt.Sprintf("no connected account with id %s", req.ProviderID), "BAD_REQUEST")
-			return
+			return provider.Config{}, false
 		}
-		if found.Kind != provider.KindProtonCLI {
+		if found.Kind != kind {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf(
 				"%s is a %s account, and only a %s one signs in this way",
-				found.Name, found.Kind, provider.KindProtonCLI), "BAD_REQUEST")
-			return
+				found.Name, found.Kind, kind), "BAD_REQUEST")
+			return provider.Config{}, false
 		}
-		for _, key := range []string{"folder", "binary", "state_dir"} {
+		for _, key := range carry {
 			if value := found.Option(key); value != "" {
 				options[key] = value
 			}
 		}
 	}
 
-	// The session an account already has is never carried into a sign-in. The
+	// The session an account already has is never carried into a sign-in. A
 	// client would see it, decide it is signed in and return without asking
 	// anybody anything — which is precisely wrong when the reason for signing
 	// in again is that the old session stopped working. It is also a secret,
@@ -98,19 +146,15 @@ func (s *Server) handleProtonSignIn(w http.ResponseWriter, r *http.Request) {
 	// placeholder.
 	delete(options, "session")
 
-	cfg := provider.Config{ID: req.ProviderID, Kind: provider.KindProtonCLI, Options: options}
+	return provider.Config{ID: req.ProviderID, Kind: kind, Options: options}, true
+}
 
-	// Fail before the flow exists if the client is not installed, so the answer
-	// is a sentence naming the fix rather than a flow that polls its way to the
-	// same news a moment later.
-	if err := protonClientAvailable(cfg); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error(), "PROTON_NO_CLIENT")
-		return
-	}
-
+// startLinkSignIn starts the flow the browser polls, runs the sign-in in the
+// background, and answers with the flow.
+func (s *Server) startLinkSignIn(w http.ResponseWriter, r *http.Request, cfg provider.Config, lasts time.Duration, run func(flowID string)) {
 	flow, err := s.oauthFlows.start(&oauthFlow{
-		Kind:       provider.KindProtonCLI,
-		ProviderID: req.ProviderID,
+		Kind:       cfg.Kind,
+		ProviderID: cfg.ID,
 		Session:    sessionToken(r),
 	})
 	if err != nil {
@@ -122,21 +166,21 @@ func (s *Server) handleProtonSignIn(w http.ResponseWriter, r *http.Request) {
 	// moment and the sign-in goes on for as long as somebody takes to find
 	// their password manager; tying the two together would cancel the sign-in
 	// the instant the browser got its flow ID.
-	go s.runProtonSignIn(flow.ID, cfg)
+	go run(flow.ID)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"flow_id":    flow.ID,
-		"expires_in": int(provider.ProtonCLILoginTimeout.Seconds()),
+		"expires_in": int(lasts.Seconds()),
 	})
 }
 
 // runProtonSignIn drives the client and records what came of it against the
 // flow, for the browser to pick up on its next poll.
-func (s *Server) runProtonSignIn(flowID string, cfg provider.Config) {
+func (s *Server) runProtonSignIn(flowID string, cfg provider.Config, machine string) {
 	ctx, cancel := context.WithTimeout(context.Background(), provider.ProtonCLILoginTimeout)
 	defer cancel()
 
-	options, err := provider.ProtonCLISignIn(ctx, cfg, func(url string) {
+	options, err := provider.ProtonCLISignIn(ctx, cfg, machine, func(url string) {
 		s.oauthFlows.setSignInURL(flowID, url)
 	})
 	if err != nil {

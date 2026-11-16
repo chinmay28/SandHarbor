@@ -732,11 +732,12 @@ suggested_name?}` (`suggested_name` once `ready`).
 
 #### POST /api/providers/proton/signin
 
-`{"options": {"folder": "…", …}, "provider_id?": "…"}`. Starts the
-`proton-drive` client in the background and answers at once with `{flow_id,
-expires_in}`; poll `GET /api/providers/oauth/{flow_id}`, whose `sign_in_url` is
-the link to open, then complete or reauthorize as above. `400
-PROTON_NO_CLIENT`.
+`{"options": {"folder": "…", …}, "provider_id?": "…"}`. Starts this machine's
+Proton sign-in in the background — the `proton-drive` client on a computer, the
+Android app inside it — and answers at once with `{flow_id, expires_in}`; poll `GET /api/providers/oauth/{flow_id}`, whose `sign_in_url` is
+the link to open, then complete or reauthorize as above. The session it stores
+is this machine's own; on another machine the account reports
+`sign_in_here: true` until it is signed in there too. `400 PROTON_NO_CLIENT`.
 
 ## Sub vaults
 

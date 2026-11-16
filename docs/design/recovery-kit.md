@@ -330,10 +330,19 @@ recorded, the tree still comes back, and its files are counted short.
 | Status | Meaning | `repair` |
 |---|---|---|
 | `connected` | Answered | (none) |
-| `needs_reauth` | Credentials rejected: revoked consent, expired token, rotated key | `sign_in` for OAuth backends, `settings` otherwise |
+| `needs_reauth` | Credentials rejected: revoked consent, expired token, rotated key | `sign_in` for backends signed in to (OAuth, or a sign-in link like Proton's), `settings` otherwise |
 | `needs_path` | The configured folder is not on this machine | `path` (with `path_option` naming the setting) |
 | `unreachable` | Network, DNS, a gone bucket | `retry` |
 | `elsewhere` | A local account on the machine the kit came from (sibling import) | (none) |
+| `sign_in_here` | An account every machine signs in to for itself (Proton Drive) whose sign-in in the kit this machine cannot use | `sign_in` |
+
+A per-machine account (`provider.Spec.SignedInOn`) is restored best effort. In
+an import that replaces the vault, the machine the kit came from is gone, so
+`provider.AdoptSignIn` makes its sign-in this machine's where this machine's
+route can use it, and the account is probed like any other. A sibling import
+leaves the sign-in with the machine that goes on using it, and a sign-in made by
+the other route (a computer's, onto a phone) cannot be adopted; both read
+`sign_in_here`, and the report leads with a notice naming them.
 
 The status says what is wrong; `repair` says which door to open, since a revoked
 Dropbox consent and a rotated S3 key both fail auth and share no repair steps.
