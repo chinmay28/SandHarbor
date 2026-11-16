@@ -76,15 +76,24 @@ android {
             // Installed as a file on disk, not mapped from inside the APK:
             // the server is exec'd, not loaded.
             useLegacyPackaging = true
+
+            // Proton Drive is reached through the app only for the vault on
+            // the phone, which exists only where there is a server. Proton's
+            // SDK and crypto libraries for every other ABI would be ~45 MB
+            // that a thin client on a 32-bit phone carries and never loads.
+            val protonLibs = listOf(
+                "libproton_drive_sdk.so", "libproton_drive_sdk_jni.so", "libgojni.so",
+                "libcrypto.so", "libssl.so", "libe_sqlite3.so",
+            )
+            val serverless = listOf("armeabi-v7a", "x86", "arm64-v8a", "x86_64")
+                .filter { !withServer || it !in serverAbis }
+            for (abi in serverless) for (lib in protonLibs) excludes += "lib/$abi/$lib"
         }
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = "17"
     }
     lint {
         disable += setOf(
@@ -145,4 +154,21 @@ dependencies {
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("com.google.android.material:material:1.12.0")
+
+    // Proton Drive for the vault on the phone (proton/ in this module, and
+    // docs/design/proton-android.md): Proton's own Drive SDK, and its crypto
+    // library, which unlocks the account's keys. GPLv3, which the AGPL that
+    // SAND is under can carry. Personal, non-commercial use, as Proton's
+    // terms for third-party clients require.
+    implementation("me.proton.drive:sdk:0.33.0")
+    implementation("me.proton.crypto:android-golib:2.10.0-2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    // The SDK's HTTP is the host's to supply; the same OkHttp the SDK uses.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
 }

@@ -4,7 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
-import java.net.URL
+import java.net.URI
 
 /** One HTTP exchange, so Proton can be stood in for in a test. */
 fun interface HttpTransport {
@@ -18,7 +18,7 @@ class HttpReply(val status: Int, val body: ByteArray, val headers: Map<String, S
 /** java.net, which both the JVM and Android have. */
 class UrlConnectionTransport(private val connectMs: Int = 15_000, private val readMs: Int = 60_000) : HttpTransport {
     override fun execute(method: String, url: String, headers: Map<String, String>, body: ByteArray?): HttpReply {
-        val conn = URL(url).openConnection() as HttpURLConnection
+        val conn = URI(url).toURL().openConnection() as HttpURLConnection
         try {
             conn.requestMethod = method
             conn.connectTimeout = connectMs

@@ -22,6 +22,6 @@ dependencies {
     testImplementation("org.json:json:20240303")
     // The app's bridge to Proton (core/proton/ProtonBridge.kt): a small HTTP
     // server in plain Java, so it runs in the app and in these tests alike.
-    implementation("org.nanohttpd:nanohttpd:2.3.1")
+    api("org.nanohttpd:nanohttpd:2.3.1")
     testImplementation("junit:junit:4.13.2")
 }
