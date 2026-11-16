@@ -84,6 +84,24 @@ func protonSignedInOn(cfg Config) (machine string, routeHere bool) {
 	return machine, route == ProtonRouteHere()
 }
 
+// protonAdoptSignIn is the Spec.AdoptSignIn of a Proton account: a sign-in
+// made by this machine's route becomes this machine's, wherever it was made.
+// One made by the other route — a computer's, restored onto a phone — cannot
+// be used here at all, and needs a sign-in of this machine's own.
+func protonAdoptSignIn(cfg Config, machine string) (Config, bool) {
+	route, _, session := unwrapProtonSession(cfg.Option("session"), cfg.Host)
+	if session == "" || route != ProtonRouteHere() {
+		return cfg, false
+	}
+	out := cfg
+	out.Options = make(map[string]string, len(cfg.Options))
+	for k, v := range cfg.Options {
+		out.Options[k] = v
+	}
+	out.Options["session"] = wrapProtonSession(route, machine, session)
+	return out, true
+}
+
 // newProtonProvider builds a Proton account on the route this machine has.
 // A session from the other route, or another machine, is not one this backend
 // can use, and the vault does not ask it to (Spec.SignedInOn); built anyway,

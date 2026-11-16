@@ -80,7 +80,8 @@ func init() {
 		Order: 14,
 		// Reached from every machine that has a route to Proton and has signed
 		// in there itself; see proton.go.
-		SignedInOn: protonSignedInOn,
+		SignedInOn:  protonSignedInOn,
+		AdoptSignIn: protonAdoptSignIn,
 		Fields: []FieldSpec{
 			{
 				Key:      "folder",

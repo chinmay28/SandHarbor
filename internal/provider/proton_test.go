@@ -84,3 +84,35 @@ func TestProtonIsOneAccountSignedInPerMachine(t *testing.T) {
 		t.Error("S3 is not a per-machine account")
 	}
 }
+
+func TestAProtonSignInIsAdoptedOnlyByItsOwnRoute(t *testing.T) {
+	t.Setenv(AppBridgeEnv, "")
+	t.Setenv(AppBridgeTokenEnv, "")
+	cfg := Config{Kind: KindProtonCLI, Options: map[string]string{"session": wrapProtonSession(ProtonRouteCLI, "old-pc", "s")}}
+	adopted, ok := AdoptSignIn(cfg, "new-pc")
+	if !ok {
+		t.Fatal("the client's sign-in should pass to another computer")
+	}
+	if route, machine, inner := unwrapProtonSession(adopted.Options["session"], ""); route != ProtonRouteCLI || machine != "new-pc" || inner != "s" {
+		t.Fatalf("adopted as %s/%s/%s", route, machine, inner)
+	}
+	if _, machine, _ := unwrapProtonSession(cfg.Options["session"], ""); machine != "old-pc" {
+		t.Fatal("adopting changed the account it was given")
+	}
+	// A legacy session is the client's too.
+	if _, ok := AdoptSignIn(Config{Kind: KindProtonCLI, Host: "old-pc", Options: map[string]string{"session": "raw"}}, "new-pc"); !ok {
+		t.Fatal("a legacy client session should pass to another computer")
+	}
+
+	// On a phone, a computer's sign-in cannot be used.
+	t.Setenv(AppBridgeEnv, "http://127.0.0.1:1")
+	t.Setenv(AppBridgeTokenEnv, "t")
+	if _, ok := AdoptSignIn(cfg, "phone"); ok {
+		t.Fatal("the app's route cannot use the client's session")
+	}
+	// And every other account passes through untouched.
+	s3 := Config{Kind: KindS3, Options: map[string]string{"bucket": "b"}}
+	if got, ok := AdoptSignIn(s3, "phone"); !ok || got.Options["bucket"] != "b" {
+		t.Fatal("a cloud has nothing to adopt")
+	}
+}

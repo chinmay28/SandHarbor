@@ -677,6 +677,13 @@ type Spec struct {
 	// elsewhere, and can be signed in there too. See proton.go.
 	SignedInOn func(cfg Config) (machine string, routeHere bool) `json:"-"`
 
+	// AdoptSignIn makes the sign-in an account carries this machine's own, if
+	// this machine's route can use it — for a vault restored from a recovery
+	// kit onto a machine that replaces the one the kit came from, which is no
+	// longer there to use it. ok is false when it cannot be adopted, and the
+	// account then needs a sign-in here. Only meaningful with SignedInOn.
+	AdoptSignIn func(cfg Config, machine string) (adopted Config, ok bool) `json:"-"`
+
 	// PerMachine is SignedInOn != nil, for the browser: such an account is
 	// offered "sign in on this machine" where it is not yet.
 	PerMachine bool `json:"per_machine,omitempty"`
@@ -701,6 +708,20 @@ func SignedInOn(cfg Config) (machine string, routeHere, perMachine bool) {
 	}
 	machine, routeHere = spec.SignedInOn(cfg)
 	return machine, routeHere, true
+}
+
+// AdoptSignIn hands an account's sign-in to this machine where its kind
+// allows (Spec.AdoptSignIn). Every other account comes back as it was, with
+// ok true: there is nothing about it that belongs to one machine.
+func AdoptSignIn(cfg Config, machine string) (Config, bool) {
+	spec, ok := SpecFor(cfg.Kind)
+	if !ok || spec.SignedInOn == nil {
+		return cfg, true
+	}
+	if spec.AdoptSignIn == nil {
+		return cfg, false
+	}
+	return spec.AdoptSignIn(cfg, machine)
 }
 
 // SignInLinkSpec describes a sign-in the browser watches rather than performs.

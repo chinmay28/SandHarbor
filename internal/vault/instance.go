@@ -121,6 +121,13 @@ func (v *Vault) signedInHere(cfg provider.Config) (perMachine, here bool, on str
 	return true, routeHere && (machine == "" || machine == v.instance), machine
 }
 
+// signInUsableByRoute reports whether a per-machine account's sign-in was made
+// by a route this machine has, whoever made it.
+func (v *Vault) signInUsableByRoute(cfg provider.Config) bool {
+	_, routeHere, _ := provider.SignedInOn(cfg)
+	return routeHere
+}
+
 // SignInElsewhere reports, for an account this machine could reach with a
 // sign-in of its own but does not hold one for, which machine it is signed in
 // on ("" when none is known). ok is false for every other account. The

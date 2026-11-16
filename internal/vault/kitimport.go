@@ -52,6 +52,14 @@ const (
 	// Not a fault, and not this machine's to repair: files whose parts are
 	// on it are read there.
 	KitAccountElsewhere = "elsewhere"
+
+	// KitAccountSignInHere: an account every machine reaches by a sign-in of
+	// its own (Proton Drive), whose sign-in in the kit this machine cannot
+	// use — it belongs to the machine the kit came from, which goes on
+	// running the vault, or it was made by a route this machine does not have
+	// (a computer's, restored onto a phone). Nothing is wrong with it; it
+	// needs signing in here, and until then its parts are read elsewhere.
+	KitAccountSignInHere = "sign_in_here"
 )
 
 // What would put a failed account right. The status says what is wrong; this
@@ -289,7 +297,7 @@ func (v *Vault) ImportKit(ctx context.Context, kit *Kit, opts KitImportOptions) 
 	report.Sibling = opts.Sibling
 
 	// --- Phase 2: reconnect every account, keeping its id -------------------
-	report.Accounts = v.restoreKitAccounts(ctx, kit)
+	report.Accounts = v.restoreKitAccounts(ctx, kit, opts.Sibling)
 
 	reachable := map[string]bool{}
 	for _, a := range report.Accounts {
@@ -522,12 +530,22 @@ func (v *Vault) adoptKit(kit *Kit, password string, sibling bool) error {
 
 // restoreKitAccounts reconnects every account the kit names, keeping its id,
 // and reports what each one answered.
-func (v *Vault) restoreKitAccounts(ctx context.Context, kit *Kit) []KitAccountResult {
+func (v *Vault) restoreKitAccounts(ctx context.Context, kit *Kit, sibling bool) []KitAccountResult {
 	results := make([]KitAccountResult, len(kit.Accounts))
 
 	var wg sync.WaitGroup
 	for i, cfg := range kit.Accounts {
 		result := KitAccountResult{ID: cfg.ID, Name: cfg.Name, Kind: string(cfg.Kind)}
+
+		// A vault restored in place of the machine the kit came from: that
+		// machine is gone, so a sign-in of its own (Proton Drive's) is this
+		// one's now, if this machine's route can use it — best effort, as for
+		// every other account. A second instance leaves it alone: the machine
+		// the kit came from goes on using it, and two machines on one sign-in
+		// would sign each other out.
+		if !sibling {
+			cfg, _ = provider.AdoptSignIn(cfg, v.instance)
+		}
 
 		if err := v.RestoreProvider(cfg); err != nil {
 			result.Status = KitAccountUnreachable
@@ -554,13 +572,18 @@ func (v *Vault) probeRestored(ctx context.Context, cfg provider.Config) (status,
 	// A disk on the machine the kit came from, when that machine goes on
 	// running the vault. Its path is not expected here and is not tried.
 	if v.livesElsewhere(cfg) {
-		// An account each machine signs in to for itself, holding the kit's
-		// machine's sign-in: fine where it is, and offered here too.
-		if _, ok := v.SignInElsewhere(cfg); ok {
-			v.mu.RLock()
-			on := v.awayLocked(cfg)
-			v.mu.RUnlock()
-			return KitAccountElsewhere, fmt.Sprintf("signed in on %s; sign in here too to read its parts from this machine", on), ""
+		// An account each machine signs in to for itself, holding a sign-in
+		// this machine cannot use: not a fault, but something to do here.
+		if on, ok := v.SignInElsewhere(cfg); ok {
+			if on == "" {
+				on = "another machine"
+			}
+			if routeHere := v.signInUsableByRoute(cfg); !routeHere {
+				return KitAccountSignInHere, fmt.Sprintf(
+					"its sign-in was made on %s in a way this machine cannot use — sign in here to read its parts from this machine", on), ""
+			}
+			return KitAccountSignInHere, fmt.Sprintf(
+				"signed in on %s, which goes on using it; sign in here too to read its parts from this machine", on), ""
 		}
 		return KitAccountElsewhere, fmt.Sprintf("lives on %s; files with parts on it are read there", cfg.Host), ""
 	}
@@ -602,10 +625,14 @@ func repairFor(cfg provider.Config, status string) string {
 	switch status {
 	case KitAccountConnected, KitAccountElsewhere:
 		return ""
+	case KitAccountSignInHere:
+		return KitRepairSignIn
 	case KitAccountNeedsPath:
 		return KitRepairPath
 	case KitAccountNeedsReauth:
-		if spec, ok := provider.SpecFor(cfg.Kind); ok && spec.OAuth != nil {
+		// Signed in to, by redirect or by link (Proton's): signing in again
+		// is the repair.
+		if spec, ok := provider.SpecFor(cfg.Kind); ok && (spec.OAuth != nil || spec.SignInLink != nil) {
 			return KitRepairSignIn
 		}
 		// A backend with no consent screen answers a rejected credential with
