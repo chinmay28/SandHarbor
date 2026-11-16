@@ -1137,6 +1137,12 @@ export const api = {
      32 — writing each folder's pack once rather than once a picture. What the
      organizer's "Make missing thumbnails" sends. Resolves {stored, rejected},
      rejected naming the ids whose picture the server could not read. */
+  /* Every file under a folder — it and all the folders below — that has no
+     thumbnail, folder by folder, with how many more each folder can keep:
+     { folders: [{ dir, room, files }], per_folder }. What "Make missing
+     thumbnails" plans from; see planBackfill. */
+  missingThumbs: (path, vault = '') =>
+    request(`/api/thumbs/missing?path=${encodeURIComponent(path)}${vaultParam(vault)}`),
   putThumbs: (pictures) => {
     const form = new FormData()
     for (const [id, blob] of pictures) form.append(id, blob, 'thumb.jpg')

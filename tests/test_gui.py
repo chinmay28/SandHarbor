@@ -3117,15 +3117,21 @@ class TestMakeMissingThumbnails:
 
     def test_the_folder_gets_its_pictures_in_the_background(self, app):
         make_folder(app, "unpictured")
-        pictures = [list(png_bytes(40, 30, rgb)) for rgb in ((200, 40, 40), (40, 200, 40))]
+        pictures = [list(png_bytes(40, 30, rgb)) for rgb in ((200, 40, 40), (40, 200, 40), (40, 40, 200))]
         app.evaluate(
             """async (pics) => {
-                 const files = [...pics.map((b, i) => [`shot${i}.png`, new Uint8Array(b), 'image/png']),
-                                ['readme.txt', new TextEncoder().encode('words'), 'text/plain']]
-                 for (const [name, bytes, type] of files) {
+                 // A folder below, so the run is seen to reach into it.
+                 const made = await fetch('/api/folders', {
+                   method: 'POST', headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify({ path: '/unpictured/deeper' }),
+                 })
+                 if (!made.ok) throw new Error(await made.text())
+                 const files = [...pics.map((b, i) => [`shot${i}.png`, new Uint8Array(b), 'image/png', i === 2 ? '/unpictured/deeper' : '/unpictured']),
+                                ['readme.txt', new TextEncoder().encode('words'), 'text/plain', '/unpictured']]
+                 for (const [name, bytes, type, dir] of files) {
                    const form = new FormData()
                    form.append('files[]', new Blob([bytes], { type }), name)
-                   form.append('path', '/unpictured')
+                   form.append('path', dir)
                    const resp = await fetch('/api/files', { method: 'POST', body: form })
                    if (!resp.ok) throw new Error(await resp.text())
                  }
@@ -3136,22 +3142,25 @@ class TestMakeMissingThumbnails:
         app.wait_for_load_state("networkidle")
         app.get_by_text("shot0.png").first.wait_for(timeout=20000)
 
-        def thumbs():
+        def thumbs(path="/unpictured"):
             return app.evaluate(
-                "async () => (await (await fetch('/api/files?path=/unpictured')).json()).thumbs || []")
+                "async (p) => (await (await fetch('/api/files?path=' + encodeURIComponent(p))).json()).thumbs || []",
+                path)
 
         assert thumbs() == []
+        assert thumbs("/unpictured/deeper") == []
 
         app.locator('button[aria-label="Organize and automate this folder"]').click()
         app.get_by_role("button", name=re.compile("Make missing thumbnails")).click()
         dialog = app.get_by_role("dialog", name="Make missing thumbnails")
-        expect(dialog.get_by_text("2 files here have no thumbnail.")).to_be_visible(timeout=20000)
-        dialog.get_by_role("button", name="Make 2 thumbnails").click()
+        expect(dialog.get_by_text("3 files in 2 folders have no thumbnail.")).to_be_visible(timeout=20000)
+        dialog.get_by_role("button", name="Make 3 thumbnails").click()
 
         # The dialog is gone the moment the run starts; the strip says how it went.
         expect(dialog).to_have_count(0)
-        expect(app.get_by_text("2 thumbnails made in /unpictured.")).to_be_visible(timeout=60000)
+        expect(app.get_by_text("3 thumbnails made in /unpictured.")).to_be_visible(timeout=60000)
         assert len(thumbs()) == 2
+        assert len(thumbs("/unpictured/deeper")) == 1
         expect(app.locator('img[src*="/thumb"]')).to_have_count(2, timeout=20000)
 
         # Pressed again, there is nothing left to do.

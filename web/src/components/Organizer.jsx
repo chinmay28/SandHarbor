@@ -46,9 +46,9 @@ import { MakeThumbnails } from './ThumbBackfill'
 
    One fills in what the listing is missing:
 
-     · Make missing thumbnails — read back every picture and PDF directly in
-                     this folder that has no thumbnail, draw one here in the
-                     browser, and store it. It runs in the background, in this
+     · Make missing thumbnails — read back every picture and PDF in this
+                     folder and every folder below it that has no thumbnail,
+                     draw one here in the browser, and store it. It runs in the background, in this
                      tab, while the folder is browsed. See ThumbBackfill.jsx.
 
    Two put the folder somewhere else whole, and bring it back:
@@ -208,7 +208,7 @@ export function OrganizerMenu({ path, automation, repoCount = 0, onClose, onPick
           key: 'thumbs',
           glyph: '🖼',
           label: 'Make missing thumbnails',
-          hint: 'Draw a thumbnail for every picture and PDF in this folder that has none — in the background, while you keep browsing',
+          hint: 'Draw a thumbnail for every picture and PDF in this folder and below that has none — in the background, while you keep browsing',
           onSelect: () => onPick('thumbs'),
         },
         {
@@ -348,8 +348,8 @@ export function OrganizerTool({ tool, path, vault, providers = [], onClose, onDo
     )
   }
 
-  /* The thumbnail backfill reads the folder's own listing, which says which
-     files already have a picture — a survey does not. Its dialog closes as the
+  /* The thumbnail backfill asks which files under the folder have no picture
+     yet — a survey does not say. Its dialog closes as the
      run starts, and the strip over the file list refreshes the listing as the
      pictures land, so it has no onDone of its own to call. */
   if (thumbs) {

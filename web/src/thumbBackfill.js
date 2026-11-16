@@ -12,7 +12,11 @@
    from is a listing, and what it does to each file is handed in — `make` to
    turn a file into a picture and `store` to keep a batch of them — so the
    whole of its behaviour can be tested with plain functions. thumbJob.js wires
-   it to the real API. */
+   it to the real API.
+
+   A run covers a folder and everything below it: the plan comes from one
+   answer for the whole tree, and the pictures go up by file id, so it does not
+   matter to the run which folder each file sits in. */
 
 /* How many files are fetched and drawn at once. Each one is the whole file in
    memory and then its decoded pixels, so this stays small; the work is bound
@@ -25,25 +29,48 @@ export const BACKFILL_LANES = 2
    the server, which refuses more. */
 export const BACKFILL_BATCH = 32
 
-/* Which of a listing's files want a picture made: the ones of a kind that can
-   have one (`kindOf`, which is thumbnailKind), that the listing says have
-   none, and that are not so large that drawing them is not worth it. The
-   too-large ones are counted separately so the dialog can say why they were
-   left out rather than leave them unexplained. */
-export function planBackfill(listing, kindOf, maxBytes = Infinity) {
-  const have = new Set(listing?.thumbs || [])
+/* Which files want a picture made, from GET /api/thumbs/missing — the folder
+   the run was started on and every folder below it, each as
+   { dir, room, files }, `files` already narrowed to the ones with no picture
+   and in the order the folder's pack keeps them.
+
+   A file is planned when it is of a kind that can have a picture (`kindOf`,
+   which is thumbnailKind), is not so large that drawing it is not worth it,
+   and its folder's pack still has room. Room is taken in the order the files
+   come, so what is planned is what the server will keep: a picture drawn past
+   it would be stored and then trimmed straight back out, and drawn again on
+   every run after.
+
+   The files left out are counted, by reason, so the dialog can say why rather
+   than leave them unexplained:
+
+     { files, folders, tooLarge, overFull } */
+export function planBackfill(missing, kindOf, maxBytes = Infinity) {
   const files = []
+  let folders = 0
   let tooLarge = 0
-  for (const file of listing?.files || []) {
-    if (!file?.id || have.has(file.id)) continue
-    if (!kindOf(file.mime || '', file.name || '')) continue
-    if ((file.size || 0) > maxBytes) {
-      tooLarge += 1
-      continue
+  let overFull = 0
+  for (const folder of missing?.folders || []) {
+    let room = typeof folder?.room === 'number' ? folder.room : Infinity
+    let planned = 0
+    for (const file of folder?.files || []) {
+      if (!file?.id) continue
+      if (!kindOf(file.mime || '', file.name || '')) continue
+      if ((file.size || 0) > maxBytes) {
+        tooLarge += 1
+        continue
+      }
+      if (room <= 0) {
+        overFull += 1
+        continue
+      }
+      room -= 1
+      planned += 1
+      files.push(file)
     }
-    files.push(file)
+    if (planned > 0) folders += 1
   }
-  return { files, tooLarge }
+  return { files, folders, tooLarge, overFull }
 }
 
 /* Works through `files`, a few at a time, and stores the pictures in batches.

@@ -250,6 +250,10 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 	v, _ := s.Vault()
 	results := make([]uploadResult, 0, len(uploads)+len(folders))
 	stored := 0
+	// The previews that came with the files, by the ID each file was stored
+	// as, and which result each belongs to — see below the loop.
+	pictures := map[string][]byte{}
+	pictured := map[string]int{}
 
 	// The tree the files hang off, made once each. A folder that will not be
 	// made is reported like a file that will not store — everything under it
@@ -320,16 +324,30 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 		// The picture the browser made of this file, if it made one. A
 		// thumbnail that will not store is a warning and nothing more: the
 		// file itself is already scattered, and the list falls back to the
-		// icon it has always shown.
-		if thumb := formThumb(r, i); len(thumb) > 0 {
-			if err := storeThumb(ctx, v, entry.ID, thumb); err != nil {
+		// icon it has always shown. They are stored together once every file
+		// is in, so a request of forty photographs rewrites its folder's pack
+		// once rather than forty times.
+		if preview := formThumb(r, i); len(preview) > 0 {
+			if normalized, err := thumb.Normalize(preview); err != nil {
 				result.Warnings = append(result.Warnings,
 					fmt.Sprintf("stored the file but not its preview image: %v", err))
+			} else {
+				pictures[entry.ID] = normalized
+				pictured[entry.ID] = len(results)
 			}
 		}
 
 		results = append(results, result)
 		stored++
+	}
+
+	if len(pictures) > 0 {
+		if _, err := v.SetThumbsByID(ctx, pictures); err != nil {
+			for _, at := range pictured {
+				results[at].Warnings = append(results[at].Warnings,
+					fmt.Sprintf("stored the file but not its preview image: %v", err))
+			}
+		}
 	}
 
 	status := http.StatusCreated
@@ -850,6 +868,25 @@ func (s *Server) handleFileThumbSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "stored"})
+}
+
+// handleThumbsMissing reports, for a folder and every folder below it, the
+// files that have no stored thumbnail and how many more each folder's pack can
+// hold — what "Make missing thumbnails" plans from. Whether a file is a kind
+// that can have a picture is the browser's call, since it is the browser that
+// draws them.
+func (s *Server) handleThumbsMissing(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		path = "/"
+	}
+	v, _ := s.Vault()
+	gaps, err := v.MissingThumbs(requestScope(r), path)
+	if err != nil {
+		vaultErrorResponse(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"folders": gaps, "per_folder": vault.MaxPackEntries})
 }
 
 // maxThumbBatch is the most pictures one POST /api/thumbs carries. Each one is

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/chinmay28/SandHarbor/internal/archive"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -32,10 +33,16 @@ import (
 // caller storing something else entirely under the name of a thumbnail.
 const MaxThumbBytes = 128 << 10
 
-// maxPackEntries caps how many thumbnails one pack holds, so that uploading
-// into a folder of thousands of pictures does not rewrite megabytes each time.
-// Beyond it the oldest entries are dropped; they cost one regeneration each.
-const maxPackEntries = 512
+// MaxPackEntries caps how many thumbnails one folder's pack holds, so that
+// uploading into a folder of thousands of pictures does not rewrite tens of
+// megabytes each time. Beyond it the files the folder lists last lose theirs —
+// see trimPack — and MissingThumbs leaves them out, so a backfill does not draw
+// pictures only for them to be dropped again.
+//
+// It was 512, which a single month of phone photos outgrows: a backfill of a
+// 616-file folder stored every picture and then quietly trimmed the last
+// hundred. A stored thumbnail is about 15 KB, so a full pack is some 30 MB.
+const MaxPackEntries = 2048
 
 // thumbArchiveName is the filename recorded inside a pack's parts. Every part
 // carries one, and "thumbs" says as little as the object keys do.
@@ -304,11 +311,80 @@ func (v *Vault) SetThumbsByID(ctx context.Context, thumbs map[string][]byte) (in
 	return stored, nil
 }
 
+// ThumbGap is one folder's files that have no stored thumbnail, and how many
+// more pictures its pack has room for. Files are in listing order, which is the
+// order trimPack keeps them in, so a caller that stores the first Room of them
+// stores pictures that stay.
+type ThumbGap struct {
+	Dir   string   `json:"dir"`
+	Room  int      `json:"room"`
+	Files []*Entry `json:"files"`
+}
+
+// MissingThumbs walks dir and every folder below it and reports, folder by
+// folder, the files that have no stored thumbnail. It answers from the index
+// alone — no account is contacted — and says nothing about whether a file is a
+// kind that can have a picture: that is decided where the pictures are drawn.
+//
+// Folders with nothing missing are left out. The rest come sorted by path.
+func (v *Vault) MissingThumbs(scope Scope, dir string) ([]ThumbGap, error) {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+
+	m, err := v.manifestForLocked(scope)
+	if err != nil {
+		return nil, err
+	}
+	dir = CleanDir(dir)
+	if !m.FolderExists(dir) {
+		return nil, fmt.Errorf("no such folder: %s", dir)
+	}
+
+	byDir := map[string][]*Entry{}
+	for _, e := range m.Entries {
+		if isWithin(e.Dir, dir) {
+			byDir[e.Dir] = append(byDir[e.Dir], e)
+		}
+	}
+
+	gaps := []ThumbGap{}
+	for folder, files := range byDir {
+		sort.Slice(files, func(i, j int) bool {
+			return strings.ToLower(files[i].Name) < strings.ToLower(files[j].Name)
+		})
+		pack := m.Thumbs[folder]
+		held := 0
+		var missing []*Entry
+		for _, e := range files {
+			if pack != nil && pack.holds(e.ID) {
+				held++
+			} else {
+				missing = append(missing, e)
+			}
+		}
+		if len(missing) == 0 {
+			continue
+		}
+		gaps = append(gaps, ThumbGap{Dir: folder, Room: max(0, MaxPackEntries-held), Files: missing})
+	}
+	sort.Slice(gaps, func(i, j int) bool { return gaps[i].Dir < gaps[j].Dir })
+	return gaps, nil
+}
+
+// isWithin reports whether folder is root or somewhere below it. Both are
+// clean paths.
+func isWithin(folder, root string) bool {
+	if root == "/" || folder == root {
+		return true
+	}
+	return strings.HasPrefix(folder, root+"/")
+}
+
 // trimPack keeps a pack under the entry ceiling, dropping the thumbnails of
 // whichever files are no longer in the folder first and then the ones the
 // folder lists last. keep is never dropped — it is the one just stored.
 func (v *Vault) trimPack(scope Scope, dir string, items map[string][]byte, keep string) {
-	if len(items) <= maxPackEntries {
+	if len(items) <= MaxPackEntries {
 		return
 	}
 
@@ -339,7 +415,7 @@ func (v *Vault) trimPack(scope Scope, dir string, items map[string][]byte, keep 
 	}
 
 	for _, id := range order {
-		if len(items) <= maxPackEntries {
+		if len(items) <= MaxPackEntries {
 			return
 		}
 		if id == keep {

@@ -6,25 +6,45 @@ const imagesOnly = (mime, name) => (mime.startsWith('image/') || /\.heic$/i.test
 
 const file = (id, extra = {}) => ({ id, name: `${id}.jpg`, mime: 'image/jpeg', size: 10, ...extra })
 
-test('the plan is the pictureable files the listing says have none', () => {
-  const listing = {
-    files: [
-      file('has'),
-      file('needs'),
-      file('song', { name: 'song.mp3', mime: 'audio/mpeg' }),
-      file('phone', { name: 'IMG_1.HEIC', mime: '' }),
-      file('huge', { size: 1000 }),
+test('the plan is the pictureable files of every folder, within each one\'s room', () => {
+  const missing = {
+    folders: [
+      {
+        dir: '/photos',
+        room: 10,
+        files: [
+          file('needs'),
+          file('song', { name: 'song.mp3', mime: 'audio/mpeg' }),
+          file('phone', { name: 'IMG_1.HEIC', mime: '' }),
+          file('huge', { size: 1000 }),
+        ],
+      },
+      { dir: '/photos/aug', room: 2, files: [file('a1'), file('a2'), file('a3')] },
+      { dir: '/photos/full', room: 0, files: [file('f1')] },
+      { dir: '/photos/music', room: 5, files: [file('tune', { name: 'tune.mp3', mime: 'audio/mpeg' })] },
     ],
-    thumbs: ['has'],
   }
-  const { files, tooLarge } = planBackfill(listing, imagesOnly, 100)
-  assert.deepEqual(files.map((f) => f.id), ['needs', 'phone'])
-  assert.equal(tooLarge, 1)
+  const plan = planBackfill(missing, imagesOnly, 100)
+  assert.deepEqual(plan.files.map((f) => f.id), ['needs', 'phone', 'a1', 'a2'])
+  assert.equal(plan.folders, 2)
+  assert.equal(plan.tooLarge, 1)
+  assert.equal(plan.overFull, 2)
 })
 
-test('an empty or missing listing plans nothing', () => {
-  assert.deepEqual(planBackfill(null, imagesOnly), { files: [], tooLarge: 0 })
-  assert.deepEqual(planBackfill({ files: [] }, imagesOnly), { files: [], tooLarge: 0 })
+test('a file that is not pictureable or too large takes none of the room', () => {
+  const missing = {
+    folders: [{
+      dir: '/', room: 1,
+      files: [file('song', { name: 'song.mp3', mime: 'audio/mpeg' }), file('huge', { size: 1000 }), file('ok')],
+    }],
+  }
+  assert.deepEqual(planBackfill(missing, imagesOnly, 100).files.map((f) => f.id), ['ok'])
+})
+
+test('an empty or missing answer plans nothing', () => {
+  const none = { files: [], folders: 0, tooLarge: 0, overFull: 0 }
+  assert.deepEqual(planBackfill(null, imagesOnly), none)
+  assert.deepEqual(planBackfill({ folders: [] }, imagesOnly), none)
 })
 
 test('every file is made once and stored in batches no larger than asked', async () => {
