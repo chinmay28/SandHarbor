@@ -3,16 +3,22 @@ package com.sandvault.app
 import android.content.Intent
 import android.os.Bundle
 import android.text.InputType
+import android.view.View
 import android.widget.TextView
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.preference.EditTextPreference
-import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.SwitchPreferenceCompat
-
+import com.google.android.material.appbar.MaterialToolbar
+import com.sandvault.app.core.AppMode
+import com.sandvault.app.core.ModeChange
+import com.sandvault.app.core.ModeSwitch
 import com.sandvault.app.core.Origin
 import com.sandvault.app.core.ServerState
 import kotlin.concurrent.thread
@@ -26,10 +32,26 @@ import kotlin.concurrent.thread
  */
 class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_settings)
+        setSupportActionBar(findViewById<MaterialToolbar>(R.id.toolbar))
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
+
+        // Edge to edge (always, from Android 15): the toolbar's background
+        // runs up under the status bar while its contents stay below it, and
+        // the list keeps clear of the navigation bar and any cutout.
+        val appBar = findViewById<View>(R.id.app_bar)
+        val container = findViewById<View>(R.id.settings_container)
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.root)) { _, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.ime())
+            appBar.setPadding(bars.left, bars.top, bars.right, 0)
+            container.setPadding(bars.left, 0, bars.right, bars.bottom)
+            WindowInsetsCompat.CONSUMED
+        }
+
         if (savedInstanceState == null) {
-            supportFragmentManager.beginTransaction().replace(android.R.id.content, SettingsFragment()).commit()
+            supportFragmentManager.beginTransaction().replace(R.id.settings_container, SettingsFragment()).commit()
         }
     }
 
@@ -48,15 +70,27 @@ class SettingsActivity : AppCompatActivity() {
             store = ConfigStore(requireContext())
             val canRunHere = LocalServer.available(requireContext())
 
-            val mode = findPreference<ListPreference>(ConfigStore.KEY_MODE)!!
-            if (mode.value == null) mode.value = ConfigStore.MODE_REMOTE
-            mode.setOnPreferenceChangeListener { _, v ->
-                if (v == ConfigStore.MODE_ON_PHONE && !canRunHere) {
-                    message(getString(R.string.setup_phone_unavailable))
-                    false
-                } else {
-                    showFor(v as String)
-                    true
+            // The mode itself lives under KEY_MODE, as ConfigStore reads it;
+            // the switch only shows it and writes it back.
+            val runOnPhone = findPreference<SwitchPreferenceCompat>(KEY_RUN_ON_PHONE)!!
+            runOnPhone.isChecked = store.load().mode == AppMode.ON_PHONE
+            runOnPhone.setOnPreferenceChangeListener { _, on ->
+                val target = if (on == true) AppMode.ON_PHONE else AppMode.REMOTE
+                when (ModeSwitch.check(target, store.load(), canRunHere)) {
+                    ModeChange.Unavailable -> {
+                        message(getString(R.string.setup_phone_unavailable))
+                        false
+                    }
+                    ModeChange.Apply -> {
+                        setMode(target)
+                        true
+                    }
+                    ModeChange.NeedsAddress -> {
+                        setMode(target)
+                        // A thin client with nowhere to go: ask where, now.
+                        listView.post { onDisplayPreferenceDialog(findPreference<EditTextPreference>(ConfigStore.KEY_ADDRESS)!!) }
+                        true
+                    }
                 }
             }
 
@@ -111,7 +145,19 @@ class SettingsActivity : AppCompatActivity() {
             findPreference<Preference>("version")!!.summary = BuildConfig.VERSION_NAME +
                 if (canRunHere) "" else " · " + getString(R.string.status_unavailable)
 
-            showFor(mode.value)
+            showFor(store.load().mode)
+        }
+
+        override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+            super.onViewCreated(view, savedInstanceState)
+            // The last rows scroll up clear of the navigation bar, rather than
+            // the list stopping short of it with a dead band underneath.
+            listView.clipToPadding = false
+        }
+
+        private fun setMode(m: AppMode) {
+            preferenceManager.sharedPreferences!!.edit().putString(ConfigStore.KEY_MODE, ConfigStore.modeValue(m)).apply()
+            showFor(m)
         }
 
         override fun onStart() {
@@ -137,8 +183,8 @@ class SettingsActivity : AppCompatActivity() {
             else -> getString(R.string.status_stopped)
         }
 
-        private fun showFor(mode: String?) {
-            val phone = mode == ConfigStore.MODE_ON_PHONE
+        private fun showFor(mode: AppMode?) {
+            val phone = mode == AppMode.ON_PHONE
             findPreference<PreferenceCategory>("cat_remote")!!.isVisible = !phone
             findPreference<PreferenceCategory>("cat_phone")!!.isVisible = phone
         }
@@ -188,5 +234,8 @@ class SettingsActivity : AppCompatActivity() {
             AlertDialog.Builder(requireContext()).setMessage(text).setPositiveButton(android.R.string.ok, null).show()
         }
 
+        private companion object {
+            const val KEY_RUN_ON_PHONE = "run_on_phone"
+        }
     }
 }
