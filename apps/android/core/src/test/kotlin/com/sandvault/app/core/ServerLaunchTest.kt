@@ -76,4 +76,12 @@ class ServerLaunchTest {
         assertEquals("a b", MachineName.of("a\n  b\u0007", null, null))
         assertEquals(48, MachineName.of("x".repeat(100), null, null).length)
     }
+
+    @Test
+    fun theBridgeToProtonReachesTheServerOnlyWhenThereIsOne() {
+        assertFalse(launch.environment().containsKey("SAND_APP_BRIDGE"))
+        val env = launch.copy(bridge = com.sandvault.app.core.proton.BridgeEndpoint("http://127.0.0.1:4100", "tok")).environment()
+        assertEquals("http://127.0.0.1:4100", env["SAND_APP_BRIDGE"])
+        assertEquals("tok", env["SAND_APP_BRIDGE_TOKEN"])
+    }
 }
