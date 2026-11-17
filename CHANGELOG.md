@@ -10,6 +10,33 @@ Each section below is the body of the corresponding GitHub release. A heading
 must name the tag exactly — a tag whose commit builds a different version is a
 tag that shouldn't be published.
 
+## v2026.11.253
+
+**Downloads:** `sand-v2026.11.253-linux-arm64` (the server),
+**`sand-vault.apk`** (SAND Vault for Android — on the phone, open
+`https://github.com/chinmay28/SandHarbor/releases/latest/download/sand-vault.apk`;
+it installs over the previous version) and **`sand-tv.apk`** (the SAND TV app
+for Fire TV). All are in `SHA256SUMS`.
+
+### One machine does the background work
+
+A vault opened on several machines used to have every one of them carry out its
+standing instructions: replication, folder policies (scheduled checks and
+repairs), the re-encryption a password change leaves, scheduled pruning and the
+checksum ledger. A phone running the vault replicated too, and failed on every
+file whose parts are on another machine's own disks.
+
+Now **Vault settings › Machines › Make primary** chooses the one machine that
+does this work, usually the computer that stays on. The others leave it alone,
+and their replication panel says *Waiting* and names the machine making the
+copies. Until a primary is chosen, every computer runs the work as before. What
+you start by hand still runs wherever you start it.
+
+### SAND Vault for Android: no background work on the phone
+
+The phone never runs the vault's background work and cannot be made the
+primary. It is marked as a phone in the list of machines.
+
 ## v2026.11.252
 
 **Downloads:** `sand-v2026.11.252-linux-arm64` (the server),
