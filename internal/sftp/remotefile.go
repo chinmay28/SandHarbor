@@ -8,15 +8,24 @@ import (
 	pkgsftp "github.com/pkg/sftp"
 )
 
-// defaultStripeBlock is how much of a file one session is asked for at a time
-// when a file is read through several.
+// How a file read through several sessions is cut up.
 //
-// One block fills a session's 2 MiB window — pkg/sftp splits it into 32 KiB
-// requests and keeps 64 in flight — and each session reads two at once (see
-// readsPerReader), so the window is never left empty between them. Small
-// enough that the blocks out at once, three per session, are tens of
-// megabytes rather than hundreds: 48 MiB at the default eight streams.
-const defaultStripeBlock = 2 << 20
+// A block is one SFTP packet, the most pkg/sftp asks a server for in one
+// request, and a session has 64 of them outstanding — the 2 MiB that fills
+// its SSH window, and what pkg/sftp's own WriteTo keeps in flight. Packets
+// rather than larger blocks so that the file reaches the writer, and anything
+// counting it on the way, as it arrives: see copyStriped. What is out at once
+// is 65 packets a session, about 16 MiB at the default eight streams.
+const (
+	defaultStripeBlock    = 32 << 10
+	defaultStripeInFlight = 64
+
+	// defaultStripeMin is the smallest remainder worth spreading out: two
+	// windows. Anything less fits in what one session carries in a round trip
+	// or two, and opening handles on the other sessions would cost as much as
+	// it saved.
+	defaultStripeMin = 4 << 20
+)
 
 // RemoteFile is a file on the server opened for reading.
 //
@@ -43,7 +52,7 @@ func (r *RemoteFile) Close() error { return r.f.Close() }
 
 // WriteTo copies the file from its current offset to its end into w.
 //
-// A file at least two blocks long is read through every session the
+// A file with at least defaultStripeMin left to go is read through every session the
 // connection has, or can open, up to Config.Streams. Anything smaller, a
 // connection limited to one stream, or a server that will not open a second
 // session goes through the primary session's own WriteTo, which is what this
@@ -58,7 +67,7 @@ func (r *RemoteFile) WriteTo(w io.Writer) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if r.c.streams <= 1 || r.size-start < 2*int64(r.c.block) {
+	if r.c.streams <= 1 || r.size-start < r.c.stripeMin {
 		return r.f.WriteTo(w)
 	}
 
@@ -78,7 +87,7 @@ func (r *RemoteFile) WriteTo(w io.Writer) (int64, error) {
 		readers = append(readers, h)
 	}
 
-	n, err := copyStriped(w, readers, start, r.size, r.c.block)
+	n, err := copyStriped(w, readers, start, r.size, r.c.block, r.c.inFlight)
 	if _, serr := r.f.Seek(start+n, io.SeekStart); serr != nil && err == nil {
 		err = serr
 	}

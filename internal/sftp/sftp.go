@@ -143,10 +143,13 @@ type Client struct {
 	roots   map[string]string
 
 	// streams is how many sessions a large read may use, the primary one
-	// included, and block the size of each read they are handed. See
-	// RemoteFile.WriteTo.
-	streams int
-	block   int
+	// included; block, inFlight and stripeMin are how it is cut up, and are
+	// fields rather than the constants they default to so that tests can
+	// spread a small file. See RemoteFile.WriteTo.
+	streams   int
+	block     int
+	inFlight  int
+	stripeMin int64
 
 	// extra holds the sessions opened for reading beyond the primary one,
 	// opened the first time a large file needs them and kept for the life of
@@ -290,6 +293,7 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 	return &Client{
 		ssh: sshClient, sftp: session, hostKey: checker.seen,
 		streams: cfg.streams(), block: defaultStripeBlock,
+		inFlight: defaultStripeInFlight, stripeMin: defaultStripeMin,
 	}, nil
 }
 

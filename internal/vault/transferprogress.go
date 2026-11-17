@@ -1,6 +1,9 @@
 package vault
 
-import "io"
+import (
+	"io"
+	"time"
+)
 
 // Where a transfer has got to, while it is still getting there.
 //
@@ -112,9 +115,20 @@ type TransferProgress struct {
 //
 // A read off an SFTP handle comes back in tens of kilobytes, and an 18 GB file
 // is half a million of them — a report per read would be half a million
-// callbacks to draw a bar that moves in whole percent. Four megabytes is under
-// a second on any connection worth watching a bar for.
+// callbacks to draw a bar that moves in whole percent.
 const progressEvery = 4 << 20
+
+// progressInterval is how long the reader goes without saying anything while
+// bytes are moving, however few.
+//
+// Without it the reports are paced by the link: four megabytes is a fraction
+// of a second on a good one and six minutes at 90 kbit/s, and the dialog drops
+// a speed that has had nothing behind it for twelve seconds (staleRateAfter in
+// internal/server) — so below about 3 Mbit/s the transfer showed no speed at
+// all, on exactly the connections where somebody most wants to know it. A
+// second keeps a slow transfer visible, and is still well apart from the
+// half-second the speed is measured over.
+const progressInterval = time.Second
 
 // progressReader counts what passes through it and says so, not too often.
 type progressReader struct {
@@ -122,6 +136,11 @@ type progressReader struct {
 	say   func(int64)
 	done  int64
 	since int64
+
+	// last is when it last said anything, or when counting began. now is
+	// time.Now unless a test is driving the clock.
+	last time.Time
+	now  func() time.Time
 }
 
 func (p *progressReader) Read(b []byte) (int, error) {
@@ -158,25 +177,41 @@ func (p *progressReader) WriteTo(w io.Writer) (int64, error) {
 	return n, err
 }
 
-// count tallies bytes that moved, reporting every progressEvery of them.
+// count tallies bytes that moved, reporting every progressEvery of them or
+// every progressInterval, whichever comes first.
 func (p *progressReader) count(n int64) {
 	if n <= 0 {
 		return
 	}
+	now := p.clock()
+	if p.last.IsZero() {
+		p.last = now
+	}
 	p.done += n
 	p.since += n
-	if p.since >= progressEvery {
-		p.since = 0
-		p.say(p.done)
+	if p.since >= progressEvery || now.Sub(p.last) >= progressInterval {
+		p.report(now)
 	}
 }
 
 // flush reports whatever the throttle is still holding.
 func (p *progressReader) flush() {
 	if p.since > 0 {
-		p.since = 0
-		p.say(p.done)
+		p.report(p.clock())
 	}
+}
+
+func (p *progressReader) report(now time.Time) {
+	p.since = 0
+	p.last = now
+	p.say(p.done)
+}
+
+func (p *progressReader) clock() time.Time {
+	if p.now != nil {
+		return p.now()
+	}
+	return time.Now()
 }
 
 // progressWriter is the receiving end of a delegated WriteTo: the bytes are

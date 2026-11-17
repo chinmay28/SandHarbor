@@ -43,7 +43,7 @@ func TestCopyStripedCopiesEveryShape(t *testing.T) {
 				name := fmt.Sprintf("readers=%d/start=%d/end=%d", readers, start, end)
 				t.Run(name, func(t *testing.T) {
 					var out bytes.Buffer
-					n, err := copyStriped(&out, readersOver(data, readers), start, end, block)
+					n, err := copyStriped(&out, readersOver(data, readers), start, end, block, 2)
 					if err != nil {
 						t.Fatalf("copy: %v", err)
 					}
@@ -83,7 +83,7 @@ func TestCopyStripedKeepsOrderWhenBlocksFinishOutOfOrder(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	n, err := copyStriped(&out, readers, 0, int64(len(data)), 64)
+	n, err := copyStriped(&out, readers, 0, int64(len(data)), 64, 2)
 	if err != nil {
 		t.Fatalf("copy: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestCopyStripedStopsCleanlyAtAFileThatShrank(t *testing.T) {
 	data := patterned(100)
 	// The file was measured at 160 bytes and is 100 by the time it is read.
 	var out bytes.Buffer
-	n, err := copyStriped(&out, readersOver(data, 3), 0, 160, 16)
+	n, err := copyStriped(&out, readersOver(data, 3), 0, 160, 16, 2)
 	if err != nil {
 		t.Fatalf("a shrunk file should read as a shorter file, got %v", err)
 	}
@@ -132,7 +132,7 @@ func TestCopyStripedReportsAReadErrorWithAnHonestCount(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	n, err := copyStriped(&out, readers, 0, int64(len(data)), 16)
+	n, err := copyStriped(&out, readers, 0, int64(len(data)), 16, 2)
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want %v", err, boom)
 	}
@@ -156,7 +156,7 @@ func (f *failingWriter) Write(b []byte) (int, error) {
 
 func TestCopyStripedStopsAtAWriteError(t *testing.T) {
 	data := patterned(64 * 100)
-	n, err := copyStriped(&failingWriter{after: 3}, readersOver(data, 4), 0, int64(len(data)), 64)
+	n, err := copyStriped(&failingWriter{after: 3}, readersOver(data, 4), 0, int64(len(data)), 64, 2)
 	if err == nil || err.Error() != "disk full" {
 		t.Fatalf("err = %v, want the writer's", err)
 	}
@@ -204,7 +204,7 @@ func TestCopyStripedReadsOnlyABoundedDistanceAhead(t *testing.T) {
 
 	errc := make(chan error, 1)
 	go func() {
-		_, err := copyStriped(w, rs, 0, int64(len(data)), block)
+		_, err := copyStriped(w, rs, 0, int64(len(data)), block, 2)
 		errc <- err
 	}()
 
@@ -212,7 +212,7 @@ func TestCopyStripedReadsOnlyABoundedDistanceAhead(t *testing.T) {
 	// Long enough for an unbounded reader to run far ahead of a writer that
 	// is not taking anything.
 	time.Sleep(50 * time.Millisecond)
-	if got, limit := reads.Load(), int64(aheadPerReader*readers); got > limit {
+	if got, limit := reads.Load(), int64(3*readers); got > limit {
 		t.Errorf("%d blocks read while the writer was stuck on the first; the limit is %d", got, limit)
 	}
 	close(w.release)
@@ -222,10 +222,13 @@ func TestCopyStripedReadsOnlyABoundedDistanceAhead(t *testing.T) {
 }
 
 func TestCopyStripedRefusesNonsense(t *testing.T) {
-	if _, err := copyStriped(io.Discard, nil, 0, 10, 4); err == nil {
+	if _, err := copyStriped(io.Discard, nil, 0, 10, 4, 2); err == nil {
 		t.Error("no readers should be an error")
 	}
-	if _, err := copyStriped(io.Discard, readersOver(nil, 1), 0, 10, 0); err == nil {
+	if _, err := copyStriped(io.Discard, readersOver(nil, 1), 0, 10, 0, 2); err == nil {
 		t.Error("a zero block size should be an error")
+	}
+	if _, err := copyStriped(io.Discard, readersOver(nil, 1), 0, 10, 4, 0); err == nil {
+		t.Error("no reads in flight should be an error")
 	}
 }

@@ -14,9 +14,8 @@ import (
 	"github.com/chinmay28/SandHarbor/internal/sftp/sftptest"
 )
 
-// stripeFixture serves one file and returns a client dialled through addr
-// (the server's own address when addr is empty), with blocks small enough
-// that a file of a few hundred kilobytes is spread across sessions.
+// stripeFixture serves one file and returns a client for it, cut up finely
+// enough that a file of a few hundred kilobytes is spread across sessions.
 func stripeFixture(t *testing.T, data []byte, streams int, tweak func(*sftptest.Server)) (*Client, *sftptest.Server, string) {
 	t.Helper()
 	disk := t.TempDir()
@@ -36,7 +35,9 @@ func stripeFixture(t *testing.T, data []byte, streams int, tweak func(*sftptest.
 		t.Fatalf("dial: %v", err)
 	}
 	t.Cleanup(func() { client.Close() })
-	client.block = 32 << 10
+	// Small enough that a file of a few hundred kilobytes is spread across
+	// every session and comes out in many pieces.
+	client.block, client.inFlight, client.stripeMin = 4<<10, 4, 64<<10
 	return client, server, filepath.ToSlash(disk)
 }
 
@@ -119,13 +120,13 @@ func TestRemoteFileUsesWhatAStingyServerAllows(t *testing.T) {
 }
 
 func TestRemoteFileLeavesSmallFilesAndSingleStreamsAlone(t *testing.T) {
-	small := patterned(2*(32<<10) - 1)
+	small := patterned(64<<10 - 1)
 	client, server, root := stripeFixture(t, small, 8, nil)
 	if got := copyOut(t, client, root, 0); !bytes.Equal(got, small) {
 		t.Fatal("small copy differs")
 	}
 	if got := server.SessionsOpened(); got != 1 {
-		t.Errorf("a file under two blocks opened %d sessions, want just the primary", got)
+		t.Errorf("a file under the striping minimum opened %d sessions, want just the primary", got)
 	}
 
 	large := patterned(10 * (32 << 10))
@@ -229,5 +230,43 @@ func TestRemoteFileIsFasterAtADistance(t *testing.T) {
 	t.Logf("at %v: one session %.1f MB/s, four %.1f MB/s", rtt, mbps(one), mbps(four))
 	if float64(one)/float64(four) < 1.5 {
 		t.Errorf("four sessions took %v against one's %v: striping is not paying for itself", four, one)
+	}
+}
+
+// pieceWriter records the largest single write it is handed.
+type pieceWriter struct {
+	bytes.Buffer
+	largest int
+}
+
+func (p *pieceWriter) Write(b []byte) (int, error) {
+	p.largest = max(p.largest, len(b))
+	return p.Buffer.Write(b)
+}
+
+// What reads the file sees it arrive a packet at a time, as it would from a
+// single session — a progress counter on a slow link must not wait for
+// megabytes to land in one piece before it can say anything.
+func TestRemoteFileHandsTheFileOnAPacketAtATime(t *testing.T) {
+	data := patterned(10 * (32 << 10))
+	client, server, root := stripeFixture(t, data, 4, nil)
+
+	f, _, err := client.OpenUnder(root, "film.mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	var out pieceWriter
+	if _, err := io.Copy(&out, f); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(out.Bytes(), data) {
+		t.Fatal("copy differs")
+	}
+	if server.SessionsOpened() != 4 {
+		t.Fatalf("%d sessions opened, so this did not test striping", server.SessionsOpened())
+	}
+	if out.largest > client.block {
+		t.Errorf("a %d byte write, larger than the %d byte block", out.largest, client.block)
 	}
 }
