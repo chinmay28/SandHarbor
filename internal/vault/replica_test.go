@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/chinmay28/SandHarbor/internal/archive"
+	"github.com/chinmay28/SandHarbor/internal/provider"
 )
 
 // replicaVault is a chunked vault whose accounts each have a replica folder
@@ -1130,5 +1131,205 @@ func TestHealthNamesAnAccountWithoutAReplicaFolder(t *testing.T) {
 		if !s.Present {
 			t.Errorf("part %d on %s reported missing: %s", s.Part, s.ProviderName, s.Error)
 		}
+	}
+}
+
+// reconnectReplicaAccount disconnects the third account of a 2-of-3 replica
+// vault and connects the same storage back under a fresh ID, with its replica
+// folder and the policy restored — the state a disconnect leaves a replica in:
+// the index still names it, short of the shard whose record went, while that
+// shard sits in the reconnected account's replica folder.
+func reconnectReplicaAccount(t *testing.T, v *Vault, roots, replicaRoots []string) (back string, dropped Shard) {
+	t.Helper()
+	ctx := context.Background()
+	ids := providerIDs(t, v)
+	away := ids[2]
+
+	v.mu.RLock()
+	for _, e := range v.manifest.Entries {
+		if e.Replica == nil {
+			continue
+		}
+		for _, s := range e.Replica.Shards {
+			if s.ProviderID == away {
+				dropped = s
+			}
+		}
+	}
+	v.mu.RUnlock()
+	if dropped.ProviderID == "" {
+		t.Fatal("no replica shard on the account being disconnected")
+	}
+
+	if err := v.RemoveProvider(away, true); err != nil {
+		t.Fatalf("RemoveProvider: %v", err)
+	}
+	cfg, err := v.AddProvider(ctx, provider.Config{
+		Kind:    provider.KindLocal,
+		Name:    "reconnected",
+		Options: map[string]string{"path": roots[2]},
+	})
+	if err != nil {
+		t.Fatalf("AddProvider: %v", err)
+	}
+	err = v.SetReplication(ReplicationSettings{
+		Accounts: []ReplicaAccount{
+			{ID: ids[0], ReplicaFolder: replicaRoots[0]},
+			{ID: ids[1], ReplicaFolder: replicaRoots[1]},
+			{ID: cfg.ID, ReplicaFolder: replicaRoots[2]},
+		},
+		Scheme: archive.Scheme{Data: 2, Total: 3},
+	})
+	if err != nil {
+		t.Fatalf("SetReplication: %v", err)
+	}
+	return cfg.ID, dropped
+}
+
+func replicaStrays(rows []StrayShard) []StrayShard {
+	var out []StrayShard
+	for _, row := range rows {
+		if row.Replica {
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+func TestTheStrayScanFindsAReplicaShardADisconnectMislaid(t *testing.T) {
+	ctx := context.Background()
+	v, roots, replicaRoots := replicaVault(t, 3, 3, archive.Scheme{Data: 2, Total: 3})
+	if err := v.SetReplicate("/", on(true)); err != nil {
+		t.Fatal(err)
+	}
+	entry := uploadSized(t, v, "/", "x.bin", 3000)
+	replicate(t, v)
+	back, dropped := reconnectReplicaAccount(t, v, roots, replicaRoots)
+	replica := v.entryByID(t, entry.ID).Replica
+
+	scan := orphanScan(t, v)
+	if scan.Found {
+		t.Errorf("a mislaid replica shard was reported as abandoned: %+v", scan.Items)
+	}
+	rows := replicaStrays(scan.Strays)
+	if len(rows) != 1 {
+		t.Fatalf("found %d mislaid replica shard(s), want 1: %+v", len(rows), scan.Strays)
+	}
+	row := rows[0]
+	switch {
+	case row.ArchiveID != replica.ArchiveID:
+		t.Errorf("blamed archive %s, want the replica's %s", row.ArchiveID, replica.ArchiveID)
+	case row.ProviderID != back:
+		t.Errorf("blamed account %q, want the reconnected %q as the index names it", row.ProviderID, back)
+	case row.Part != dropped.Part:
+		t.Errorf("found shard %d, want %d", row.Part, dropped.Part)
+	case row.Path != "/x.bin" || row.FileID != entry.ID:
+		t.Errorf("pointed at %q (%s)", row.Path, row.FileID)
+	case row.Have != 2 || row.Want != 3:
+		t.Errorf("said the replica has %d of %d shards, want 2 of 3", row.Have, row.Want)
+	case !row.Reattachable:
+		t.Errorf("the replica shard is not offered: %s", row.Reason)
+	}
+
+	// Asking the one cloud lists its replica folder as well as its parts.
+	one, err := v.ScanForStrays(ctx, back)
+	if err != nil {
+		t.Fatalf("ScanForStrays: %v", err)
+	}
+	if got := replicaStrays(one.Strays); len(got) != 1 || got[0].ArchiveID != replica.ArchiveID {
+		t.Errorf("the scan of one cloud found replica strays %+v, want the replica's shard", got)
+	}
+	roots2 := 0
+	for _, a := range one.Accounts {
+		if accountIDOf(a.ProviderID) != back {
+			t.Errorf("the scan of one cloud listed %s", a.Name)
+		}
+		roots2++
+	}
+	if roots2 != 2 {
+		t.Errorf("the scan of one cloud listed %d root(s), want its parts and its replica folder", roots2)
+	}
+}
+
+func TestReattachPutsAReplicaShardBackAndTheWorkerLeavesItBe(t *testing.T) {
+	ctx := context.Background()
+	v, roots, replicaRoots := replicaVault(t, 3, 3, archive.Scheme{Data: 2, Total: 3})
+	if err := v.SetReplicate("/", on(true)); err != nil {
+		t.Fatal(err)
+	}
+	entry := uploadSized(t, v, "/", "x.bin", 3000)
+	replicate(t, v)
+	back, dropped := reconnectReplicaAccount(t, v, roots, replicaRoots)
+	before := v.entryByID(t, entry.ID).Replica
+	replicaObjects := objectsUnder(t, replicaRoots)
+
+	report, err := v.ReattachShards(ctx, ReattachOptions{})
+	if err != nil {
+		t.Fatalf("ReattachShards: %v", err)
+	}
+	if len(report.Skipped) > 0 || len(report.Warnings) > 0 {
+		t.Errorf("the repair complained: %v %v", report.Skipped, report.Warnings)
+	}
+	if len(report.RestoredReplicas) != 1 || report.RestoredReplicas[0] != "/x.bin" {
+		t.Errorf("RestoredReplicas = %v, want the file", report.RestoredReplicas)
+	}
+	// The parts shard the same disconnect mislaid comes back in the same pass.
+	if len(report.Restored) != 1 || report.Shards != 2 || report.Files != 1 {
+		t.Errorf("report = %+v, want the parts shard and the replica shard of one file", report)
+	}
+
+	after := v.entryByID(t, entry.ID).Replica
+	if after == before {
+		t.Error("the replica was changed in place rather than replaced")
+	}
+	if after.ArchiveID != before.ArchiveID || len(after.Shards) != 3 {
+		t.Fatalf("replica after the repair = %+v, want the same archive with three shards", after)
+	}
+	var recorded *Shard
+	for i, s := range after.Shards {
+		if s.ProviderID == back {
+			recorded = &after.Shards[i]
+		}
+	}
+	if recorded == nil || recorded.Key != dropped.Key || recorded.Part != dropped.Part || recorded.ProviderName != "reconnected" {
+		t.Errorf("recorded %+v, want the dropped record's key and shard on the reconnected account", recorded)
+	}
+
+	// Current again, so the worker does not cut and upload it a second time.
+	if made := replicate(t, v); made != 0 {
+		t.Errorf("the worker remade %d replica(s) after the repair", made)
+	}
+	if got := objectsUnder(t, replicaRoots); got != replicaObjects {
+		t.Errorf("the replica folders hold %d objects, %d before: something was written or erased", got, replicaObjects)
+	}
+
+	// And the reattached shard is one the replica reads from.
+	emptyCloud(t, replicaRoots[0])
+	v.chunks.clear()
+	if got, err := readFrom(t, v, entry.ID, ReadReplica); err != nil || len(got) != 3000 {
+		t.Errorf("the replica does not read with the reattached shard standing in: %v", err)
+	}
+	if scan := orphanScan(t, v); len(replicaStrays(scan.Strays)) != 0 {
+		t.Errorf("replica shards still reported as mislaid: %+v", scan.Strays)
+	}
+}
+
+func TestReattachableGivesAReplicaOneShardPerAccount(t *testing.T) {
+	owner := &ownedArchive{
+		scheme:       archive.Scheme{Data: 2, Total: 3},
+		parts:        map[int]bool{1: true},
+		accounts:     map[string]bool{"a": true},
+		reattachable: true,
+		replica:      true,
+	}
+	if ok, reason := reattachable(owner, "a", "A", PolicyRedundant, 2, 1); ok || !strings.Contains(reason, "replica") {
+		t.Errorf("a second replica shard on one account = %v %q, want it refused", ok, reason)
+	}
+	if ok, reason := reattachable(owner, "b", "B", PolicyRedundant, 2, 1); !ok {
+		t.Errorf("a replica shard on an account holding none was refused: %s", reason)
+	}
+	owner.replica = false
+	if ok, reason := reattachable(owner, "a", "A", PolicyRedundant, 2, 1); !ok {
+		t.Errorf("outside strict placement a part may share an account: %s", reason)
 	}
 }

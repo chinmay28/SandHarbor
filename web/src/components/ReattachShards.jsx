@@ -107,6 +107,19 @@ export default function ReattachShards({ scan, providerId = '', cloud = '', zInd
           </>
         )}
 
+        {/* A replica back to every shard is a replica the worker no longer
+            has to cut and upload again. */}
+        {report.restored_replicas?.length > 0 && (
+          <>
+            <SectionLabel>Replica back to full spread</SectionLabel>
+            <div style={listStyle}>
+              {report.restored_replicas.map((path) => (
+                <div key={path} style={{ ...rowStyle, fontSize: '12px', color: COLORS.text }}>{path}</div>
+              ))}
+            </div>
+          </>
+        )}
+
         <Banner tone="info">
           Nothing here checked what the parts contain, any more than finishing a recovery does.
           Run a health check from a file&apos;s menu if you want the clouds asked.
@@ -170,7 +183,8 @@ export default function ReattachShards({ scan, providerId = '', cloud = '', zInd
       </p>
       <p style={paragraph}>
         So the files below are short of a spare part while the spare sits on a cloud you are
-        connected to. Recording them again <strong>moves no data at all</strong>: a part is stored
+        connected to. The same goes for a file&apos;s replica: a shard of it left in a cloud&apos;s
+        replica folder is recorded back onto the replica, so it is not copied all over again. Recording them again <strong>moves no data at all</strong>: a part is stored
         under a name derived from the file it belongs to, so it is already exactly where the record
         would say it is.
       </p>
@@ -181,7 +195,7 @@ export default function ReattachShards({ scan, providerId = '', cloud = '', zInd
         {scan?.strays_truncated > 0 ? ` (${scan.strays_truncated} more not listed)` : ''}
       </SectionLabel>
       <div style={listStyle}>
-        {rows.map((row) => <StrayRow key={`${row.provider_id}:${row.archive_id}:${row.part}`} row={row} />)}
+        {rows.map((row) => <StrayRow key={strayRowKey(row)} row={row} />)}
       </div>
 
       {withheld.length > 0 && (
@@ -189,7 +203,7 @@ export default function ReattachShards({ scan, providerId = '', cloud = '', zInd
           <SectionLabel>Left as they are</SectionLabel>
           <div style={listStyle}>
             {withheld.map((row) => (
-              <StrayRow key={`${row.provider_id}:${row.archive_id}:${row.part}`} row={row} muted />
+              <StrayRow key={strayRowKey(row)} row={row} muted />
             ))}
           </div>
         </>
@@ -204,6 +218,12 @@ export default function ReattachShards({ scan, providerId = '', cloud = '', zInd
       </div>
     </Modal>
   )
+}
+
+/* A replica shard and a part can share a cloud, an archive id never; the
+   flag is in the key anyway so the two never collide in a list. */
+function strayRowKey(row) {
+  return `${row.replica ? 'r' : 'p'}:${row.provider_id}:${row.archive_id}:${row.part}`
 }
 
 function StrayRow({ row, muted }) {
@@ -229,8 +249,10 @@ function StrayRow({ row, muted }) {
           {row.path || `a file in another vault · ${row.archive_id}`}
         </div>
         <div style={{ fontFamily: FONT.mono, fontSize: '10px', color: COLORS.textMuted }}>
-          part {row.part} on {row.provider_name} · {formatBytes(row.bytes)}
-          {row.want ? ` · ${row.have} of ${row.want} parts recorded` : ''}
+          {row.replica
+            ? `replica part ${row.part} in ${row.provider_name}'s replica folder`
+            : `part ${row.part} on ${row.provider_name}`} · {formatBytes(row.bytes)}
+          {row.want ? ` · ${row.have} of ${row.want} ${row.replica ? 'replica parts' : 'parts'} recorded` : ''}
           {row.reason ? ` · ${row.reason}` : ''}
         </div>
       </div>

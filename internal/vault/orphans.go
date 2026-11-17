@@ -175,6 +175,13 @@ type StrayShard struct {
 	ArchiveID string `json:"archive_id"`
 	Part      int    `json:"part"`
 
+	// Replica says the shard is one of the file's replica, found in the
+	// account's replica folder, rather than one of its parts. ArchiveID is
+	// then the replica's, Have and Want count the replica's shards, and
+	// ProviderID is still the account's own ID — the index names a replica
+	// shard's account the way it names a part's.
+	Replica bool `json:"replica,omitempty"`
+
 	// Objects is how many stored objects this shard occupies — one for a file
 	// stored whole, one per chunk otherwise — and Bytes what they weigh.
 	Objects int   `json:"objects"`
@@ -469,8 +476,9 @@ func (v *Vault) scanForOrphans(ctx context.Context) (*OrphanScan, error) {
 // second copy of the same shard on another account, and it does not need to:
 // a copy the index already has a record for is "accounted for" whichever
 // account it sits on, and one it does not is found the next time that account
-// is listed. A replica folder is not listed in a scoped scan, since nothing in
-// one is ever reattached (see ownedReplicaArchivesLocked).
+// is listed. The same goes for the account's replica folder, which a scoped
+// scan lists too when the account keeps one: a replica shard is judged against
+// the replicas the index names, wherever the replica's other shards are.
 //
 // An ID no connected account carries is ErrNoAccount rather than an empty
 // answer, because an empty answer here reads as "that cloud holds nothing of
@@ -513,15 +521,13 @@ func (v *Vault) scanForOrphansOn(ctx context.Context, providerID string, onProgr
 	// lands between the two reads is seen by at least one of them: either the
 	// index already names it, or the registry still does.
 	v.noteInFlight(owned)
-	listings := v.orphanListingsLocked(owned)
 	if providerID != "" {
-		cfg, ok := v.configForLocked(providerID)
-		if !ok {
+		if _, ok := v.configForLocked(providerID); !ok {
 			v.mu.RUnlock()
 			return nil, fmt.Errorf("%w: %s", ErrNoAccount, providerID)
 		}
-		listings = []orphanListing{{cfg: cfg, owned: owned}}
 	}
+	listings := v.orphanListingsLocked(owned, providerID)
 	policy := v.store.Policy
 	vaultKey := append([]byte(nil), v.vaultKey...)
 	stale := v.manifest.stalePartsByKey()
@@ -792,11 +798,15 @@ func without(names []string, name string) []string {
 // orphanListingsLocked is every root the scan lists: each connected account
 // at its parts folder, judged against owned, and each account that keeps a
 // replica folder at that folder too, judged against the replica archives the
-// index names. The caller must hold at least the read lock.
-func (v *Vault) orphanListingsLocked(owned map[string]*ownedArchive) []orphanListing {
+// index names. A non-empty only narrows it to the roots of the account with
+// that ID. The caller must hold at least the read lock.
+func (v *Vault) orphanListingsLocked(owned map[string]*ownedArchive, only string) []orphanListing {
 	var replicas map[string]*ownedArchive
 	out := make([]orphanListing, 0, len(v.providers))
 	for _, cfg := range v.providers {
+		if only != "" && cfg.ID != only {
+			continue
+		}
 		out = append(out, orphanListing{cfg: cfg, owned: owned})
 		if cfg.ReplicaFolder == "" {
 			continue
@@ -838,6 +848,9 @@ func (v *Vault) scanAccountForOrphans(
 	stale map[stalePartKey]*StalePart,
 ) (account OrphanAccount, archives []OrphanArchive, loose []StrayShard, present map[stalePartKey]bool) {
 	cfg, owned := listing.cfg, listing.owned
+	// The account as the index names it: a replica folder's config carries
+	// the suffixed ID, and a shard record never does.
+	accountID := accountIDOf(cfg.ID)
 	account = OrphanAccount{
 		ProviderID: cfg.ID,
 		Name:       cfg.Name,
@@ -934,13 +947,14 @@ func (v *Vault) scanAccountForOrphans(
 			row := strays[strayKey{archiveID: id, part: part}]
 			if row == nil {
 				row = &StrayShard{
-					ProviderID:   cfg.ID,
+					ProviderID:   accountID,
 					ProviderName: cfg.Name,
 					ProviderKind: string(cfg.Kind),
 					Scope:        owner.scope,
 					FileID:       owner.entryID,
 					ArchiveID:    id,
 					Part:         part,
+					Replica:      owner.replica,
 					Have:         len(owner.parts),
 					Want:         owner.scheme.Total,
 				}
@@ -982,7 +996,7 @@ func (v *Vault) scanAccountForOrphans(
 	loose = make([]StrayShard, 0, len(strays))
 	for key, row := range strays {
 		owner := owned[key.archiveID]
-		row.Reattachable, row.Reason = reattachable(owner, cfg, policy, key.part, row.Objects)
+		row.Reattachable, row.Reason = reattachable(owner, accountID, cfg.Name, policy, key.part, row.Objects)
 		loose = append(loose, *row)
 	}
 	return account, archives, loose, present
@@ -1002,7 +1016,10 @@ type strayKey struct {
 // already sitting there under a key derived from the archive ID, which is what
 // makes this cheap. What it changes is what the vault believes it can reach,
 // so the checks are all about not believing something false.
-func reattachable(owner *ownedArchive, cfg provider.Config, policy Policy, part, objects int) (bool, string) {
+//
+// accountID is the account as the index names it — never the suffixed ID a
+// replica folder is listed under — and name is what to call it.
+func reattachable(owner *ownedArchive, accountID, name string, policy Policy, part, objects int) (bool, string) {
 	if owner == nil {
 		return false, "the file it belongs to is no longer in the index"
 	}
@@ -1018,13 +1035,19 @@ func reattachable(owner *ownedArchive, cfg provider.Config, policy Policy, part,
 		// is only partly here is not a shard. It would still win the odd race
 		// per chunk, but recording it would say the file has a spare it does
 		// not have.
-		return false, fmt.Sprintf("only %d of its %d chunks are on %s", objects, owner.chunkCount, cfg.Name)
+		return false, fmt.Sprintf("only %d of its %d chunks are on %s", objects, owner.chunkCount, name)
 	}
-	if policy == PolicyStrict && owner.accounts[cfg.ID] {
+	if owner.replica && owner.accounts[accountID] {
+		// A replica is cut exactly as wide as the accounts its policy
+		// names, one shard to each, whatever the parts' placement policy
+		// says. A second shard on one account is not one the worker made.
+		return false, fmt.Sprintf("%s already holds a shard of that file's replica, and a replica gives each account one", name)
+	}
+	if policy == PolicyStrict && owner.accounts[accountID] {
 		// Strict placement gives each account one shard of a file. The bytes
 		// are on the account either way; recording them would make the vault
 		// act on a placement it promises not to make.
-		return false, fmt.Sprintf("%s already holds a shard of that file, and strict placement gives each account one", cfg.Name)
+		return false, fmt.Sprintf("%s already holds a shard of that file, and strict placement gives each account one", name)
 	}
 	return true, ""
 }
@@ -1152,6 +1175,11 @@ type ownedArchive struct {
 	// without there being a readable index to write a record into.
 	reattachable bool
 
+	// replica marks an archive that is a file's replica rather than its
+	// parts: owned in a replica folder, and recorded back onto Entry.Replica
+	// rather than Entry.Shards.
+	replica bool
+
 	// inFlight marks a row that came from the registry in inflight.go rather
 	// than from any index: an archive a scatter is writing, or has just
 	// written, whose entry has not been recorded yet. Owned, so its parts are
@@ -1275,8 +1303,14 @@ func (v *Vault) ownedArchivesLocked() map[string]*ownedArchive {
 // a recovery drops them all, a disconnect drops the ones that lost too many
 // shards, a retired key being dropped takes its replicas with it, and an
 // erase that fails leaves objects behind — so this is the only way the space
-// ever comes back. Left unreattachable: a replica short of a shard is made
-// again by the worker, not mended.
+// ever comes back.
+//
+// Reattachable, as a file's parts are. A disconnect that leaves a replica
+// recoverable drops only the shard records naming the account, and the
+// objects stay in its replica folder; connected back, that folder holds a
+// shard of a replica the index still names. Recording it is one index write,
+// where leaving it would have the worker cut and upload the whole replica
+// again — and erase the shard that was sitting there all along.
 //
 // A replica being made right now is not in the index yet; it is in the
 // index, or erased, by the time replicateFile returns, and the worker holds
@@ -1300,6 +1334,9 @@ func (v *Vault) ownedReplicaArchivesLocked() map[string]*ownedArchive {
 			chunkCount: r.ChunkCount,
 			parts:      map[int]bool{},
 			accounts:   map[string]bool{},
+
+			reattachable: true,
+			replica:      true,
 		}
 		for _, s := range r.Shards {
 			row.parts[s.Part] = true
@@ -1408,7 +1445,7 @@ func (v *Vault) SweepOrphans(ctx context.Context, targets []OrphanTarget, dryRun
 	// reported — so an erase lands in the folder the archive was found in.
 	v.mu.RLock()
 	configs := make(map[string]provider.Config, len(v.providers))
-	for _, listing := range v.orphanListingsLocked(nil) {
+	for _, listing := range v.orphanListingsLocked(nil, "") {
 		configs[listing.cfg.ID] = listing.cfg
 	}
 	v.mu.RUnlock()
@@ -1581,9 +1618,11 @@ type ReattachReport struct {
 	Files  int   `json:"files"`
 	Bytes  int64 `json:"bytes"`
 
-	// Restored names the files that are no longer short of a shard, and
-	// Improved the ones that gained one without reaching full spread.
-	Restored []string `json:"restored,omitempty"`
+	// Restored names the files whose parts are no longer short of a shard,
+	// and RestoredReplicas the files whose replica is no longer short of one.
+	// Both are main-vault paths only.
+	Restored         []string `json:"restored,omitempty"`
+	RestoredReplicas []string `json:"restored_replicas,omitempty"`
 
 	// Skipped names the shards that were refused between the scan and the
 	// write, and why.
@@ -1723,26 +1762,48 @@ func (v *Vault) ReattachShards(ctx context.Context, opts ReattachOptions) (*Reat
 				"shard %d of %s: its account was disconnected mid-repair", stray.Part, strayName(stray)))
 			continue
 		}
+		if stray.Replica && cfg.ReplicaFolder == "" {
+			report.Skipped = append(report.Skipped, fmt.Sprintf(
+				"shard %d of %s: its account stopped keeping a replica folder mid-repair", stray.Part, strayName(stray)))
+			continue
+		}
 
+		chunked := entry.ChunkCount > 0
+		if stray.Replica {
+			chunked = entry.Replica.ChunkCount > 0
+		}
 		key := ShardKey(stray.ArchiveID, stray.Part)
-		if entry.ChunkCount > 0 {
+		if chunked {
 			// One record still describes one shard of the whole file; the rest
 			// of the chunks follow from ChunkShardKey. See putChunkParts.
 			key = ChunkShardKey(stray.ArchiveID, 0, stray.Part)
 		}
-		entry.Shards = append(entry.Shards, Shard{
+		shard := Shard{
 			Part:         stray.Part,
 			ProviderID:   cfg.ID,
 			ProviderName: cfg.Name,
 			ProviderKind: string(cfg.Kind),
 			Key:          key,
 			Size:         stray.Bytes,
-		})
+		}
 
 		report.Shards++
 		report.Bytes += stray.Bytes
 		recorded = append(recorded, stray)
 		files[string(stray.Scope)+"\x00"+stray.FileID] = true
+
+		if stray.Replica {
+			// A replica is never changed in place (see Entry.Replica): the
+			// entry gets a copy with the shard added.
+			fresh := *entry.Replica
+			fresh.Shards = append(append([]Shard(nil), entry.Replica.Shards...), shard)
+			entry.Replica = &fresh
+			if fresh.Redundancy() >= fresh.TotalShards {
+				report.RestoredReplicas = append(report.RestoredReplicas, entry.Path())
+			}
+			continue
+		}
+		entry.Shards = append(entry.Shards, shard)
 		if entry.Redundancy() >= entry.Scheme().Total && stray.Scope == MainScope {
 			report.Restored = append(report.Restored, entry.Path())
 		}
@@ -1761,6 +1822,7 @@ func (v *Vault) ReattachShards(ctx context.Context, opts ReattachOptions) (*Reat
 	}
 
 	sort.Strings(report.Restored)
+	sort.Strings(report.RestoredReplicas)
 	sort.Strings(report.Skipped)
 	sort.Strings(report.Warnings)
 	return report, nil
@@ -1786,6 +1848,12 @@ func (v *Vault) entryForReattachLocked(stray StrayShard) (*Entry, error) {
 		if e.ID != stray.FileID {
 			continue
 		}
+		if stray.Replica {
+			if err := replicaShortOf(e, stray); err != nil {
+				return nil, err
+			}
+			return e, nil
+		}
 		if e.ArchiveID != stray.ArchiveID {
 			return nil, fmt.Errorf("the file has been rewritten since the scan")
 		}
@@ -1802,14 +1870,43 @@ func (v *Vault) entryForReattachLocked(stray StrayShard) (*Entry, error) {
 	return nil, fmt.Errorf("the file is no longer in the index")
 }
 
+// replicaShortOf re-checks that a file's replica is still the one a stray
+// replica shard belongs to, and still short of it. A replica is remade under
+// a fresh archive ID, so a different ID is a replica the shard is no part of.
+func replicaShortOf(e *Entry, stray StrayShard) error {
+	r := e.Replica
+	if r == nil {
+		return fmt.Errorf("the file no longer has a replica")
+	}
+	if r.ArchiveID != stray.ArchiveID {
+		return fmt.Errorf("the file's replica has been made again since the scan")
+	}
+	for _, sh := range r.Shards {
+		if sh.Part == stray.Part {
+			return fmt.Errorf("the index has a record for it again")
+		}
+		if sh.ProviderID == stray.ProviderID {
+			return fmt.Errorf("its account holds a shard of that replica again")
+		}
+	}
+	if total := r.Scheme().Total; stray.Part < 1 || stray.Part > total {
+		return fmt.Errorf("shard %d is not one a %s replica has", stray.Part, r.Scheme())
+	}
+	return nil
+}
+
 // strayName is what to call a stray shard's file in a report. A sub vault's
 // paths are not the main password's to print, so one is named by its archive
 // instead — enough to tell two rows apart, and no more.
 func strayName(stray StrayShard) string {
+	name := "archive " + stray.ArchiveID
 	if stray.Path != "" {
-		return stray.Path
+		name = stray.Path
 	}
-	return "archive " + stray.ArchiveID
+	if stray.Replica {
+		name += "'s replica"
+	}
+	return name
 }
 
 // linkReturningLocked works out which disconnected accounts the parts just
