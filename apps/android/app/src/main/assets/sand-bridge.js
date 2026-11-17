@@ -133,10 +133,26 @@
     Object.defineProperty(Navigator.prototype, 'canShare', { value: canShare, configurable: true, writable: true })
   } catch (e) { warn(e) }
 
+  // The phone's Back button. The page keeps its folders in memory, not in
+  // the web view's history, so the app asks the page first (BackPress.kt):
+  // the page hands over one function that undoes whatever is in front and
+  // says whether it did; when it says no, or never gave one, the app leaves.
+  var backHandler = null
+
   window.sandApp = Object.freeze({
     platform: 'android',
     // "remote": the vault is on another machine; "on_phone": it is this phone.
     mode: "__SAND_MODE__",
     openSettings: function () { return call({ t: 'settings' }) },
+    // Gives Back to fn until the returned function is called.
+    onBack: function (fn) {
+      backHandler = typeof fn === 'function' ? fn : null
+      return function () { if (backHandler === fn) backHandler = null }
+    },
+    // Called by the app on Back: true when the page took it.
+    back: function () {
+      if (!backHandler) return false
+      try { return backHandler() === true } catch (e) { warn(e); return false }
+    },
   })
 })()
