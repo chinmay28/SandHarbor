@@ -588,11 +588,11 @@ Comparing what the accounts hold with the index. Guide:
 
 | Endpoint | Request | Response |
 |---|---|---|
-| `GET /api/vault/orphans` | | Orphan scan: totals (`objects`, `bytes`, `archives`, `deletable`, `deletable_bytes`, `previous_key*`), `strays` (mislaid shards with `have`/`want`/`reattachable`), `reattachable`, `accounts` (per account: `orphans`, `strays`, `backup`, `foreign`, `error?`), `items` (per archive: `provider_id`, `archive_id`, `objects`, `bytes`, `deletable`, `reason?`, `path?`), `lost?`, `leftovers?` (working files on disk), `blocked?`, `warnings?` |
+| `GET /api/vault/orphans` | | Orphan scan: totals (`objects`, `bytes`, `archives`, `deletable`, `deletable_bytes`, `previous_key*`), `strays` (mislaid shards with `have`/`want`/`reattachable`, and `replica` on a shard of a file's replica found in a replica folder), `reattachable`, `accounts` (per account: `orphans`, `strays`, `backup`, `foreign`, `error?`), `items` (per archive: `provider_id`, `archive_id`, `objects`, `bytes`, `deletable`, `reason?`, `path?`), `lost?`, `leftovers?` (working files on disk), `blocked?`, `warnings?` |
 | `POST /api/vault/orphans` | `{targets: [{provider_id, archive_id}], dry_run}` (empty targets: all). Re-scans first | `{archives, deleted, bytes, skipped?, warnings?}` |
 | `GET /api/vault/orphans/erasing` | | `{running, done, total}` |
-| `POST /api/vault/orphans/reattach` | `{provider_id?, dry_run}` (held) | `{shards, files, bytes, restored?, skipped?, merged?, warnings?}` |
-| `GET /api/vault/orphans/strays` | `?provider=` (optional) | `{accounts, strays, strays_truncated?, reattachable, stray_files, stray_bytes, warnings?}`; unknown provider `404` |
+| `POST /api/vault/orphans/reattach` | `{provider_id?, dry_run}` (held) | `{shards, files, bytes, restored?, restored_replicas?, skipped?, merged?, warnings?}` |
+| `GET /api/vault/orphans/strays` | `?provider=` (optional; lists that account's replica folder too, when it keeps one) | `{accounts, strays, strays_truncated?, reattachable, stray_files, stray_bytes, warnings?}`; unknown provider `404` |
 | `POST · GET /api/vault/orphans/scan` | | Job; result is the orphan scan; progress `{stage, roots, listed, waiting?}` |
 | `POST · GET /api/vault/orphans/reattaching` | `{provider_id?}` | Job; result is the reattach report |
 | `POST · GET /api/vault/orphans/sweeping` | `{targets}` | Job; progress `{done, total}`; result is the sweep report |

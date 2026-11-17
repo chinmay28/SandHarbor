@@ -183,6 +183,10 @@ This is the repair. Not a byte is transferred: a part's object key is derived
 from the archive ID and the shard number, so the object is already exactly where
 a record would say it is, and putting the record back is a single index write.
 
+A file's replica is mended the same way: a shard of it still in a cloud's
+replica folder is recorded back onto the replica, so replication does not have
+to copy the whole file again.
+
 Purely additive — nothing is erased and no key is touched, and a file can only
 come out of it with more shards than it went in with. Nothing is written without
 --yes.
@@ -241,6 +245,9 @@ really there.`,
 					report.Shards, report.Files)
 				for _, path := range report.Restored {
 					fmt.Printf("  restored to full spread: %s\n", path)
+				}
+				for _, path := range report.RestoredReplicas {
+					fmt.Printf("  replica restored to full spread: %s\n", path)
 				}
 				fmt.Println("Run 'sand check --all' to have the accounts confirm the parts are really there.")
 			}

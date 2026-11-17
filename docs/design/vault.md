@@ -427,6 +427,18 @@ bucket:
 | knows the archive, has no record for that shard, and can be written | **mislaid**: reattach it |
 | knows the archive but cannot be written (a thumbnail pack, a shut sub vault) | left alone |
 
+Replica folders are bucketed the same way, against the replicas the index names
+rather than the parts (`ownedReplicaArchivesLocked`). A disconnect that leaves a
+replica recoverable drops only the shard records naming the account, so a
+reconnected account's replica folder can hold a shard of a replica the index
+still names. That shard is mislaid too (`StrayShard.Replica`), and reattaching
+it adds the record to a copy of `Entry.Replica` (a replica is never changed in
+place). Leaving it would have the worker cut and upload the whole replica again
+and then erase the shard that was there all along. A replica gives each account
+one shard whatever the placement policy, so a second shard of one replica on an
+account is declined; and `entryForReattachLocked` declines a shard whose replica
+has been made again, under a new archive ID, since the scan.
+
 Writing the record back moves nothing: object keys derive from archive ID and
 shard number alone, so the bytes are already where a record would say. That is
 why it carries none of the sweep's refusals; a file can only leave with more
@@ -444,8 +456,8 @@ one of those exact parts is that storage, so what was kept about the old ID
 
 **Asking one cloud.** Listing every account is the wrong cost when someone is
 looking at thousands of short files and knows which cloud has the parts.
-`Vault.ScanForStrays(ctx, providerID)` lists one account's parts folder against
-the same owned set, and `ReattachOptions.ProviderID` aims the repair at it. It
+`Vault.ScanForStrays(ctx, providerID)` lists one account's parts folder, and its
+replica folder when it keeps one, against the same owned sets, and `ReattachOptions.ProviderID` aims the repair at it. It
 carries nothing of the sweep: one listing cannot say what is abandoned. An ID no
 connected account carries is `ErrNoAccount` rather than an empty answer. It is
 reached from the short-files list ([index.md](index.md#short-files)),

@@ -163,6 +163,10 @@ sand vault reattach --cloud Dropbox  # list one account only (faster)
 sand vault reattach --yes            # record them
 ```
 
+A file's replica is mended the same way. A shard of it still sitting in a
+cloud's replica folder is recorded back onto the replica, so replication does
+not copy the whole file again. `--cloud` lists that cloud's replica folder too.
+
 The browser offers this first, before the sweep. It only ever adds records. It
 won't record a shard that the placement policy forbids (a second shard of one
 file on the same account under `strict`), or a chunked shard that is missing
