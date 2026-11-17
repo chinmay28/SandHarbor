@@ -7,8 +7,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	pkgsftp "github.com/pkg/sftp"
 )
 
 // MaxEntries bounds one directory listing made for a browser.
@@ -211,11 +209,16 @@ func displayPath(root, full string) string {
 
 // OpenUnder opens one file under root for reading, and reports its size.
 //
+// What it returns copies itself through several sessions at once when it is
+// large — see RemoteFile.WriteTo — so a caller that wants the speed hands it to
+// io.Copy, or anything else that prefers io.WriterTo, rather than calling Read
+// in a loop.
+//
 // The same boundary as ReadDir, through the same resolve — so a link out of the
 // root is refused before the file is opened rather than after. That ordering is
 // the point: Stat follows links, so a check made on the opened file would be a
 // check on the target while the decision to open it had already been taken.
-func (c *Client) OpenUnder(root, rel string) (*pkgsftp.File, os.FileInfo, error) {
+func (c *Client) OpenUnder(root, rel string) (*RemoteFile, os.FileInfo, error) {
 	root = CleanPath(root)
 	if root == "" {
 		root = "/"
@@ -242,7 +245,7 @@ func (c *Client) OpenUnder(root, rel string) (*pkgsftp.File, os.FileInfo, error)
 	if err != nil {
 		return nil, nil, err
 	}
-	return f, info, nil
+	return &RemoteFile{c: c, f: f, path: full, size: info.Size()}, info, nil
 }
 
 // maxLinkHops bounds how many symlinks one path may be resolved through, so a

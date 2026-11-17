@@ -84,6 +84,30 @@ type Config struct {
 
 	// Timeout bounds connect and handshake. Zero means DefaultTimeout.
 	Timeout time.Duration
+
+	// Streams is how many SFTP sessions a large file is read through at once,
+	// all on the one SSH connection. Zero means DefaultStreams; one reads
+	// every file through a single session. See copyStriped for why more than
+	// one is worth having on a link with any distance in it.
+	Streams int
+}
+
+// DefaultStreams is how many sessions a large file is read through.
+//
+// Each adds one SSH channel window — 2 MiB on the wire — so eight carry about
+// 16 MiB per round trip, enough to fill a home link over a VPN with most of a
+// hundred milliseconds in it. It also stays under sshd's MaxSessions, which
+// defaults to ten per connection and has to leave room for the session every
+// other operation uses. A server that allows fewer is not an error: reads go
+// through however many it does allow. See Client.sessions.
+const DefaultStreams = 8
+
+// streams resolves Streams' zero value.
+func (c Config) streams() int {
+	if c.Streams <= 0 {
+		return DefaultStreams
+	}
+	return c.Streams
 }
 
 // Addr is the host:port to dial.
@@ -117,6 +141,20 @@ type Client struct {
 	// roots caches each configured folder's canonicalized form — see realRoot.
 	rootsMu sync.Mutex
 	roots   map[string]string
+
+	// streams is how many sessions a large read may use, the primary one
+	// included, and block the size of each read they are handed. See
+	// RemoteFile.WriteTo.
+	streams int
+	block   int
+
+	// extra holds the sessions opened for reading beyond the primary one,
+	// opened the first time a large file needs them and kept for the life of
+	// the connection, since each costs a few round trips to start. extraFull
+	// records that the server refused one, so they are not asked for again.
+	extraMu   sync.Mutex
+	extra     []*pkgsftp.Client
+	extraFull bool
 }
 
 // HostKey returns the fingerprint the server presented, in "SHA256:…" form.
@@ -145,6 +183,7 @@ func (c *Client) Alive() bool {
 func (c *Client) Close() error {
 	c.closeOnce.Do(func() {
 		c.closed.Store(true)
+		c.dropExtraSessions()
 		if c.sftp != nil {
 			if err := c.sftp.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 				c.closeErr = err
@@ -242,13 +281,22 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 	// reported length; every write this package's callers make goes to a
 	// temporary name that is discarded on error, so a torn file is never left
 	// where anything will read it.
-	session, err := pkgsftp.NewClient(sshClient, pkgsftp.UseConcurrentWrites(true))
+	session, err := newSession(sshClient)
 	if err != nil {
 		sshClient.Close()
 		return nil, fmt.Errorf("opening the sftp subsystem on %s: %w"+subsystemHint(err), cfg.Addr(), err)
 	}
 
-	return &Client{ssh: sshClient, sftp: session, hostKey: checker.seen}, nil
+	return &Client{
+		ssh: sshClient, sftp: session, hostKey: checker.seen,
+		streams: cfg.streams(), block: defaultStripeBlock,
+	}, nil
+}
+
+// newSession opens one SFTP session on an SSH connection, configured the way
+// every session this package opens is.
+func newSession(sshClient *ssh.Client) (*pkgsftp.Client, error) {
+	return pkgsftp.NewClient(sshClient, pkgsftp.UseConcurrentWrites(true))
 }
 
 // subsystemHint explains the one failure whose message says nothing useful. A
