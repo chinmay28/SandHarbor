@@ -89,6 +89,8 @@
     if (saved && !$('address').value) $('address').value = saved.replace(/^http:\/\//, '')
     $('address').focus()
   })
+  $('restart').addEventListener('click', function () { if (nativeApp && nativeApp.restart) nativeApp.restart() })
+  $('quit').addEventListener('click', function () { if (nativeApp && nativeApp.quit) nativeApp.quit() })
   $('manual-form').addEventListener('submit', function (e) {
     e.preventDefault()
     var value = $('address').value.trim()

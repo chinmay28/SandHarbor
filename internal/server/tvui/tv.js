@@ -11,6 +11,8 @@
                                          which plays far more formats than
                                          <video> does (MKV, HEVC, AC-3…)
      changeServer()                      go back to the app's server list
+     restart()                           start the app again, fresh
+     quit()                              leave the app
 
    and calls back into window.sandTV:
 
@@ -905,6 +907,16 @@
     var change = function () { native.changeServer() }
     $('pair-server').addEventListener('click', change)
     $('menu-server').addEventListener('click', change)
+  }
+
+  /* An app older than these calls has neither, and the buttons stay hidden. */
+  if (native && native.restart) {
+    $('menu-restart').hidden = false
+    $('menu-restart').addEventListener('click', function () { native.restart() })
+  }
+  if (native && native.quit) {
+    $('menu-quit').hidden = false
+    $('menu-quit').addEventListener('click', function () { native.quit() })
   }
 
   window.sandTV = {
