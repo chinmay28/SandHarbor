@@ -73,39 +73,134 @@ export function planBackfill(missing, kindOf, maxBytes = Infinity) {
   return { files, folders, tooLarge, overFull }
 }
 
+/* How many times a file or a batch is tried when the server answers that it
+   is busy or briefly broken (RETRY_STATUSES), before that one is given up. */
+export const BACKFILL_TRIES = 4
+
+/* How many batches in a row may be turned down before the run gives up: one
+   is a bad batch, several in a row is a server that will refuse the rest. */
+export const BACKFILL_STORE_FAILS = 3
+
+/* Answers that say "not now" rather than "not this file". */
+const RETRY_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504])
+
+/* Answers that say the run cannot go on at all — the vault was locked, or the
+   session ended. Every file after would get the same. */
+const END_STATUSES = new Set([401, 403])
+
+/* What a thrown error means for the run:
+
+     'offline'  the page could not reach the server at all (err.offline) —
+                a backgrounded tab, a phone that slept, Wi-Fi that dropped.
+                Nothing is wrong with the file; wait and try it again, for as
+                long as it takes.
+     'retry'    the server is busy or briefly broken; try a few more times.
+     'end'      nothing after this can work; end the run.
+     'fail'     this one file (or batch) cannot be done; move on. */
+export function classifyError(err) {
+  if (err?.offline) return 'offline'
+  const status = err?.status
+  if (END_STATUSES.has(status)) return 'end'
+  if (RETRY_STATUSES.has(status)) return 'retry'
+  return 'fail'
+}
+
+/* The wait before the attempt after `attempt`: 1s, 2s, 4s… up to 30s. */
+export function backoffDelay(attempt) {
+  return Math.min(1000 * 2 ** Math.max(0, attempt - 1), 30000)
+}
+
+/* Waits backoffDelay(attempt), or less if `signal` aborts. */
+export function sleepPause(attempt, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve()
+    const done = () => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', done)
+      resolve()
+    }
+    const timer = setTimeout(done, backoffDelay(attempt))
+    signal?.addEventListener('abort', done)
+  })
+}
+
 /* Works through `files`, a few at a time, and stores the pictures in batches.
 
      make(file, signal)  → Promise<Blob|null>  a picture, or null where none
-                                               can be drawn. A throw is a
-                                               failure (the file would not
-                                               download, say).
+                                               can be drawn. A throw is read by
+                                               classifyError.
      store(pictures)     → Promise<{stored}>   keeps a Map of id → Blob. Only
                                                one is ever in flight. A throw
-                                               ends the run: whatever is wrong
-                                               on the server is wrong for the
-                                               next batch too, and every file
-                                               fetched until then would be a
-                                               download wasted.
-     onProgress(counts)                        after each file and each batch.
+                                               is read by classifyError too.
+     pause(attempt, signal) → Promise          waits before trying again; it
+                                               must resolve when `signal`
+                                               aborts. sleepPause by default.
+     onProgress(counts)                        after each file and each batch,
+                                               and on going into and out of a
+                                               wait.
 
-   An aborted `signal` stops it taking new files; the ones in hand are let go,
-   and what was already drawn is still sent, since it costs nothing more to
-   keep. It resolves — never rejects — with the counts it came to:
+   A run is meant to be left alone, so it does not stop for trouble that
+   passes. When the page cannot reach the server — which is what a tab sent to
+   the background often gets — the file or batch in hand waits (counts.waiting
+   is true meanwhile) and is tried again, as many times as it takes, and the
+   run goes on from there. A busy server is tried a few times. A file that
+   still cannot be read is counted as failed and the run moves on; a batch
+   that is turned down is let go and the run moves on, unless several in a row
+   are. Only an answer that nothing more can work (the vault locked) ends it.
 
-     { total, done, made, stored, skipped, failed, stopped, error } */
+   An aborted `signal` stops it taking new files and ends any wait; the files
+   in hand are let go, and what was already drawn is still sent once, since it
+   costs nothing more to keep. It resolves — never rejects — with the counts
+   it came to:
+
+     { total, done, made, stored, skipped, failed, waiting, stopped, error } */
 export async function runBackfill({
-  files, make, store, onProgress,
-  signal, lanes = BACKFILL_LANES, batch = BACKFILL_BATCH,
+  files, make, store, onProgress, signal, pause = sleepPause,
+  lanes = BACKFILL_LANES, batch = BACKFILL_BATCH,
+  tries = BACKFILL_TRIES, storeFails = BACKFILL_STORE_FAILS,
 }) {
   const counts = {
     total: files.length, done: 0, made: 0, stored: 0,
-    skipped: 0, failed: 0, stopped: false, error: null,
+    skipped: 0, failed: 0, waiting: false, stopped: false, error: null,
   }
   const report = () => onProgress?.({ ...counts })
   const halted = () => signal?.aborted || counts.error !== null
 
+  /* How many lanes, and the store, are waiting on the connection. */
+  let waiters = 0
+  const setWaiting = (delta) => {
+    waiters += delta
+    const waiting = waiters > 0
+    if (waiting !== counts.waiting) {
+      counts.waiting = waiting
+      report()
+    }
+  }
+
+  /* Runs `fn` until it succeeds, or until classifyError says to stop trying;
+     then throws the last error. */
+  const persist = async (fn) => {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await fn()
+      } catch (err) {
+        const kind = classifyError(err)
+        const again = kind === 'offline' || (kind === 'retry' && attempt < tries)
+        if (!again || halted()) throw err
+        if (kind === 'offline') setWaiting(1)
+        try {
+          await pause(attempt, signal)
+        } finally {
+          if (kind === 'offline') setWaiting(-1)
+        }
+        if (halted()) throw err
+      }
+    }
+  }
+
   let pending = new Map()
   let storing = Promise.resolve()
+  let refusedInARow = 0
 
   /* Hands what has been drawn so far to `store`, behind whatever is already
      being stored, so batches never overlap — two at once would each rewrite
@@ -117,10 +212,13 @@ export async function runBackfill({
     storing = storing.then(async () => {
       if (counts.error !== null) return
       try {
-        const resp = await store(chunk)
+        const resp = await persist(() => store(chunk))
         counts.stored += typeof resp?.stored === 'number' ? resp.stored : chunk.size
+        refusedInARow = 0
       } catch (err) {
-        counts.error = err?.message || String(err)
+        refusedInARow += 1
+        const message = err?.message || String(err)
+        if (classifyError(err) === 'end' || refusedInARow >= storeFails) counts.error = message
       }
       report()
     })
@@ -135,12 +233,17 @@ export async function runBackfill({
       let picture = null
       let failed = false
       try {
-        picture = await make(file, signal)
-      } catch {
+        picture = await persist(() => make(file, signal))
+      } catch (err) {
+        if (classifyError(err) === 'end' && !signal?.aborted) {
+          counts.error = err?.message || String(err)
+          report()
+          return
+        }
         failed = true
       }
       // A file let go because the run was stopped is neither made nor failed.
-      if (signal?.aborted) return
+      if (halted()) return
       counts.done += 1
       if (failed) counts.failed += 1
       else if (!picture) counts.skipped += 1
