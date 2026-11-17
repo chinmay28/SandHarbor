@@ -95,8 +95,10 @@ export function MakeThumbnails({ path, vault = '', onClose }) {
 
           {!busy && plan.files.length > 0 && (
             <p style={note}>
-              It runs in the background while you keep browsing, in this tab — closing the tab
-              stops it, and running it again carries on from where it got to.
+              It runs in the background while you keep browsing, in this tab. If the
+              connection drops — as it can while the tab is in the background — it waits and
+              carries on. Closing the tab stops it, and running it again carries on from where
+              it got to.
             </p>
           )}
 
@@ -158,7 +160,9 @@ export function ThumbJobStrip({ mobile, onChanged }) {
           title={`Making thumbnails in ${job.path}`}
           label={job.stopping
             ? `Stopping — sending the ${plural(c.made - c.stored, 'picture')} already drawn…`
-            : `${c.done.toLocaleString()} of ${c.total.toLocaleString()} · ${plural(c.stored, 'thumbnail')} stored · ${elapsed}`}
+            : c.waiting
+              ? `Waiting for the connection — it carries on by itself · ${c.done.toLocaleString()} of ${c.total.toLocaleString()} · ${elapsed}`
+              : `${c.done.toLocaleString()} of ${c.total.toLocaleString()} · ${plural(c.stored, 'thumbnail')} stored · ${elapsed}`}
           fraction={c.total ? c.done / c.total : null}
           action={(
             <Button size="sm" variant="ghost" disabled={job.stopping} onClick={stopThumbJob}>
