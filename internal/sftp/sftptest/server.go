@@ -18,6 +18,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	pkgsftp "github.com/pkg/sftp"
@@ -51,6 +52,15 @@ type Server struct {
 	// as the exit status. Nil refuses every exec, which is what a login that
 	// may only speak SFTP does.
 	Exec func(command string, stdin io.Reader, stdout, stderr io.Writer) int
+
+	// MaxSessions caps how many session channels one connection may have open
+	// at once, refusing the next the way sshd's MaxSessions does — which
+	// defaults to 10, and which some NAS firmware sets far lower. Zero means
+	// no cap.
+	MaxSessions int
+
+	// sessionsOpened counts session channels accepted, across connections.
+	sessionsOpened atomic.Int64
 
 	hostKey  ssh.Signer
 	listener net.Listener
@@ -107,6 +117,10 @@ func (s *Server) HostPort(t testing.TB) (string, int) {
 	return host, n
 }
 
+// SessionsOpened reports how many session channels the server has accepted
+// since it started, across every connection.
+func (s *Server) SessionsOpened() int { return int(s.sessionsOpened.Load()) }
+
 func (s *Server) serve(root string) {
 	defer s.wg.Done()
 	for {
@@ -151,16 +165,26 @@ func (s *Server) handle(conn net.Conn, root string) {
 	defer sshConn.Close()
 	go ssh.DiscardRequests(reqs)
 
+	var open atomic.Int64
 	for newChannel := range chans {
 		if newChannel.ChannelType() != "session" {
 			newChannel.Reject(ssh.UnknownChannelType, "only sessions here")
+			continue
+		}
+		if s.MaxSessions > 0 && open.Load() >= int64(s.MaxSessions) {
+			newChannel.Reject(ssh.Prohibited, "open failed")
 			continue
 		}
 		channel, requests, err := newChannel.Accept()
 		if err != nil {
 			return
 		}
-		go s.session(channel, requests, root)
+		open.Add(1)
+		s.sessionsOpened.Add(1)
+		go func() {
+			defer open.Add(-1)
+			s.session(channel, requests, root)
+		}()
 	}
 }
 

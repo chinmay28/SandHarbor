@@ -1,0 +1,183 @@
+package sftp
+
+import (
+	"errors"
+	"io"
+	"sync"
+)
+
+// copyStriped copies [start, end) of a file to w, reading it a block at a time
+// through several readers at once and writing the blocks out in order.
+//
+// It exists because one SFTP session cannot go faster than its SSH channel's
+// window allows, and golang.org/x/crypto/ssh fixes that window at 2 MiB with
+// no way to change it. A session can therefore have at most 2 MiB on the wire
+// at a time — however many requests pkg/sftp queues behind it — which caps it
+// at 2 MiB per round trip: about 30 MB/s to a machine 60 ms away, on a link
+// that could carry several times that. Every session is its own channel with
+// its own window, so reading one file through several sessions on the same
+// SSH connection multiplies the cap without another handshake.
+//
+// The readers are interchangeable: each is the same file, opened on a
+// different session. Which block a reader is handed is decided by whichever
+// is free first, so a slow session holds up only the blocks it is reading.
+//
+// Each reader is asked for readsPerReader blocks at a time. One would leave a
+// gap at every block boundary: a session's window empties while its last
+// requests are answered, and stays empty for the round trip it takes the next
+// block's first requests to arrive. With two the next block is already queued
+// behind the first, and the window stays full.
+//
+// Memory is bounded. At most aheadPerReader blocks per reader are out at once,
+// counting the ones being read and the ones waiting behind a slower block for
+// their turn to be written; no block is handed out until the writer has given
+// one back.
+//
+// The copy ends at end, or earlier at the first block that comes back short
+// with io.EOF — a file that shrank after it was measured — in which case what
+// is returned is everything up to where it stopped, and no error: the same
+// answer a sequential read of the file would have given. Any other error ends
+// the copy and is returned with the count of bytes w accepted before it, all
+// of which are the file's leading bytes in order.
+const (
+	// readsPerReader is how many blocks each reader is reading at once.
+	readsPerReader = 2
+
+	// aheadPerReader is how many blocks per reader may be out at once. It has
+	// to exceed readsPerReader, or a reader that has finished both its blocks
+	// would wait for the writer even when the writer is only waiting for it.
+	aheadPerReader = readsPerReader + 1
+)
+
+func copyStriped(w io.Writer, readers []io.ReaderAt, start, end int64, block int) (int64, error) {
+	if len(readers) == 0 {
+		return 0, errors.New("copyStriped: no readers")
+	}
+	if block <= 0 {
+		return 0, errors.New("copyStriped: block size must be positive")
+	}
+	if end <= start {
+		return 0, nil
+	}
+
+	size := int64(block)
+	blocks := (end - start + size - 1) / size
+	ahead := aheadPerReader * len(readers)
+
+	type job struct {
+		idx int64
+		buf []byte
+	}
+	type result struct {
+		idx int64
+		buf []byte
+		n   int
+		err error
+	}
+
+	// free holds one token per block allowed out; a nil token is a buffer not
+	// yet allocated, so a short file never allocates the whole allowance.
+	free := make(chan []byte, ahead)
+	for i := 0; i < ahead; i++ {
+		free <- nil
+	}
+	jobs := make(chan job)
+	results := make(chan result, ahead)
+	done := make(chan struct{})
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer close(jobs)
+		for idx := int64(0); idx < blocks; idx++ {
+			var buf []byte
+			select {
+			case buf = <-free:
+			case <-done:
+				return
+			}
+			if buf == nil {
+				buf = make([]byte, block)
+			}
+			select {
+			case jobs <- job{idx: idx, buf: buf}:
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	for _, r := range readers {
+		for range readsPerReader {
+			wg.Add(1)
+			go func(r io.ReaderAt) {
+				defer wg.Done()
+				for j := range jobs {
+					off := start + j.idx*size
+					want := min(size, end-off)
+					n, err := r.ReadAt(j.buf[:want], off)
+					select {
+					case results <- result{idx: j.idx, buf: j.buf, n: n, err: err}:
+					case <-done:
+						return
+					}
+				}
+			}(r)
+		}
+	}
+
+	// Whatever way the copy ends, nothing it started is left running.
+	defer func() {
+		close(done)
+		wg.Wait()
+	}()
+
+	var written int64
+	pending := make(map[int64]result, ahead)
+	for next := int64(0); next < blocks; {
+		r := <-results
+		pending[r.idx] = r
+
+		for {
+			r, ok := pending[next]
+			if !ok {
+				break
+			}
+			delete(pending, next)
+
+			want := int(min(size, end-(start+next*size)))
+			if r.n < want && !errors.Is(r.err, io.EOF) {
+				// What did arrive is still the file's next bytes, in order;
+				// handing it on keeps the count returned honest about where
+				// the failure was.
+				n, werr := w.Write(r.buf[:r.n])
+				written += int64(n)
+				if werr != nil {
+					return written, werr
+				}
+				if r.err == nil {
+					r.err = io.ErrUnexpectedEOF
+				}
+				return written, r.err
+			}
+
+			n, err := w.Write(r.buf[:r.n])
+			written += int64(n)
+			if err != nil {
+				return written, err
+			}
+			if n < r.n {
+				return written, io.ErrShortWrite
+			}
+			if r.n < want {
+				// Short with io.EOF: the file ends here.
+				return written, nil
+			}
+
+			free <- r.buf
+			next++
+		}
+	}
+	return written, nil
+}
