@@ -1144,13 +1144,14 @@ A `target` is `{"account": "<id>"}` or `{"machine": "<id>", "dir?": "…"}`. Gui
 
 Files and folders whose sealed parts (k of n per chunk, never more) are kept on
 the disk of the machine running SAND until a date, so they open without the
-clouds. A chunk the parts cannot give is kept from the file's replica instead,
-where it is cut at the same chunk size; `cached` counts both. Main vault only. The server fetches what is kept while the vault is open.
+clouds. `from` picks the placement, as a stream link's `?from=` does: `parts`,
+`replica` alone, or `either` (the replica only for a chunk the parts cannot give).
+The most specific pin decides a file. Main vault only. The server fetches what is kept while the vault is open.
 
 | Endpoint | Request | Response |
 |---|---|---|
-| `GET /api/cache` | | `{dir, usage: {used, parts, limit, reserve, disk_free, disk_total, room}, limit, reserve, pins: [{id, path, folder, entry_id?, added, until, found, files, unsupported, bytes, cached, complete}], full, problem?, filling}` |
-| `POST /api/cache` | `{path, for?: "12h"\|"7d"\|"2w", until?: RFC 3339, vault_id?}`, exactly one of `for` and `until` | `201` the pin `{id, path, folder, entry_id?, added, until}`. Keeping a kept path moves its date. `400 SUB_VAULT` for a sub vault; `404 NOT_FOUND` for a missing path |
+| `GET /api/cache` | | `{dir, usage: {used, parts, limit, reserve, disk_free, disk_total, room}, limit, reserve, pins: [{id, path, folder, entry_id?, added, until, from, found, files, unsupported, no_replica, bytes, cached, complete}], full, problem?, filling}` |
+| `POST /api/cache` | `{path, for?: "12h"\|"7d"\|"2w", until?: RFC 3339, from?: "parts"\|"replica"\|"either", vault_id?}`, exactly one of `for` and `until` | `201` the pin `{id, path, folder, entry_id?, added, until, from}`. Keeping a kept path moves its date and placement. `400 SUB_VAULT` for a sub vault; `404 NOT_FOUND` for a missing path; `404 NO_REPLICA` for `replica` on a file with none |
 | `DELETE /api/cache/{id}` | | `204`; frees at once what no other pin keeps. `404 NOT_FOUND` |
 | `PUT /api/cache/limits` | `{limit, reserve}`: `limit` 0 is none; `reserve` 0 is a tenth of the disk (1–20 GB), negative none | the status |
 

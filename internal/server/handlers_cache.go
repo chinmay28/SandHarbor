@@ -127,12 +127,15 @@ func (s *Server) handleCacheStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // cacheKeepRequest names what to keep and until when: Until as a moment, or
-// For as a length of time from now ("12h", "7d", "2w"). Exactly one.
+// For as a length of time from now ("12h", "7d", "2w"). Exactly one. From is
+// which placement is kept — "parts" (the default), "replica" or "either" —
+// as a stream link's is chosen.
 type cacheKeepRequest struct {
 	Path    string    `json:"path"`
 	VaultID string    `json:"vault_id"`
 	Until   time.Time `json:"until"`
 	For     string    `json:"for"`
+	From    string    `json:"from"`
 }
 
 func (s *Server) handleCacheKeep(w http.ResponseWriter, r *http.Request) {
@@ -162,8 +165,14 @@ func (s *Server) handleCacheKeep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	from, err := vault.ParseReadSource(req.From)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error(), "BAD_REQUEST")
+		return
+	}
+
 	v, _ := s.Vault()
-	pin, err := v.KeepLocally(vault.Scope(req.VaultID), req.Path, until)
+	pin, err := v.KeepLocally(vault.Scope(req.VaultID), req.Path, until, from)
 	if err != nil {
 		vaultErrorResponse(w, err)
 		return

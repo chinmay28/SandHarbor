@@ -90,7 +90,7 @@ func TestKeptFolderReadsWithEveryCloudGone(t *testing.T) {
 	e1 := putFile(t, v, "/films", "film.mkv", film)
 	e2 := putFile(t, v, "/films", "photo.jpg", photo)
 
-	if _, err := v.KeepLocally(MainScope, "/films", time.Now().Add(time.Hour)); err != nil {
+	if _, err := v.KeepLocally(MainScope, "/films", time.Now().Add(time.Hour), ""); err != nil {
 		t.Fatalf("KeepLocally: %v", err)
 	}
 	if pin := pinStatus(t, v, "/films"); pin.Complete || pin.Files != 2 || pin.Cached != 0 {
@@ -122,7 +122,7 @@ func TestCacheHoldsOnlySealedParts(t *testing.T) {
 	v, _ := keptVault(t)
 	secret := bytes.Repeat([]byte("the plaintext must never touch this disk. "), 100)
 	putFile(t, v, "/docs", "secret.txt", secret)
-	if _, err := v.KeepLocally(MainScope, "/docs/secret.txt", time.Now().Add(time.Hour)); err != nil {
+	if _, err := v.KeepLocally(MainScope, "/docs/secret.txt", time.Now().Add(time.Hour), ""); err != nil {
 		t.Fatalf("KeepLocally: %v", err)
 	}
 	fillAll(t, v)
@@ -164,7 +164,7 @@ func TestCacheHoldsOnlySealedParts(t *testing.T) {
 func TestOnlyKOfNPartsAreKept(t *testing.T) {
 	v, _ := keptVault(t)
 	e := putFile(t, v, "/", "a.bin", readerPayload(4000))
-	_, _ = v.KeepLocally(MainScope, "/a.bin", time.Now().Add(time.Hour))
+	_, _ = v.KeepLocally(MainScope, "/a.bin", time.Now().Add(time.Hour), "")
 	fillAll(t, v)
 
 	store, _ := v.localStore(false)
@@ -182,7 +182,7 @@ func TestOnlyKOfNPartsAreKept(t *testing.T) {
 func TestExpiredPinIsForgottenAndSwept(t *testing.T) {
 	v, _ := keptVault(t)
 	putFile(t, v, "/", "short.bin", readerPayload(3000))
-	if _, err := v.KeepLocally(MainScope, "/short.bin", time.Now().Add(300*time.Millisecond)); err != nil {
+	if _, err := v.KeepLocally(MainScope, "/short.bin", time.Now().Add(300*time.Millisecond), ""); err != nil {
 		t.Fatalf("KeepLocally: %v", err)
 	}
 	fillAll(t, v)
@@ -208,10 +208,10 @@ func TestExpiredPinIsForgottenAndSwept(t *testing.T) {
 func TestPastDateRefused(t *testing.T) {
 	v, _ := keptVault(t)
 	putFile(t, v, "/", "a.bin", []byte("a"))
-	if _, err := v.KeepLocally(MainScope, "/a.bin", time.Now().Add(-time.Minute)); err == nil {
+	if _, err := v.KeepLocally(MainScope, "/a.bin", time.Now().Add(-time.Minute), ""); err == nil {
 		t.Fatal("a date in the past was accepted")
 	}
-	if _, err := v.KeepLocally(MainScope, "/nowhere", time.Now().Add(time.Hour)); err == nil {
+	if _, err := v.KeepLocally(MainScope, "/nowhere", time.Now().Add(time.Hour), ""); err == nil {
 		t.Fatal("a path that is not there was accepted")
 	}
 }
@@ -220,8 +220,8 @@ func TestStopKeepingDropsOnlyWhatNothingElseWants(t *testing.T) {
 	v, _ := keptVault(t)
 	a := putFile(t, v, "/films", "a.mkv", readerPayload(3000))
 	b := putFile(t, v, "/films", "b.mkv", readerPayload(2000))
-	folder, _ := v.KeepLocally(MainScope, "/films", time.Now().Add(time.Hour))
-	if _, err := v.KeepLocally(MainScope, "/films/a.mkv", time.Now().Add(time.Hour)); err != nil {
+	folder, _ := v.KeepLocally(MainScope, "/films", time.Now().Add(time.Hour), "")
+	if _, err := v.KeepLocally(MainScope, "/films/a.mkv", time.Now().Add(time.Hour), ""); err != nil {
 		t.Fatal(err)
 	}
 	fillAll(t, v)
@@ -252,9 +252,9 @@ func TestStopKeepingDropsOnlyWhatNothingElseWants(t *testing.T) {
 func TestPinningAgainMovesTheDate(t *testing.T) {
 	v, _ := keptVault(t)
 	putFile(t, v, "/", "a.bin", []byte("a"))
-	first, _ := v.KeepLocally(MainScope, "/a.bin", time.Now().Add(time.Hour))
+	first, _ := v.KeepLocally(MainScope, "/a.bin", time.Now().Add(time.Hour), "")
 	later := time.Now().Add(48 * time.Hour)
-	second, err := v.KeepLocally(MainScope, "/a.bin", later)
+	second, err := v.KeepLocally(MainScope, "/a.bin", later, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +267,7 @@ func TestPinningAgainMovesTheDate(t *testing.T) {
 func TestFilePinFollowsARename(t *testing.T) {
 	v, _ := keptVault(t)
 	e := putFile(t, v, "/", "old.bin", readerPayload(2000))
-	_, _ = v.KeepLocally(MainScope, "/old.bin", time.Now().Add(time.Hour))
+	_, _ = v.KeepLocally(MainScope, "/old.bin", time.Now().Add(time.Hour), "")
 	if _, err := v.Move(t.Context(), e.ID, "/", "new.bin"); err != nil {
 		t.Fatalf("Move: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestLimitStopsTheFillWithoutEvicting(t *testing.T) {
 	v, _ := keptVault(t)
 	putFile(t, v, "/", "a.bin", readerPayload(4000))
 	putFile(t, v, "/", "b.bin", readerPayload(4000))
-	_, _ = v.KeepLocally(MainScope, "/a.bin", time.Now().Add(time.Hour))
+	_, _ = v.KeepLocally(MainScope, "/a.bin", time.Now().Add(time.Hour), "")
 	fillAll(t, v)
 	a := pinStatus(t, v, "/a.bin")
 
@@ -289,7 +289,7 @@ func TestLimitStopsTheFillWithoutEvicting(t *testing.T) {
 	if err := v.SetLocalCacheLimits(a.Cached+100, -1); err != nil {
 		t.Fatal(err)
 	}
-	_, _ = v.KeepLocally(MainScope, "/b.bin", time.Now().Add(time.Hour))
+	_, _ = v.KeepLocally(MainScope, "/b.bin", time.Now().Add(time.Hour), "")
 	last := fillAll(t, v)
 	if !last.Full {
 		t.Fatalf("the fill did not say it ran out of room: %+v", last)
@@ -310,7 +310,7 @@ func TestReadingAPinnedFileKeepsWhatItFetched(t *testing.T) {
 	v, _ := keptVault(t)
 	data := readerPayload(5000)
 	e := putFile(t, v, "/", "film.mkv", data)
-	_, _ = v.KeepLocally(MainScope, "/film.mkv", time.Now().Add(time.Hour))
+	_, _ = v.KeepLocally(MainScope, "/film.mkv", time.Now().Add(time.Hour), "")
 
 	if got := readWhole(t, v, e.ID); !bytes.Equal(got, data) {
 		t.Fatal("read back wrong")
@@ -334,7 +334,7 @@ func TestDamagedCachedPartIsReplacedFromTheClouds(t *testing.T) {
 	v, _ := keptVault(t)
 	data := readerPayload(3000)
 	e := putFile(t, v, "/", "a.bin", data)
-	_, _ = v.KeepLocally(MainScope, "/a.bin", time.Now().Add(time.Hour))
+	_, _ = v.KeepLocally(MainScope, "/a.bin", time.Now().Add(time.Hour), "")
 	fillAll(t, v)
 
 	store, _ := v.localStore(false)
@@ -366,7 +366,7 @@ func TestPinsSurviveALockAndAPasswordChange(t *testing.T) {
 	v, roots := keptVault(t)
 	data := readerPayload(3000)
 	e := putFile(t, v, "/", "a.bin", data)
-	_, _ = v.KeepLocally(MainScope, "/a.bin", time.Now().Add(time.Hour))
+	_, _ = v.KeepLocally(MainScope, "/a.bin", time.Now().Add(time.Hour), "")
 	fillAll(t, v)
 
 	v.Lock()
@@ -399,7 +399,7 @@ func TestPinsSurviveALockAndAPasswordChange(t *testing.T) {
 func TestSubVaultFilesCannotBeKept(t *testing.T) {
 	v, _ := keptVault(t)
 	id := createSubVault(t, v, "Taxes", subPassword)
-	if _, err := v.KeepLocally(Scope(id), "/", time.Now().Add(time.Hour)); !errors.Is(err, ErrCacheSubVault) {
+	if _, err := v.KeepLocally(Scope(id), "/", time.Now().Add(time.Hour), ""); !errors.Is(err, ErrCacheSubVault) {
 		t.Fatalf("KeepLocally in a sub vault = %v", err)
 	}
 }
@@ -407,7 +407,7 @@ func TestSubVaultFilesCannotBeKept(t *testing.T) {
 func TestDeletedFileIsSwept(t *testing.T) {
 	v, _ := keptVault(t)
 	e := putFile(t, v, "/films", "a.mkv", readerPayload(3000))
-	_, _ = v.KeepLocally(MainScope, "/films", time.Now().Add(time.Hour))
+	_, _ = v.KeepLocally(MainScope, "/films", time.Now().Add(time.Hour), "")
 	fillAll(t, v)
 	if _, err := v.Delete(t.Context(), e.ID); err != nil {
 		t.Fatal(err)
@@ -421,7 +421,7 @@ func TestDeletedFileIsSwept(t *testing.T) {
 func TestStatusKnowsTheRoomBeforeTheFirstFill(t *testing.T) {
 	v, _ := keptVault(t)
 	putFile(t, v, "/", "a.bin", []byte("a"))
-	_, _ = v.KeepLocally(MainScope, "/a.bin", time.Now().Add(time.Hour))
+	_, _ = v.KeepLocally(MainScope, "/a.bin", time.Now().Add(time.Hour), "")
 	status, err := v.LocalCache()
 	if err != nil {
 		t.Fatal(err)
@@ -449,7 +449,7 @@ func TestParseKeepFor(t *testing.T) {
 
 // keptReplicaFile is one file in a vault whose replica is cut 2-of-3 across
 // replica folders of its own, kept on this machine, with nothing fetched yet.
-func keptReplicaFile(t *testing.T) (v *Vault, e *Entry, payload []byte, roots, replicaRoots []string) {
+func keptReplicaFile(t *testing.T, from ReadSource) (v *Vault, e *Entry, payload []byte, roots, replicaRoots []string) {
 	t.Helper()
 	v, roots, replicaRoots = replicaVault(t, 3, 3, archive.Scheme{Data: 2, Total: 3})
 	if err := v.SetLocalCacheLimits(0, -1); err != nil {
@@ -461,7 +461,7 @@ func keptReplicaFile(t *testing.T) (v *Vault, e *Entry, payload []byte, roots, r
 	payload = readerPayload(5000)
 	e = putFile(t, v, "/", "film.mkv", payload)
 	replicate(t, v)
-	if _, err := v.KeepLocally(MainScope, "/film.mkv", time.Now().Add(time.Hour)); err != nil {
+	if _, err := v.KeepLocally(MainScope, "/film.mkv", time.Now().Add(time.Hour), from); err != nil {
 		t.Fatal(err)
 	}
 	return v, e, payload, roots, replicaRoots
@@ -477,7 +477,7 @@ func replicaArchive(t *testing.T, v *Vault, id string) string {
 }
 
 func TestKeptFileFillsFromItsReplicaWhenThePartsCannot(t *testing.T) {
-	v, e, payload, roots, replicaRoots := keptReplicaFile(t)
+	v, e, payload, roots, replicaRoots := keptReplicaFile(t, ReadEither)
 	emptyCloud(t, roots[0])
 	emptyCloud(t, roots[1])
 
@@ -511,7 +511,7 @@ func TestKeptFileFillsFromItsReplicaWhenThePartsCannot(t *testing.T) {
 }
 
 func TestPartsArePreferredAndOnlyKShardsKept(t *testing.T) {
-	v, e, _, _, _ := keptReplicaFile(t)
+	v, e, _, _, _ := keptReplicaFile(t, ReadEither)
 	fillAll(t, v)
 	store, _ := v.localStore(false)
 	held := store.Archives()
@@ -526,7 +526,7 @@ func TestPartsArePreferredAndOnlyKShardsKept(t *testing.T) {
 }
 
 func TestAChunkIsNeverKeptFromBothPlacements(t *testing.T) {
-	v, e, _, roots, _ := keptReplicaFile(t)
+	v, e, _, roots, _ := keptReplicaFile(t, ReadEither)
 	fillAll(t, v)
 
 	// Each chunk is left one part short, and the parts can no longer make it
@@ -549,7 +549,7 @@ func TestAChunkIsNeverKeptFromBothPlacements(t *testing.T) {
 }
 
 func TestReadingFromTheReplicaKeepsWhatItFetched(t *testing.T) {
-	v, e, payload, roots, replicaRoots := keptReplicaFile(t)
+	v, e, payload, roots, replicaRoots := keptReplicaFile(t, ReadEither)
 	emptyCloud(t, roots[0])
 	emptyCloud(t, roots[1])
 
@@ -570,7 +570,7 @@ func TestReadingFromTheReplicaKeepsWhatItFetched(t *testing.T) {
 }
 
 func TestReplicaShardsAreSweptWithTheirFile(t *testing.T) {
-	v, e, _, roots, _ := keptReplicaFile(t)
+	v, e, _, roots, _ := keptReplicaFile(t, ReadEither)
 	emptyCloud(t, roots[0])
 	emptyCloud(t, roots[1])
 	fillAll(t, v)
@@ -590,7 +590,7 @@ func TestAWholeCopyReplicaKeepsOneShardAChunk(t *testing.T) {
 	payload := readerPayload(4000)
 	e := putFile(t, v, "/", "a.bin", payload)
 	replicate(t, v)
-	_, _ = v.KeepLocally(MainScope, "/a.bin", time.Now().Add(time.Hour))
+	_, _ = v.KeepLocally(MainScope, "/a.bin", time.Now().Add(time.Hour), ReadEither)
 	for _, root := range roots {
 		emptyCloud(t, root)
 	}
@@ -606,5 +606,97 @@ func TestAWholeCopyReplicaKeepsOneShardAChunk(t *testing.T) {
 	darken(t, replicaRoots[0])
 	if got := readWhole(t, v, e.ID); !bytes.Equal(got, payload) {
 		t.Fatal("read back wrong from a kept whole-copy replica")
+	}
+}
+
+func TestKeptFromTheReplicaAloneTakesNoParts(t *testing.T) {
+	v, e, payload, roots, replicaRoots := keptReplicaFile(t, ReadReplica)
+	fillAll(t, v)
+
+	if pin := pinStatus(t, v, "/film.mkv"); !pin.Complete || pin.From != ReadReplica {
+		t.Fatalf("pin: %+v", pin)
+	}
+	store, _ := v.localStore(false)
+	ra := replicaArchive(t, v, e.ID)
+	if store.Archives()[e.ArchiveID] != 0 {
+		t.Fatal("parts kept for a file kept from its replica, with the parts answering")
+	}
+	for chunk := 0; chunk < e.ChunkCount; chunk++ {
+		if n := store.Count(ra, chunk); n != 2 {
+			t.Errorf("chunk %d: %d replica shards kept, want exactly 2", chunk, n)
+		}
+	}
+
+	for _, root := range append(append([]string{}, roots...), replicaRoots...) {
+		darken(t, root)
+	}
+	v.chunks.clear()
+	if got, err := readFrom(t, v, e.ID, ReadReplica); err != nil || !bytes.Equal(got, payload) {
+		t.Fatalf("reading the replica off this machine: %v", err)
+	}
+	// Cut at the same seams, so an ordinary read is served from it too.
+	if got := readWhole(t, v, e.ID); !bytes.Equal(got, payload) {
+		t.Fatal("an ordinary read of a file kept from its replica")
+	}
+}
+
+func TestKeptFromThePartsNeverTakesTheReplica(t *testing.T) {
+	v, e, _, roots, _ := keptReplicaFile(t, ReadParts)
+	for _, root := range roots {
+		emptyCloud(t, root)
+	}
+	if _, err := v.FillLocalCache(t.Context(), 1<<20); err == nil {
+		t.Fatal("a fill from the parts alone succeeded with every part gone")
+	}
+	// A read the replica stands in for is not kept either: the pin asked for
+	// the parts.
+	v.chunks.clear()
+	if _, err := readFrom(t, v, e.ID, ReadEither); err != nil {
+		t.Fatalf("ReadEither: %v", err)
+	}
+	store, _ := v.localStore(false)
+	if store.Usage().Used != 0 {
+		t.Fatalf("%d bytes kept for a parts-only pin with the parts gone", store.Usage().Used)
+	}
+}
+
+func TestTheMostSpecificPinChoosesThePlacement(t *testing.T) {
+	v, e, _, _, _ := keptReplicaFile(t, ReadReplica)
+	// The folder above says the parts; the file's own pin says the replica.
+	if _, err := v.KeepLocally(MainScope, "/", time.Now().Add(time.Hour), ReadParts); err != nil {
+		t.Fatal(err)
+	}
+	fillAll(t, v)
+	store, _ := v.localStore(false)
+	if store.Archives()[e.ArchiveID] != 0 || store.Archives()[replicaArchive(t, v, e.ID)] == 0 {
+		t.Fatalf("held %v: the file's own pin did not decide", store.Archives())
+	}
+
+	// Its own pin gone, the folder's choice applies, and the replica's shards
+	// go with the pin that wanted them.
+	if err := v.StopKeeping("/film.mkv"); err != nil {
+		t.Fatal(err)
+	}
+	fillAll(t, v)
+	if store.Archives()[replicaArchive(t, v, e.ID)] != 0 || store.Archives()[e.ArchiveID] == 0 {
+		t.Fatalf("held %v after the file's pin went", store.Archives())
+	}
+}
+
+func TestKeepingFromAReplicaThatIsNotThere(t *testing.T) {
+	v, _ := keptVault(t)
+	putFile(t, v, "/docs", "a.bin", readerPayload(2000))
+	if _, err := v.KeepLocally(MainScope, "/docs/a.bin", time.Now().Add(time.Hour), ReadReplica); !errors.Is(err, ErrNoReplica) {
+		t.Fatalf("a file with no replica, kept from its replica: %v", err)
+	}
+	if _, err := v.KeepLocally(MainScope, "/docs", time.Now().Add(time.Hour), "sideways"); err == nil {
+		t.Fatal("an unknown placement was accepted")
+	}
+	// A folder takes what it can and says what it cannot.
+	if _, err := v.KeepLocally(MainScope, "/docs", time.Now().Add(time.Hour), ReadReplica); err != nil {
+		t.Fatal(err)
+	}
+	if pin := pinStatus(t, v, "/docs"); pin.NoReplica != 1 || pin.Files != 0 {
+		t.Fatalf("pin: %+v", pin)
 	}
 }

@@ -1011,23 +1011,26 @@ Keeping a file or folder puts the fewest of its sealed parts that rebuild it
 it opens, streams and seeks without the clouds. The parts are kept exactly as
 the clouds hold them, encrypted; a file is put back together only in memory,
 when it is read. Every pin has an end date, and a folder pin keeps what is added
-to it later too. A chunk the parts cannot give is kept from the file's replica
-instead, when it has one cut at the same chunk size. Main vault only. `sand serve` fetches what is kept while the
+to it later too. `--from` picks the placement kept, as `sand get --from` does.
+Main vault only. `sand serve` fetches what is kept while the
 vault is open; `sand cache fill` does it in the foreground. Guide:
 [streaming](../guide/streaming.md#keep-files-on-this-machine).
 
 ### sand cache keep
 
 ```
-sand cache keep <path> (--for LENGTH | --until DATE)
+sand cache keep <path> (--for LENGTH | --until DATE) [--from parts|replica|either]
 ```
 
 | Flag | Meaning |
 |---|---|
 | `--for` | How long: `12h`, `7d`, `2w` |
 | `--until` | A date (`2026-12-31`, kept to the end of that day) or an RFC 3339 time |
+| `--from` | `parts` (default) keeps the parts; `replica` the replica alone; `either` the parts, with the replica kept for a chunk they cannot give. Only the fewest shards that rebuild each chunk are kept, from one placement. A file with no replica is refused `replica`; a folder leaves such files out |
 
-Keeping a path that is already kept moves its date.
+Keeping a path that is already kept moves its date and its placement. Where
+pins overlap, a file's own beats its folder's, and a deeper folder's a
+shallower one's.
 
 ### sand cache ls
 

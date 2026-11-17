@@ -28,11 +28,16 @@ clouds. What is kept is the parts exactly as the clouds hold them — encrypted,
 and only put back together, in memory, when the file is opened.
 
 Everything kept has an end date. A folder keeps what is added to it later too.
+--from chooses the placement kept, as 'sand get --from' does: the parts (the
+default), the replica alone, or either — the parts, with the replica standing
+in for a chunk they cannot give. Only that placement's shards are kept, the
+fewest that rebuild each chunk.
 The cache never takes the disk below a reserve (a tenth of it unless --reserve
 says otherwise) or past --max, and what does not fit stays on the clouds.
 
   sand cache keep /films/Dune.mkv --for 7d
   sand cache keep /photos/2026 --until 2026-12-31
+  sand cache keep /films --for 30d --from replica
   sand cache ls
   sand cache rm /photos/2026
   sand cache limit --max 200G --reserve 20G
@@ -45,7 +50,7 @@ does it here in the foreground.`,
 }
 
 func cacheKeepCmd() *cobra.Command {
-	var keepFor, until string
+	var keepFor, until, from string
 	cmd := &cobra.Command{
 		Use:   "keep <path>",
 		Short: "Keep a file or folder on this machine until a date",
@@ -60,17 +65,23 @@ func cacheKeepCmd() *cobra.Command {
 				return err
 			}
 			defer closeVault(v)
-			pin, err := v.KeepLocally(scope, args[0], when)
+			source, err := vault.ParseReadSource(from)
+			if err != nil {
+				return fmt.Errorf("--from: %w", err)
+			}
+			pin, err := v.KeepLocally(scope, args[0], when, source)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Keeping %s here until %s (%s).\n", pin.Path, pin.Until.Local().Format("2 Jan 2006 15:04"), pin.ID)
+			fmt.Printf("Keeping %s here from its %s until %s (%s).\n", pin.Path, placementName(source),
+				pin.Until.Local().Format("2 Jan 2006 15:04"), pin.ID)
 			fmt.Println("'sand serve' fetches it while the vault is open, or run 'sand cache fill'.")
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&keepFor, "for", "", "how long to keep it: 12h, 7d, 2w")
 	cmd.Flags().StringVar(&until, "until", "", "the date to keep it until, as 2026-12-31 or RFC 3339")
+	cmd.Flags().StringVar(&from, "from", "parts", "which placement to keep: parts, replica, or either")
 	return cmd
 }
 
@@ -142,7 +153,7 @@ func printCacheStatus(status vault.LocalCacheStatus) {
 		return
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tPATH\tUNTIL\tFILES\tHERE\tSTATE")
+	fmt.Fprintln(tw, "ID\tPATH\tFROM\tUNTIL\tFILES\tHERE\tSTATE")
 	for _, p := range status.Pins {
 		path := p.Path
 		if p.Folder && !strings.HasSuffix(path, "/") {
@@ -158,7 +169,10 @@ func printCacheStatus(status vault.LocalCacheStatus) {
 		if p.Unsupported > 0 {
 			state += fmt.Sprintf(", %d need converting first", p.Unsupported)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s / %s\t%s\n", p.ID, path,
+		if p.NoReplica > 0 {
+			state += fmt.Sprintf(", %d have no replica", p.NoReplica)
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s / %s\t%s\n", p.ID, path, p.From,
 			p.Until.Local().Format("2 Jan 2006 15:04"), p.Files,
 			formatBytes(p.Cached), formatBytes(p.Bytes), state)
 	}
@@ -284,4 +298,15 @@ same work in the foreground; Ctrl-C stops it, and what arrived stays.`,
 			}
 		},
 	}
+}
+
+// placementName is a source as a sentence says it.
+func placementName(source vault.ReadSource) string {
+	switch source {
+	case vault.ReadReplica:
+		return "replica"
+	case vault.ReadEither:
+		return "parts, or its replica where they fall short,"
+	}
+	return "parts"
 }

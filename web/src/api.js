@@ -1104,10 +1104,11 @@ export const api = {
     request('/api/replicate', { method: 'POST', body: { path, enabled } }),
   /* Files and folders kept on the machine running SAND, as sealed parts, until
      a date: the pins, how far each has arrived, and the room the cache has.
-     keepFor is a length such as '7d'; until a moment. Main vault only. */
+     keepFor is a length such as '7d'; until a moment. from is the placement
+     kept — 'parts', 'replica' or 'either' — as a stream link's. Main vault only. */
   cacheStatus: () => request('/api/cache'),
-  keepLocally: (path, { until, keepFor } = {}) =>
-    request('/api/cache', { method: 'POST', body: { path, until, for: keepFor } }),
+  keepLocally: (path, { until, keepFor, from = 'parts' } = {}) =>
+    request('/api/cache', { method: 'POST', body: { path, until, for: keepFor, from } }),
   stopKeeping: (id) => request(`/api/cache/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   /* limit 0 is none of its own; reserve 0 is a tenth of the disk, -1 none. */
   setCacheLimits: ({ limit = 0, reserve = 0 }) =>

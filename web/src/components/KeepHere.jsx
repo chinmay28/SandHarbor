@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { COLORS, FONT, formatBytes } from '../theme'
 import { api } from '../api'
 import { Banner, Button, Input, Modal, Spinner } from './ui'
+import { READ_SOURCES, ReadFromChoice } from './Replication'
 
 /* Keeping files on the machine running SAND.
 
@@ -48,10 +49,41 @@ function pinProgress(pin) {
   return `${formatBytes(pin.cached)} of ${formatBytes(pin.bytes)} here`
 }
 
-/* The dialog a file's or folder's menu opens. */
-export function KeepHereDialog({ path, name, folder, zIndex, onClose, onChanged }) {
+/* Which placement a folder keeps, chosen the way a stream link's is. A file
+   uses ReadFromChoice itself, which can draw where its two placements are; a
+   folder has many files and no one set of clouds to draw. */
+function FolderSourceChoice({ value, onChange }) {
+  return (
+    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }} role="radiogroup" aria-label="Keep from">
+      {READ_SOURCES.map((s) => (
+        <Button
+          key={s.id}
+          type="button"
+          size="sm"
+          role="radio"
+          aria-checked={value === s.id}
+          title={s.hint}
+          variant={value === s.id ? 'primary' : 'default'}
+          onClick={() => onChange(s.id)}
+        >{s.label}</Button>
+      ))}
+    </div>
+  )
+}
+
+const SOURCE_NOTE = {
+  parts: 'Its parts are kept, as every read uses them.',
+  replica: 'Its replica is kept, alone: the copy on the replication clouds. Choose Replica when playing it too, unless it is cut like the parts.',
+  either: 'Its parts are kept, and its replica only for what the parts cannot give.',
+}
+
+/* The dialog a file's or folder's menu opens. file is the file's row, for a
+   file; replicas says whether anything under a folder is replicated. The
+   placement is offered only where there is a replica to choose. */
+export function KeepHereDialog({ path, name, folder, file, replicas = false, zIndex, onClose, onChanged }) {
   const [status, setStatus] = useState(null)
   const [choice, setChoice] = useState('7d')
+  const [source, setSource] = useState(null)
   const [date, setDate] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -64,6 +96,8 @@ export function KeepHereDialog({ path, name, folder, zIndex, onClose, onChanged 
 
   const pin = pinFor(status, path)
   const room = status?.usage?.room ?? 0
+  const canChoose = folder ? replicas : !!file?.replica
+  const from = source || pin?.from || 'parts'
 
   const keep = async () => {
     setBusy(true)
@@ -74,9 +108,9 @@ export function KeepHereDialog({ path, name, folder, zIndex, onClose, onChanged 
         // The whole of the day picked, in this browser's time.
         const until = new Date(`${date}T00:00:00`)
         until.setDate(until.getDate() + 1)
-        await api.keepLocally(path, { until: until.toISOString() })
+        await api.keepLocally(path, { until: until.toISOString(), from })
       } else {
-        await api.keepLocally(path, { keepFor: choice })
+        await api.keepLocally(path, { keepFor: choice, from })
       }
       onChanged?.()
       onClose()
@@ -111,16 +145,37 @@ export function KeepHereDialog({ path, name, folder, zIndex, onClose, onChanged 
       <div style={prose}>
         {pin ? (
           <p style={{ margin: 0 }}>
-            Kept until <strong style={{ color: COLORS.text }}>{formatUntil(pin.until)}</strong>
+            Kept from its {pin.from || 'parts'} until <strong style={{ color: COLORS.text }}>{formatUntil(pin.until)}</strong>
             {' '}· {pinProgress(pin)}. Pick a new length below to change the date.
           </p>
         ) : (
           <p style={{ margin: 0 }}>
             {name} opens, streams and seeks from the disk of the machine running SAND instead of
-            waiting on the clouds. What is kept is its parts, still encrypted, and only enough of
-            them to rebuild it; it is put back together only when it is opened.
+            waiting on the clouds. What is kept is its shards, still encrypted, and only the
+            fewest that rebuild it; it is put back together only when it is opened.
             {folder ? ' Files added to the folder later are kept too.' : ''}
           </p>
+        )}
+
+        {canChoose && (
+          <>
+            {/* The file's picker is the stream dialog's own, label and all,
+                so the choice reads the same in both places. */}
+            {folder ? (
+              <>
+                <div style={label}>Read from</div>
+                <FolderSourceChoice value={from} onChange={setSource} />
+              </>
+            ) : (
+              <div style={{ marginTop: '16px' }}>
+                <ReadFromChoice file={file} value={from} onChange={setSource} />
+              </div>
+            )}
+            <p style={{ margin: '8px 0 0', fontSize: '11.5px', color: COLORS.textMuted }}>
+              {SOURCE_NOTE[from]}
+              {folder && from === 'replica' ? ' Files under it with no replica are left out.' : ''}
+            </p>
+          </>
         )}
 
         <div style={label}>Keep it for</div>
@@ -162,7 +217,7 @@ export function KeepHereDialog({ path, name, folder, zIndex, onClose, onChanged 
         )}
         <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
         <Button type="button" variant="primary" onClick={keep} disabled={busy || !status}>
-          {busy ? <Spinner size={10} /> : null}{pin ? 'Change the date' : '⤓ Keep here'}
+          {busy ? <Spinner size={10} /> : null}{pin ? 'Save' : '⤓ Keep here'}
         </Button>
       </div>
     </Modal>
@@ -272,8 +327,9 @@ export function LocalCacheSettings({ zIndex, onClose }) {
                       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     }}>{p.folder ? '📁 ' : ''}{p.path}</div>
                     <div style={{ fontSize: '11px', color: COLORS.textMuted }}>
-                      until {formatUntil(p.until)} · {p.files} file{p.files === 1 ? '' : 's'} · {pinProgress(p)}
+                      {p.from && p.from !== 'parts' ? `from ${p.from} · ` : ''}until {formatUntil(p.until)} · {p.files} file{p.files === 1 ? '' : 's'} · {pinProgress(p)}
                       {p.unsupported > 0 ? ` · ${p.unsupported} to convert first` : ''}
+                      {p.no_replica > 0 ? ` · ${p.no_replica} with no replica` : ''}
                     </div>
                     <div style={{ height: '3px', background: COLORS.border, borderRadius: '2px', marginTop: '5px' }}>
                       <div style={{

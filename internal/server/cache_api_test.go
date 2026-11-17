@@ -23,7 +23,7 @@ func TestCacheKeepFillAndStop(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("POST /api/cache: %d %s", w.Code, w.Body.String())
 	}
-	if pin["folder"] != true || pin["path"] != "/films" {
+	if pin["folder"] != true || pin["path"] != "/films" || pin["from"] != "parts" {
 		t.Fatalf("pin = %v", pin)
 	}
 	until, _ := time.Parse(time.RFC3339Nano, pin["until"].(string))
@@ -70,6 +70,7 @@ func TestCacheKeepRefusesWhatItCannotDo(t *testing.T) {
 		"bad length":  {"path": "/a.txt", "for": "soon"},
 		"in the past": {"path": "/a.txt", "until": time.Now().Add(-time.Hour)},
 		"no path":     {"for": "1d"},
+		"bad source":  {"path": "/a.txt", "for": "1d", "from": "sideways"},
 		"sub vault":   {"path": "/", "for": "1d", "vault_id": "some-sub-vault"},
 	} {
 		if w, _ := c.json(http.MethodPost, "/api/cache", body); w.Code != http.StatusBadRequest {
@@ -78,6 +79,9 @@ func TestCacheKeepRefusesWhatItCannotDo(t *testing.T) {
 	}
 	if w, _ := c.json(http.MethodPost, "/api/cache", map[string]any{"path": "/nowhere", "for": "1d"}); w.Code != http.StatusNotFound {
 		t.Errorf("a missing path: %d, want 404", w.Code)
+	}
+	if w, _ := c.json(http.MethodPost, "/api/cache", map[string]any{"path": "/a.txt", "for": "1d", "from": "replica"}); w.Code != http.StatusNotFound {
+		t.Errorf("the replica of a file with none: %d %s, want 404 NO_REPLICA", w.Code, w.Body.String())
 	}
 	if w, _ := c.json(http.MethodPut, "/api/cache/limits", map[string]any{"limit": -5}); w.Code != http.StatusBadRequest {
 		t.Errorf("a negative limit: %d, want 400", w.Code)

@@ -365,6 +365,7 @@ export function useFileActions({
         <KeepHereDialog
           path={filePath}
           name={file.name}
+          file={file}
           onClose={() => setKeeping(false)}
         />
       )}
@@ -1185,6 +1186,9 @@ function useFolderActions({
           path={path}
           name={name}
           folder
+          /* Offered the placement where the folder replicates, in its own
+             right or by a folder above it — as Move to other clouds is. */
+          replicas={replicated || !!replicate?.enabled}
           onClose={() => setKeeping(false)}
         />
       )}

@@ -181,7 +181,8 @@ your own.
 | | |
 |---|---|
 | What is kept | The file's parts exactly as the clouds hold them: compressed, erasure-coded and encrypted. Only the fewest that rebuild each chunk, k of n and never more (two of three on the default 2-of-3), so a film takes about its own size |
-| Replicas | A file with a [replica](storing-files.md#replication) cut at the same chunk size can be kept from it instead, chunk by chunk, when its parts cannot be had: too many of their clouds down or emptied. Then k of the replica's shards are kept for that chunk (one, for a whole-copy replica), never the parts and the replica both. The parts are always asked first |
+| Parts or replica | Where a file or folder is [replicated](storing-files.md#replication), the dialog offers the same **Read from** choice a stream link does. **Parts** (the default) keeps the parts. **Replica** keeps the replica alone, often the copy on a cloud of its own, and none of the parts. **Either** keeps the parts, and the replica only for a chunk the parts cannot give (too many of their clouds down or emptied). Whichever it is, only the fewest shards that rebuild each chunk are kept, and never the parts and the replica both. A folder kept from its replica leaves out the files under it that have none |
+| Overlapping | A file's own choice beats its folder's, and a deeper folder's beats a shallower one's |
 | When it is put together | Only when it is opened, in memory, exactly as from parts off the network. Nothing readable is written to the disk |
 | Where | A folder beside the vault, `vault.sand.cache` (`/var/lib/sand` under the service, `~/.sand` on a desktop). On the machine running SAND, which for a browser on a laptop looking at a home server is the server |
 | A folder | Everything under it, including what is added later |
@@ -196,7 +197,9 @@ open, and holds off the idle lock while it is fetching, the way it does for
 replication. Opening a kept file before then keeps whatever that read had to
 fetch, so watching a kept film fills it as it plays, and that includes a read
 the replica stood in for. A file kept from its replica opens from this machine
-like any other: no cloud is asked, its parts' or its replica's. Each part read from the
+when it is played from the replica; when the replica is cut at the same chunk
+size as the parts, which it is unless the chunk size changed in between, any read
+of it does. Each part read from the
 disk is checked the way one from a cloud is: one that has rotted is dropped and
 fetched again.
 
@@ -212,6 +215,7 @@ From the command line:
 ```bash
 sand cache keep /films/Dune.mkv --for 7d
 sand cache keep /photos/2026 --until 2026-12-31
+sand cache keep /films --for 30d --from replica
 sand cache ls
 sand cache limit --max 200G --reserve 20G
 sand cache rm /photos/2026

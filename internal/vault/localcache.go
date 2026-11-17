@@ -33,13 +33,19 @@ import (
 // fewest that rebuild each chunk: k of n, never more. A 2-of-3 film costs its
 // own size here, not one and a half times it.
 //
-// **A replica can stand in.** A file with a replica cut at the same chunk seams
-// (see replica.go) has two ways to rebuild chunk i: k of its parts, or k of its
-// replica's shards. Either counts as kept, and only one is kept per chunk —
-// once a chunk is whole from one, what is here of the other is dropped. The
-// fill asks the parts first and the replica only for a chunk the parts cannot
-// give, and a read of a kept file takes a chunk kept from its replica before
-// asking any cloud for its parts. A file is put back together only
+// **Which placement is kept is the owner's choice,** per pin, the same three a
+// stream link offers (ReadSource): the file's parts, its replica alone — which
+// is often the copy on a cloud of its own, nearer or faster than the rest — or
+// either, the parts with the replica standing in for any chunk they cannot
+// give. Whichever it is, only that placement's shards are kept, k of them a
+// chunk. Under "either" a chunk is kept from one placement or the other, never
+// both: once it is whole from one, what is here of the other is dropped. Where
+// pins overlap, the most specific decides: a file's own pin over its folder's,
+// a deeper folder's over a shallower one's.
+//
+// A read of a kept file takes a chunk kept from its replica before asking any
+// cloud for its parts when the replica is cut at the same chunk seams; one cut
+// differently serves reads that ask for the replica, as a stream link can. A file is put back together only
 // when it is opened, in memory, exactly as it is from parts off the network;
 // nothing readable is ever written to the disk. Each part read from the cache
 // is opened and checked like one from a cloud, so a cached part that has
@@ -97,6 +103,17 @@ type CachePin struct {
 	EntryID string    `json:"entry_id,omitempty"`
 	Added   time.Time `json:"added"`
 	Until   time.Time `json:"until"`
+	// From is which placement is kept: ReadParts (also the empty value),
+	// ReadReplica or ReadEither.
+	From ReadSource `json:"from,omitempty"`
+}
+
+// source is the pin's From, with the empty value read as the parts.
+func (p CachePin) source() ReadSource {
+	if p.From == "" {
+		return ReadParts
+	}
+	return p.From
 }
 
 // localPinsFile is the sidecar's contents.
@@ -264,40 +281,121 @@ func (v *Vault) editLocalPins(edit func(file *localPinsFile, m *Manifest) error)
 
 // --- what the pins want -----------------------------------------------------
 
+// keepPlan is how one file is kept: which placement is filled, from which
+// root of the accounts, and — under ReadEither only — what stands in for it.
+type keepPlan struct {
+	file    *Entry     // the file, as the index has it
+	from    ReadSource // the choice of the pin that decides it
+	primary *Entry     // the placement kept: the file, or its replica's view
+	role    provider.Role
+	standby *Entry // the replica standing in chunk for chunk, or nil
+}
+
+// planFor makes a file's plan, or nil when the choice cannot be met: the
+// replica alone, asked of a file with none.
+func planFor(e *Entry, from ReadSource) *keepPlan {
+	p := &keepPlan{file: e, from: from, primary: e, role: provider.Parts}
+	switch from {
+	case ReadReplica:
+		view := e.replicaView()
+		if view == nil || !view.Chunked() {
+			return nil
+		}
+		p.primary, p.role = view, provider.Replicas
+	case ReadEither:
+		p.standby = keptReplica(e)
+	}
+	return p
+}
+
+// need is what keeping the file takes on disk.
+func (p *keepPlan) need() int64 { return cachedBytesNeeded(p.primary) }
+
+// here is how much of that is on disk, by archive.
+func (p *keepPlan) here(held map[string]int64) int64 {
+	n := held[p.primary.ArchiveID]
+	if p.standby != nil {
+		n += held[p.standby.ArchiveID]
+	}
+	return min(n, p.need())
+}
+
+// kept is every chunk of the file being rebuildable from this machine alone.
+func (p *keepPlan) kept(store *shardcache.Store) bool {
+	primary := store.Counts(p.primary.ArchiveID)
+	var standby map[int]int
+	if p.standby != nil {
+		standby = store.Counts(p.standby.ArchiveID)
+	}
+	for i := 0; i < p.primary.ChunkCount; i++ {
+		if !p.chunkKept(primary, standby, i) {
+			return false
+		}
+	}
+	return true
+}
+
+// chunkKept is chunk i being whole here: k of the kept placement's shards, or
+// of the stand-in's.
+func (p *keepPlan) chunkKept(primary, standby map[int]int, index int) bool {
+	if primary[index] >= p.primary.Scheme().Data {
+		return true
+	}
+	return p.standby != nil && standby[index] >= p.standby.Scheme().Data
+}
+
 // pinnedFiles is the pins resolved against the index at one moment.
 type pinnedFiles struct {
-	// entries is every chunked file some unexpired pin wants, by archive.
-	entries map[string]*Entry
-	// replicas is each of those files' replica, by the file's archive, where
-	// it has one that can stand in chunk for chunk (see keptReplica).
-	replicas map[string]*Entry
-	// byPin is each pin's files, and whether what it names was found.
-	byPin       map[string][]*Entry
-	found       map[string]bool
-	unsupported map[string]int // files in the old whole-file format
+	// plans is how every chunked file some unexpired pin wants is kept, by
+	// the file's archive.
+	plans map[string]*keepPlan
+	// byPin is each pin's files, by archive, and whether what it names was
+	// found.
+	byPin map[string][]string
+	found map[string]bool
+	// unsupported counts each pin's files in the old whole-file format, and
+	// noReplica the ones it would keep from a replica they do not have.
+	unsupported map[string]int
+	noReplica   map[string]int
 }
 
 func resolvePins(pins []CachePin, m *Manifest, now time.Time) pinnedFiles {
 	out := pinnedFiles{
-		entries:     map[string]*Entry{},
-		replicas:    map[string]*Entry{},
-		byPin:       map[string][]*Entry{},
+		plans:       map[string]*keepPlan{},
+		byPin:       map[string][]string{},
 		found:       map[string]bool{},
 		unsupported: map[string]int{},
+		noReplica:   map[string]int{},
 	}
 	if m == nil {
 		return out
 	}
+
+	// Least specific first, so that a later pin's choice overrides: folders
+	// by depth, then single files.
+	ordered := make([]CachePin, 0, len(pins))
 	for _, pin := range pins {
-		if !now.Before(pin.Until) {
-			continue
+		if now.Before(pin.Until) {
+			ordered = append(ordered, pin)
 		}
-		var files []*Entry
+	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		a, b := ordered[i], ordered[j]
+		if a.Folder != b.Folder {
+			return a.Folder
+		}
+		return len(a.Path) < len(b.Path)
+	})
+
+	files := map[string]*Entry{}
+	choice := map[string]ReadSource{}
+	for _, pin := range ordered {
+		var matched []*Entry
 		switch {
 		case pin.Folder:
 			if m.FolderExists(pin.Path) {
 				out.found[pin.ID] = true
-				files = m.Descendants(pin.Path)
+				matched = m.Descendants(pin.Path)
 			}
 		default:
 			e := m.ByID(pin.EntryID)
@@ -306,20 +404,32 @@ func resolvePins(pins []CachePin, m *Manifest, now time.Time) pinnedFiles {
 			}
 			if e != nil {
 				out.found[pin.ID] = true
-				files = []*Entry{e}
+				matched = []*Entry{e}
 			}
 		}
-		for _, e := range files {
+		for _, e := range matched {
 			if !e.Chunked() {
 				out.unsupported[pin.ID]++
 				continue
 			}
-			snapshot := *e
-			snapshot.Shards = append([]Shard(nil), e.Shards...)
-			out.byPin[pin.ID] = append(out.byPin[pin.ID], &snapshot)
-			out.entries[e.ArchiveID] = &snapshot
-			if r := keptReplica(e); r != nil {
-				out.replicas[e.ArchiveID] = r
+			if files[e.ArchiveID] == nil {
+				snapshot := *e
+				snapshot.Shards = append([]Shard(nil), e.Shards...)
+				files[e.ArchiveID] = &snapshot
+			}
+			choice[e.ArchiveID] = pin.source()
+			out.byPin[pin.ID] = append(out.byPin[pin.ID], e.ArchiveID)
+		}
+	}
+	for archive, e := range files {
+		if plan := planFor(e, choice[archive]); plan != nil {
+			out.plans[archive] = plan
+		}
+	}
+	for id, archives := range out.byPin {
+		for _, archive := range archives {
+			if out.plans[archive] == nil {
+				out.noReplica[id]++
 			}
 		}
 	}
@@ -338,14 +448,15 @@ func keptReplica(e *Entry) *Entry {
 }
 
 func (v *Vault) setLocalWanted(p pinnedFiles) {
-	wanted := make(map[string]bool, len(p.entries))
+	wanted := make(map[string]bool, len(p.plans))
 	partner := map[string]string{}
-	for archive := range p.entries {
-		wanted[archive] = true
-	}
-	for archive, r := range p.replicas {
-		wanted[r.ArchiveID] = true
-		partner[archive], partner[r.ArchiveID] = r.ArchiveID, archive
+	for _, plan := range p.plans {
+		wanted[plan.primary.ArchiveID] = true
+		if plan.standby != nil {
+			a, b := plan.primary.ArchiveID, plan.standby.ArchiveID
+			wanted[b] = true
+			partner[a], partner[b] = b, a
+		}
 	}
 	v.local.mu.Lock()
 	v.local.wanted, v.local.partner = wanted, partner
@@ -489,19 +600,30 @@ func (v *Vault) chunkFromKeptReplica(entry *Entry, index int, obs ReadObserver) 
 // --- what the outside world calls -------------------------------------------
 
 // KeepLocally asks for a file or folder of the main vault to be kept on this
-// machine until until. Asking again for the same path moves its date.
-func (v *Vault) KeepLocally(scope Scope, path string, until time.Time) (CachePin, error) {
+// machine until until, from the placement from names (empty is the parts).
+// Asking again for the same path moves its date and its placement.
+//
+// Keeping a file from its replica when it has none is refused; a folder takes
+// whichever of its files have one, and says how many do not.
+func (v *Vault) KeepLocally(scope Scope, path string, until time.Time, from ReadSource) (CachePin, error) {
 	if !scope.Main() {
 		return CachePin{}, ErrCacheSubVault
+	}
+	from, err := ParseReadSource(string(from))
+	if err != nil {
+		return CachePin{}, err
 	}
 	now := time.Now()
 	if !until.After(now) {
 		return CachePin{}, fmt.Errorf("the date to keep it until has to be in the future")
 	}
 	var pin CachePin
-	_, err := v.editLocalPins(func(file *localPinsFile, m *Manifest) error {
-		pin = CachePin{Added: now, Until: until}
+	_, err = v.editLocalPins(func(file *localPinsFile, m *Manifest) error {
+		pin = CachePin{Added: now, Until: until, From: from}
 		if e := m.ByPath(path); e != nil {
+			if from == ReadReplica && e.Replica == nil {
+				return fmt.Errorf("%s: %w", e.Path(), ErrNoReplica)
+			}
 			pin.Path, pin.EntryID = e.Path(), e.ID
 		} else if dir := CleanDir(path); m.FolderExists(dir) {
 			pin.Path, pin.Folder = dir, true
@@ -580,10 +702,12 @@ type CachePinStatus struct {
 	CachePin
 	// Found is false for a file or folder that is no longer in the vault.
 	Found bool `json:"found"`
-	// Files is how many files the pin keeps, and Unsupported how many more
-	// it cannot, being stored in the format SAND used before chunking.
+	// Files is how many files the pin keeps. Unsupported is how many more it
+	// cannot, being stored in the format SAND used before chunking, and
+	// NoReplica how many it would keep from a replica they do not have.
 	Files       int `json:"files"`
 	Unsupported int `json:"unsupported"`
+	NoReplica   int `json:"no_replica"`
 	// Bytes is what keeping all of it takes on disk, and Cached how much of
 	// that is here.
 	Bytes    int64 `json:"bytes"`
@@ -631,19 +755,19 @@ func (v *Vault) LocalCache() (LocalCacheStatus, error) {
 		if !now.Before(pin.Until) {
 			continue
 		}
+		pin.From = pin.source()
 		row := CachePinStatus{CachePin: pin, Found: resolved.found[pin.ID],
-			Unsupported: resolved.unsupported[pin.ID], Complete: true}
-		for _, e := range resolved.byPin[pin.ID] {
-			row.Files++
-			r := resolved.replicas[e.ArchiveID]
-			need := cachedBytesNeeded(e)
-			here := held[e.ArchiveID]
-			if r != nil {
-				here += held[r.ArchiveID]
+			Unsupported: resolved.unsupported[pin.ID], NoReplica: resolved.noReplica[pin.ID],
+			Complete: true}
+		for _, archive := range resolved.byPin[pin.ID] {
+			plan := resolved.plans[archive]
+			if plan == nil {
+				continue
 			}
-			row.Bytes += need
-			row.Cached += min(here, need)
-			if store == nil || !entryKept(store, e, r) {
+			row.Files++
+			row.Bytes += plan.need()
+			row.Cached += plan.here(held)
+			if store == nil || !plan.kept(store) {
 				row.Complete = false
 			}
 		}
@@ -661,30 +785,6 @@ func cachedBytesNeeded(e *Entry) int64 {
 		largest = max(largest, s.Size)
 	}
 	return largest * int64(e.Scheme().Data)
-}
-
-// chunkKept is chunk i of a file being rebuildable from this machine alone:
-// k of its parts here, or k of its replica's shards.
-func chunkKept(parts, replica map[int]int, e, r *Entry, index int) bool {
-	if parts[index] >= e.Scheme().Data {
-		return true
-	}
-	return r != nil && replica[index] >= r.Scheme().Data
-}
-
-// entryKept is every chunk of a file being kept.
-func entryKept(store *shardcache.Store, e, r *Entry) bool {
-	parts := store.Counts(e.ArchiveID)
-	var replica map[int]int
-	if r != nil {
-		replica = store.Counts(r.ArchiveID)
-	}
-	for i := 0; i < e.ChunkCount; i++ {
-		if !chunkKept(parts, replica, e, r, i) {
-			return false
-		}
-	}
-	return true
 }
 
 // LocalCacheStep is what one fill step did.
@@ -734,12 +834,12 @@ func (v *Vault) FillLocalCache(ctx context.Context, budget int64) (LocalCacheSte
 
 	// Files in a fixed order, so a fill that keeps running out of room keeps
 	// the same files rather than a different half of each every time.
-	archives := make([]string, 0, len(resolved.entries))
-	for archive := range resolved.entries {
+	archives := make([]string, 0, len(resolved.plans))
+	for archive := range resolved.plans {
 		archives = append(archives, archive)
 	}
 	sort.Slice(archives, func(i, j int) bool {
-		a, b := resolved.entries[archives[i]], resolved.entries[archives[j]]
+		a, b := resolved.plans[archives[i]].file, resolved.plans[archives[j]].file
 		if a.Path() != b.Path() {
 			return a.Path() < b.Path()
 		}
@@ -747,12 +847,12 @@ func (v *Vault) FillLocalCache(ctx context.Context, budget int64) (LocalCacheSte
 	})
 
 	for _, archive := range archives {
-		entry, replica := resolved.entries[archive], resolved.replicas[archive]
-		if entryKept(store, entry, replica) {
+		plan := resolved.plans[archive]
+		if plan.kept(store) {
 			continue
 		}
-		step.Path = entry.Path()
-		err := v.fillEntry(ctx, store, entry, replica, budget, &step)
+		step.Path = plan.file.Path()
+		err := v.fillEntry(ctx, store, plan, budget, &step)
 		v.noteFill(step.Full, err)
 		if err != nil || step.Full || step.Fetched >= budget {
 			return step, err
@@ -779,12 +879,13 @@ func (v *Vault) noteFill(full bool, err error) {
 // fillEntry fetches the chunks of one file that are not yet kept here, a
 // window of them at a time, until the budget is spent.
 //
-// Each chunk is asked of the file's parts first, and only k of them are kept.
-// A chunk the parts cannot give — too many of their clouds down or emptied —
-// is asked of the file's replica (r, when it has one that can stand in), and k
-// of the replica's shards are kept instead. Never both.
-func (v *Vault) fillEntry(ctx context.Context, store *shardcache.Store, entry, r *Entry, budget int64, step *LocalCacheStep) error {
-	snap, err := v.snapshotRead(entry, provider.Parts)
+// Each chunk is asked of the plan's placement — the parts, or the replica
+// alone — and k of its shards are kept. Under ReadEither a chunk the parts
+// cannot give, too many of their clouds down or emptied, is asked of the
+// replica standing in, and k of its shards are kept instead. Never both.
+func (v *Vault) fillEntry(ctx context.Context, store *shardcache.Store, plan *keepPlan, budget int64, step *LocalCacheStep) error {
+	primary, standby := plan.primary, plan.standby
+	snap, err := v.snapshotRead(primary, plan.role)
 	if err != nil {
 		return err
 	}
@@ -793,24 +894,24 @@ func (v *Vault) fillEntry(ctx context.Context, store *shardcache.Store, entry, r
 	// The replica is sealed under its own key generation and lives on the
 	// accounts' replica roots, so it has a snapshot of its own. One that
 	// cannot be taken leaves the parts to answer alone.
-	var replicaSnap *readSnapshot
-	if r != nil {
-		if rs, err := v.snapshotRead(r, provider.Replicas); err == nil {
-			replicaSnap = rs
+	var standbySnap *readSnapshot
+	if standby != nil {
+		if rs, err := v.snapshotRead(standby, provider.Replicas); err == nil {
+			standbySnap = rs
 			defer crypto.ZeroBytes(rs.dataKey)
 		}
 	}
 
-	parts := store.Counts(entry.ArchiveID)
-	var replica map[int]int
-	if r != nil {
-		replica = store.Counts(r.ArchiveID)
+	primaryHeld := store.Counts(primary.ArchiveID)
+	var standbyHeld map[int]int
+	if standby != nil {
+		standbyHeld = store.Counts(standby.ArchiveID)
 	}
 
-	// What one chunk takes here, roughly: k of its parts. Asked of the room
+	// What one chunk takes here, roughly: k of its shards. Asked of the room
 	// before each fetch, so a full cache does not cost a window of downloads
 	// that are then thrown away.
-	perChunk := cachedBytesNeeded(entry) / int64(max(entry.ChunkCount, 1))
+	perChunk := plan.need() / int64(max(primary.ChunkCount, 1))
 	window := make(chan struct{}, max(v.Tuning().ReadAhead, 1))
 	var (
 		mu    sync.Mutex
@@ -823,8 +924,8 @@ func (v *Vault) fillEntry(ctx context.Context, store *shardcache.Store, entry, r
 		return first != nil || step.Full || step.Fetched >= budget || ctx.Err() != nil
 	}
 
-	for index := 0; index < entry.ChunkCount && !stop(); index++ {
-		if chunkKept(parts, replica, entry, r, index) {
+	for index := 0; index < primary.ChunkCount && !stop(); index++ {
+		if plan.chunkKept(primaryHeld, standbyHeld, index) {
 			continue
 		}
 		// The key in hand is a copy; a fill must stop with the lock rather
@@ -851,15 +952,15 @@ func (v *Vault) fillEntry(ctx context.Context, store *shardcache.Store, entry, r
 			if stop() {
 				return
 			}
-			from := entry
-			_, fetched, err := v.raceChunkShards(ctx, entry, index, snap.configs, snap.dataKey, nil)
-			if err != nil && replicaSnap != nil && ctx.Err() == nil {
-				var rerr error
-				_, fetched, rerr = v.raceChunkShards(ctx, r, index, replicaSnap.configs, replicaSnap.dataKey, nil)
-				if rerr == nil {
-					from, err = r, nil
+			from := primary
+			_, fetched, err := v.raceChunkShards(ctx, primary, index, snap.configs, snap.dataKey, nil)
+			if err != nil && standbySnap != nil && ctx.Err() == nil {
+				var serr error
+				_, fetched, serr = v.raceChunkShards(ctx, standby, index, standbySnap.configs, standbySnap.dataKey, nil)
+				if serr == nil {
+					from, err = standby, nil
 				} else {
-					err = fmt.Errorf("%w; nor from its replica: %v", err, rerr)
+					err = fmt.Errorf("%w; nor from its replica: %v", err, serr)
 				}
 			}
 			kept, full, perr := v.keepChunk(store, from, index, fetched, err)
@@ -876,7 +977,7 @@ func (v *Vault) fillEntry(ctx context.Context, store *shardcache.Store, entry, r
 				err = perr
 			}
 			if err != nil && first == nil && ctx.Err() == nil {
-				first = fmt.Errorf("keeping %s: %w", entry.Path(), err)
+				first = fmt.Errorf("keeping %s: %w", plan.file.Path(), err)
 			}
 		}(index)
 	}
