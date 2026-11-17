@@ -38,6 +38,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.sandvault.app.core.AcceptTypes
 import com.sandvault.app.core.AppConfig
 import com.sandvault.app.core.AppMode
+import com.sandvault.app.core.BackPress
 import com.sandvault.app.core.Navigation
 import com.sandvault.app.core.NavigationPolicy
 import com.sandvault.app.core.Origin
@@ -123,7 +124,12 @@ class MainActivity : AppCompatActivity() {
             override fun handleOnBackPressed() {
                 when {
                     customView != null -> exitFullscreen()
-                    loaded && web.canGoBack() -> web.goBack()
+                    // The page first: it closes what is open and steps back
+                    // through its folders, which the web view's history
+                    // knows nothing about. See BackPress.
+                    loaded -> web.evaluateJavascript(BackPress.SCRIPT) { r ->
+                        if (!BackPress.taken(r) && !isFinishing) leaveOrGoBack()
+                    }
                     else -> finish()
                 }
             }
@@ -396,6 +402,11 @@ class MainActivity : AppCompatActivity() {
             val pkg = intent.`package`
             if (pkg != null) openExternally("market://details?id=$pkg") else Toast.makeText(this, R.string.no_app_for_link, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /** Back that the page did not take: the web view's own history, then out. */
+    private fun leaveOrGoBack() {
+        if (loaded && web.canGoBack()) web.goBack() else finish()
     }
 
     private fun exitFullscreen() {

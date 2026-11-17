@@ -5,6 +5,7 @@ import { useNavigator } from './navigation'
 import { api } from './api'
 import LockScreen from './components/LockScreen'
 import { nativeApp, nativeAppMode } from './nativeApp'
+import { useNativeBack } from './useNativeBack'
 import AccountsPanel from './components/AccountsPanel'
 import FileBrowser from './components/FileBrowser'
 import PreviewModal, { ShardInspector } from './components/PreviewModal'
@@ -156,6 +157,11 @@ export default function App() {
   // other, and a drawer left open over a phone's file list is in the way of
   // the thing somebody just resized to see.
   useEffect(() => { setAccountsOpen(false) }, [mobile])
+
+  /* Inside the Android app, the phone's Back closes what is open and steps
+     back through the folders instead of quitting. See backButton.js. */
+  const closeAccounts = useCallback(() => setAccountsOpen(false), [])
+  useNativeBack(nav, { drawerOpen: mobile && accountsOpen, closeDrawer: closeAccounts })
 
   useEffect(() => {
     api.vaultStatus().then(setStatus).catch((err) => {
