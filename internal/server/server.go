@@ -167,6 +167,11 @@ type Server struct {
 	// a time between the two. See handlers_snapshots.go.
 	snapshots *snapshotWatch
 
+	// Phone marks the machine as a phone (the Android app starts its server
+	// with --phone): it never runs the vault's background work and cannot be
+	// made the primary. See vault/primary.go.
+	Phone bool
+
 	// ChecksumsEvery is how often checksums.gz is brought up to date with
 	// the index while the vault is unlocked. Zero leaves it to be written
 	// only when asked for.
@@ -283,6 +288,7 @@ func (s *Server) Vault() (*vault.Vault, error) {
 		return nil, err
 	}
 	s.vault = v
+	v.SetPhone(s.Phone)
 	// Before anything can upload or read: the windows, cache and chunk size
 	// this machine runs. See tuning.go.
 	s.loadTuning(v)
@@ -491,7 +497,9 @@ func (s *Server) Handler() (http.Handler, error) {
 		// The machines that open this vault, and a pull of the index they
 		// share. See handlers_instances.go.
 		"GET /api/vault/instances": s.handleInstances,
-		"POST /api/vault/sync":     s.handleSync,
+		// Which machine runs the background work. See vault/primary.go.
+		"POST /api/vault/primary": s.handlePrimarySet,
+		"POST /api/vault/sync":    s.handleSync,
 
 		// How this machine is sized: the profile, the machine it is taken
 		// to be, and every knob derived from that or set by hand. Not under

@@ -44,6 +44,10 @@ type Vault struct {
 	// index's register of machines under. See instance.go.
 	instance string
 
+	// phone marks this machine as a phone: it never runs the vault's
+	// background work and cannot be made the primary. See primary.go.
+	phone bool
+
 	mu       sync.RWMutex
 	store    *storeFile
 	vaultKey []byte // nil while locked

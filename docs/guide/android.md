@@ -69,7 +69,7 @@ no ⚙ button.
 | Run the vault on this phone | both | The switch at the top of the settings. On: full stack. Off: thin client, opening a server on another machine — if no address is set yet, the app asks for one as you switch. Each mode keeps its own settings, so switching back finds them as you left them. |
 | Server address, Find servers | thin client | Which server the app opens. |
 | Serve other devices on this network | full stack | Off: only this phone can reach its vault. On: a laptop's browser, SAND TV or another phone on the same Wi-Fi can open it at `http://<phone's address>:8123`, with the vault password. The connection is not encrypted, as with any SAND server on plain HTTP. |
-| Keep running when the app is closed | full stack | Off: the vault stops when you leave the app. On: uploads, scheduled checks and repairs carry on, and other devices can still reach it; a notification says it is running and has a **Stop** button. |
+| Keep running when the app is closed | full stack | Off: the vault stops when you leave the app. On: uploads carry on, and other devices can still reach it; a notification says it is running and has a **Stop** button. |
 | Machine name | full stack | What your other machines list this phone as. The phone's own name unless you change it. |
 | Port | full stack | 8123 unless another app on the phone has it. |
 | Server log, Restart, Stop | full stack | What the vault on the phone has said lately, and control over it. |
@@ -114,6 +114,12 @@ switching back opens it again.
   from another machine shows **Sign in here**: each machine signs in for
   itself, and then reads the same parts. See
   [Proton Drive](accounts.md#one-account-every-machine).
+- **No background work.** The phone never runs the vault's standing
+  instructions: replication, scheduled checks and repairs, the re-encryption
+  after a password change, or pruning. The vault's primary does that, usually
+  a computer that stays on; see
+  [one machine does the background work](vault-management.md#opening-the-vault-on-several-machines).
+  A check or repair you start by hand on the phone still runs there.
 - **When the phone sleeps**, Android slows down background work, even with *Keep
   running* on. Big uploads go fastest with the screen on or the phone charging.
 - **Mobile data.** The vault talks to your clouds over whatever network the

@@ -66,6 +66,11 @@ type Instance struct {
 	// is what lets another machine say "readable on study-pc" about a file
 	// whose parts it cannot reach itself, without a round trip to find out.
 	Accounts []string `json:"accounts"`
+
+	// Phone marks a machine that is a phone (the SAND Vault Android app
+	// running the vault). It never runs background work and cannot be made
+	// the primary — see primary.go.
+	Phone bool `json:"phone,omitempty"`
 }
 
 // Instance is the name this vault runs under on this machine.
@@ -273,7 +278,7 @@ func (v *Vault) registerSelfLocked(now time.Time) {
 	if v.manifest.Instances == nil {
 		v.manifest.Instances = map[string]*Instance{}
 	}
-	v.manifest.Instances[v.instance] = &Instance{Name: v.instance, LastSeen: now, Accounts: ids}
+	v.manifest.Instances[v.instance] = &Instance{Name: v.instance, LastSeen: now, Accounts: ids, Phone: v.phone}
 }
 
 // InstanceInfo is one machine as the instances panel lists it.
@@ -301,6 +306,7 @@ func (v *Vault) Instances() ([]InstanceInfo, error) {
 	}
 	sort.Strings(ids)
 	self.Accounts = ids
+	self.Phone = v.phone
 
 	out := []InstanceInfo{{Instance: self, Here: true}}
 	for _, peer := range v.peersLocked() {

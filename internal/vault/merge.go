@@ -332,6 +332,17 @@ func mergeIndexesAs(local, remote *Manifest, combineAnyway bool) (*Manifest, Mer
 	merged.Instances = instances
 	report.RegisterChanged = changed
 
+	// Which machine is the primary is chosen on one machine and has to reach
+	// the others whatever the clocks said, like the register: the later
+	// choice wins.
+	if primary := newerPrimary(local.Primary, remote.Primary); primary != merged.Primary {
+		if report.Outcome != MergeMerged && !changed {
+			copied := *merged
+			merged = &copied
+		}
+		merged.Primary = primary
+	}
+
 	report.Added, report.Removed, report.Updated = diffRows(local, merged)
 	return merged, report
 }
@@ -612,7 +623,7 @@ func unionInstances(a, b map[string]*Instance) (map[string]*Instance, bool) {
 }
 
 func sameInstance(a, b *Instance) bool {
-	if a.Name != b.Name || !a.LastSeen.Equal(b.LastSeen) || len(a.Accounts) != len(b.Accounts) {
+	if a.Name != b.Name || !a.LastSeen.Equal(b.LastSeen) || a.Phone != b.Phone || len(a.Accounts) != len(b.Accounts) {
 		return false
 	}
 	for i := range a.Accounts {

@@ -313,8 +313,14 @@ type Manifest struct {
 	// replicated and which are explicitly not, the nearest folder up the tree
 	// deciding for everything under it. Both only ever on the main vault's
 	// manifest: a replica is a main-vault placement. See replica.go.
-	Replication       *ReplicationPolicy `json:"replication,omitempty"`
-	ReplicatedFolders map[string]bool    `json:"replicated_folders,omitempty"`
+	Replication *ReplicationPolicy `json:"replication,omitempty"`
+
+	// Primary names the one machine that runs the vault's background work —
+	// replication, folder policies, re-encryption, pruning, the checksum
+	// ledger. Nil until somebody chooses one. Only ever on the main vault's
+	// manifest. See primary.go.
+	Primary           *Primary        `json:"primary,omitempty"`
+	ReplicatedFolders map[string]bool `json:"replicated_folders,omitempty"`
 
 	// AccountRemap is left behind by a recovery for the sub vaults it could not
 	// open, mapping the account IDs of the vault that was lost onto the ones

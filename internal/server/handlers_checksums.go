@@ -238,7 +238,7 @@ func (s *Server) checksumLedgerLoop() {
 	}
 	for range time.Tick(every) {
 		v, err := s.Vault()
-		if err != nil || !v.Unlocked() {
+		if err != nil || !v.RunsBackgroundWork() {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)

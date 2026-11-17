@@ -85,7 +85,7 @@ func (s *Server) rekeyLoop() {
 		}
 
 		v, err := s.Vault()
-		if err != nil || !v.Unlocked() {
+		if err != nil || !v.RunsBackgroundWork() {
 			continue
 		}
 		now := time.Now()
