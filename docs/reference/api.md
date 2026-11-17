@@ -243,6 +243,7 @@ unlocked vault; **quiet** is a session check that does not count as use;
 | POST | `/api/vault/backup/delay` | session | Least time between backup pushes |
 | GET | `/api/vault/instances` | session | Machines opening this vault |
 | POST | `/api/vault/sync` | session | Pull other machines' index changes |
+| POST | `/api/vault/primary` | session | Choose the machine that runs background work |
 | POST | `/api/vault/password` | session | Change password, rotate key |
 | POST | `/api/vault/migrate` | session | Finish re-encryption now |
 | GET · PUT | `/api/vault/rekey` | session | Re-key status · plan |
@@ -446,7 +447,16 @@ password. → `{"manifest_backup", "claimed", "warnings"}`.
 
 #### GET /api/vault/instances
 
-→ `{"instance": "this-host", "instances": [{name, last_seen, accounts, here}], "last_sync": "…" | null}`.
+→ `{"instance": "this-host", "instances": [{name, last_seen, accounts, phone?, here}], "last_sync": "…" | null,
+"primary": {primary, set_at?, set_on?, runs_here, phone}}`. `primary` is `""` when none is chosen, and then
+every machine except a phone runs the background work.
+
+#### POST /api/vault/primary
+
+`{"name": "raspberrypi"}` makes that machine the only one that runs the vault's background work:
+replication, folder policies, re-encryption, scheduled pruning and the checksum ledger. `""` goes back to
+none chosen. The machine must be this one or one in the register, and not a phone. → the `primary` object
+above; `400 BAD_REQUEST` otherwise. `GET /api/vault/replication` also carries `runs_here` and `primary`.
 
 #### POST /api/vault/sync
 

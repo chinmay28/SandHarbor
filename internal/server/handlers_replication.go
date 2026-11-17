@@ -34,7 +34,7 @@ func (s *Server) replicationLoop() {
 	var notBefore time.Time
 	for range ticker.C {
 		v, err := s.Vault()
-		if err != nil || !v.Unlocked() {
+		if err != nil || !v.RunsBackgroundWork() {
 			continue
 		}
 		now := time.Now()
@@ -100,7 +100,18 @@ func (s *Server) handleReplicationStatus(w http.ResponseWriter, r *http.Request)
 		vaultErrorResponse(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, status)
+	primary, err := v.PrimaryStatus()
+	if err != nil {
+		vaultErrorResponse(w, err)
+		return
+	}
+	// Where the copies are being made, so a machine that is not making them
+	// says so rather than showing a run as though it were its own.
+	writeJSON(w, http.StatusOK, struct {
+		vault.ReplicationStatus
+		RunsHere bool   `json:"runs_here"`
+		Primary  string `json:"primary"`
+	}{status, primary.RunsHere, primary.Primary})
 }
 
 // replicationRequest is the policy as the browser sends it.

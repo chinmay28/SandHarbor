@@ -17,12 +17,18 @@ import { ago } from './CloudHealth'
 
    A folder on a machine's own disk is that machine's alone. Files whose parts
    are on it are greyed out everywhere else and say which machine can read
-   them; that is what the account count beside each machine is about. */
+   them; that is what the account count beside each machine is about.
+
+   One machine is the primary: the one that carries out the vault's standing
+   instructions — replication, folder policies, re-encryption, pruning. The
+   others leave them alone, and a phone never runs them and cannot be chosen.
+   Until one is chosen, every computer runs them. */
 export default function Instances({ status, zIndex, onClose, onChanged }) {
   const [list, setList] = useState(null)
   const [error, setError] = useState(null)
   const [pulling, setPulling] = useState(false)
   const [report, setReport] = useState(null)
+  const [choosing, setChoosing] = useState(null)
 
   const load = () => api.instances()
     .then((resp) => { setList(resp); setError(null) })
@@ -35,7 +41,7 @@ export default function Instances({ status, zIndex, onClose, onChanged }) {
     try {
       const resp = await api.syncIndex()
       setReport(resp)
-      setList({ instance: resp.instance, instances: resp.instances, last_sync: resp.synced_at })
+      setList((prev) => ({ ...prev, instance: resp.instance, instances: resp.instances, last_sync: resp.synced_at }))
       if (resp.outcome === 'adopted' || resp.outcome === 'merged') onChanged?.()
     } catch (err) {
       setError(err.message)
@@ -44,8 +50,22 @@ export default function Instances({ status, zIndex, onClose, onChanged }) {
     }
   }
 
+  const choose = async (name) => {
+    setChoosing(name)
+    setError(null)
+    try {
+      const primary = await api.setPrimary(name)
+      setList((prev) => ({ ...prev, primary }))
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setChoosing(null)
+    }
+  }
+
   const instances = list?.instances || []
   const others = instances.filter((i) => !i.here)
+  const primary = list?.primary
 
   return (
     <Modal
@@ -78,7 +98,18 @@ export default function Instances({ status, zIndex, onClose, onChanged }) {
         </div>
       )}
 
-      {instances.map((inst) => <MachineRow key={inst.name} inst={inst} />)}
+      {primary && <BackgroundWork primary={primary} here={list.instance} busy={choosing !== null} onClear={() => choose('')} />}
+
+      {instances.map((inst) => (
+        <MachineRow
+          key={inst.name}
+          inst={inst}
+          primary={primary?.primary || ''}
+          busy={choosing !== null}
+          choosing={choosing === inst.name}
+          onChoose={() => choose(inst.name)}
+        />
+      ))}
 
       {list && others.length === 0 && (
         <p style={{
@@ -144,8 +175,39 @@ function pullSentence(report) {
   }
 }
 
-function MachineRow({ inst }) {
+/* Where the background work runs, in a sentence, above the machines. */
+function BackgroundWork({ primary, here, busy, onClear }) {
+  const text = primary.primary
+    ? `${primary.primary === here ? 'This machine' : primary.primary} runs this vault's background work — replication, folder policies, re-encryption and pruning. The other machines leave it alone.`
+    : 'No primary is chosen, so every computer that opens this vault runs its background work — replication, folder policies, re-encryption and pruning. Choose one below so only it does.'
+  return (
+    <p style={{
+      margin: '0 0 10px', fontFamily: FONT.sans, fontSize: '11.5px',
+      lineHeight: 1.6, color: COLORS.textDim,
+    }}>
+      {text}
+      {primary.phone && ' This phone never runs it.'}
+      {primary.primary && (
+        <>
+          {' '}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onClear}
+            style={{
+              background: 'none', border: 'none', padding: 0, cursor: busy ? 'default' : 'pointer',
+              fontFamily: FONT.sans, fontSize: '11.5px', color: COLORS.textMuted, textDecoration: 'underline',
+            }}
+          >Choose none</button>
+        </>
+      )}
+    </p>
+  )
+}
+
+function MachineRow({ inst, primary, busy, choosing, onChoose }) {
   const accounts = inst.accounts?.length || 0
+  const isPrimary = primary !== '' && inst.name === primary
   return (
     <div style={{
       display: 'flex', alignItems: 'flex-start', gap: '10px',
@@ -154,7 +216,7 @@ function MachineRow({ inst }) {
       borderLeft: `3px solid ${inst.here ? COLORS.accent : COLORS.borderBright}`,
       borderRadius: '6px',
     }}>
-      <span aria-hidden="true" style={{ fontSize: '14px', lineHeight: 1.3 }}>🖥️</span>
+      <span aria-hidden="true" style={{ fontSize: '14px', lineHeight: 1.3 }}>{inst.phone ? '📱' : '🖥️'}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           fontFamily: FONT.mono, fontSize: '12px', color: COLORS.text,
@@ -162,12 +224,20 @@ function MachineRow({ inst }) {
         }}>
           {inst.name}
           {inst.here && <span style={{ color: COLORS.textMuted }}> — this machine</span>}
+          {isPrimary && <span style={{ color: COLORS.accentBright }}> · primary</span>}
         </div>
         <div style={{ marginTop: '3px', fontFamily: FONT.mono, fontSize: '9.5px', color: COLORS.textMuted, lineHeight: 1.5 }}>
           {`reaches ${accounts} account${accounts === 1 ? '' : 's'}`}
           {inst.last_seen && !inst.last_seen.startsWith('0001') ? ` · last wrote ${ago(inst.last_seen)}` : ''}
+          {inst.phone ? ' · a phone: never runs background work' : ''}
         </div>
       </div>
+      {!inst.phone && !isPrimary && (
+        <Button size="sm" variant="ghost" disabled={busy} onClick={onChoose}
+          title="Make this the one machine that runs the vault's background work">
+          {choosing ? <Spinner size={11} /> : 'Make primary'}
+        </Button>
+      )}
     </div>
   )
 }

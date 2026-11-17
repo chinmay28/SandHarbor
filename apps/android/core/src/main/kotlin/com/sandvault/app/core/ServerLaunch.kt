@@ -46,6 +46,9 @@ data class ServerLaunch(
         "--bind", if (shareOnNetwork) "0.0.0.0" else "127.0.0.1",
         // Answering a TV's broadcast only makes sense on a server it can reach.
         "--tv-discovery-port", if (shareOnNetwork) DiscoveryProtocol.PORT.toString() else "0",
+        // A phone leaves the vault's background work (replication, folder
+        // policies, re-encryption, pruning) to the primary, and is never it.
+        "--phone",
     )
 
     fun environment(): Map<String, String> = buildMap {

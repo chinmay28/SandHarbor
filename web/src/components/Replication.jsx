@@ -330,7 +330,9 @@ function ReplicationProgress({ status, providers }) {
       padding: '10px 12px', fontFamily: FONT.mono, fontSize: '11px',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', color: COLORS.textDim }}>
-        <span>⧉ {status.pending > 0 ? (status.policy.paused ? 'Paused' : 'Replicating') : 'In step'}</span>
+        <span>⧉ {status.pending > 0
+          ? (status.policy.paused ? 'Paused' : status.runs_here === false ? 'Waiting' : 'Replicating')
+          : 'In step'}</span>
         <span>{status.replicated} of {total} file{total === 1 ? '' : 's'}</span>
       </div>
       <div style={{ height: '6px', margin: '6px 0', background: COLORS.surfaceRaised, borderRadius: '3px', overflow: 'hidden' }}>
@@ -350,7 +352,14 @@ function ReplicationProgress({ status, providers }) {
           Copying {status.current}{status.current_size > 0 ? ` · ${formatBytes(status.current_done)} of ${formatBytes(status.current_size)}` : ''}
         </div>
       )}
-      {(status.warnings || []).slice(-3).map((w, i) => (
+      {status.runs_here === false && status.pending > 0 && !status.policy.paused && (
+        <div style={{ marginTop: '6px', color: COLORS.textDim }}>
+          {status.primary
+            ? `The copies are made on ${status.primary}, the machine that runs this vault's background work — not on this one.`
+            : 'This machine does not run background work. The copies are made on the computers that open this vault.'}
+        </div>
+      )}
+      {status.runs_here !== false && (status.warnings || []).slice(-3).map((w, i) => (
         <div key={i} style={{ marginTop: '4px', color: COLORS.warn, wordBreak: 'break-word' }}>{w}</div>
       ))}
       <div style={{ marginTop: '6px', color: COLORS.textMuted }}>

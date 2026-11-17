@@ -213,7 +213,7 @@ func (s *Server) automationLoop() {
 
 	for range ticker.C {
 		v, err := s.Vault()
-		if err != nil || !v.Unlocked() {
+		if err != nil || !v.RunsBackgroundWork() {
 			continue
 		}
 		due, err := v.DueAutomations(time.Now())

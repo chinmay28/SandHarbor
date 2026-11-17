@@ -26,6 +26,7 @@ func serveCmd() *cobra.Command {
 		profile         string
 		checksumsEvery  time.Duration
 		tvDiscovery     int
+		phone           bool
 	)
 
 	cmd := &cobra.Command{
@@ -43,6 +44,7 @@ func serveCmd() *cobra.Command {
 				Profile:         profile,
 				ChecksumsEvery:  checksumsEvery,
 				TVDiscoveryPort: tvDiscovery,
+				Phone:           phone,
 			}
 			return s.Start()
 		},
@@ -78,6 +80,10 @@ func serveCmd() *cobra.Command {
 	// typing an IP address with a TV remote. It answers only on a bind a TV
 	// could reach, only the local network, and authorizes nothing — pairing
 	// still needs a code. See internal/tvdiscover.
+	// The Android app's server: a phone never runs the vault's background
+	// work and cannot be its primary. See vault/primary.go.
+	cmd.Flags().BoolVar(&phone, "phone", false,
+		"this machine is a phone: never run background work (replication, folder policies, re-encryption, pruning) and never be the primary")
 	cmd.Flags().IntVar(&tvDiscovery, "tv-discovery-port", tvdiscover.DefaultPort,
 		"UDP port the SAND TV app broadcasts to when looking for this server; 0 turns discovery off")
 	cmd.Flags().StringVar(&profile, "profile", os.Getenv("SAND_PROFILE"),

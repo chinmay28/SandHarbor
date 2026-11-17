@@ -124,7 +124,7 @@ func (s *Server) pruneLoop() {
 
 	for range ticker.C {
 		v, err := s.Vault()
-		if err != nil || !v.Unlocked() || !v.AutoPruneDue(time.Now()) {
+		if err != nil || !v.RunsBackgroundWork() || !v.AutoPruneDue(time.Now()) {
 			continue
 		}
 

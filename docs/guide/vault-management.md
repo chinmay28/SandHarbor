@@ -181,6 +181,20 @@ card says **on study-pc** instead of going red, health figures leave it out, and
 files whose parts are on it are **greyed out**, naming the machine that can read
 them. Files with enough parts on clouds open from either machine.
 
+**One machine does the background work.** The vault's standing instructions
+are [replication](storing-files.md#replication), folder policies (scheduled checks and repairs
+under *Organize and automate*), the re-encryption a password change leaves,
+scheduled pruning of old bucket versions, and the checksum ledger. They live in
+the shared index, so every machine sees them. Under *Vault settings › Machines*,
+**Make primary** chooses the one machine that carries them out, usually the Pi
+that stays on. The others leave them alone, and their replication panel says
+where the copies are being made. Until one is chosen, every computer runs them.
+The SAND Vault Android app never runs them and cannot be chosen, because it
+sleeps, roams onto mobile data and can't reach the Pi's disks. What you start
+by hand, like a check, a repair or a sweep, still runs wherever you start it.
+The cloud health check runs on every machine too, since each one checks what it
+can reach.
+
 **Concurrent writes are merged:**
 
 - A file stored on one machine appears on the other.

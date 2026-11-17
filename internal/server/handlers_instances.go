@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -33,11 +34,41 @@ func (s *Server) handleInstances(w http.ResponseWriter, r *http.Request) {
 		vaultErrorResponse(w, err)
 		return
 	}
+	primary, err := v.PrimaryStatus()
+	if err != nil {
+		vaultErrorResponse(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"instance":  v.Instance(),
 		"instances": instances,
 		"last_sync": zeroAsNil(v.LastSync()),
+		"primary":   primary,
 	})
+}
+
+// handlePrimarySet chooses the machine that runs the vault's background work
+// — replication, folder policies, re-encryption, pruning, the checksum ledger
+// — or, with an empty name, goes back to none chosen. See vault/primary.go.
+func (s *Server) handlePrimarySet(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error(), "BAD_REQUEST")
+		return
+	}
+	v, _ := s.Vault()
+	status, err := v.SetPrimary(req.Name)
+	if err != nil {
+		if errors.Is(err, vault.ErrLocked) {
+			vaultErrorResponse(w, err)
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error(), "BAD_REQUEST")
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
 }
 
 // handleSync pulls the shared index now, whether or not one is due, and says

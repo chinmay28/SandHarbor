@@ -324,6 +324,9 @@ export const api = {
      stored. See internal/vault/sync.go. */
   instances: () => request('/api/vault/instances'),
   syncIndex: () => request('/api/vault/sync', { method: 'POST' }),
+  /* Which machine runs the vault's background work (replication, folder
+     policies, re-encryption, pruning); '' goes back to none chosen. */
+  setPrimary: (name) => request('/api/vault/primary', { method: 'POST', body: { name } }),
   /* Builds a kit and hands back the archive with the code that opens it.
 
      Not request(), because the body is a zip and the code rides in a header:

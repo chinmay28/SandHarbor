@@ -26,6 +26,7 @@ class ServerLaunchTest {
                 "--port", "8123",
                 "--bind", "127.0.0.1",
                 "--tv-discovery-port", "0",
+                "--phone",
             ),
             launch.command(),
         )
