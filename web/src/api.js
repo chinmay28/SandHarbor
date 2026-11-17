@@ -1102,6 +1102,17 @@ export const api = {
      null puts it back to following its parent. Main vault only. */
   setReplicate: (path, enabled) =>
     request('/api/replicate', { method: 'POST', body: { path, enabled } }),
+  /* Files and folders kept on the machine running SAND, as sealed parts, until
+     a date: the pins, how far each has arrived, and the room the cache has.
+     keepFor is a length such as '7d'; until a moment. Main vault only. */
+  cacheStatus: () => request('/api/cache'),
+  keepLocally: (path, { until, keepFor } = {}) =>
+    request('/api/cache', { method: 'POST', body: { path, until, for: keepFor } }),
+  stopKeeping: (id) => request(`/api/cache/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  /* limit 0 is none of its own; reserve 0 is a tenth of the disk, -1 none. */
+  setCacheLimits: ({ limit = 0, reserve = 0 }) =>
+    request('/api/cache/limits', { method: 'PUT', body: { limit, reserve } }),
+
   /* Erase one file's replica now rather than at the next sweep. */
   dropReplica: (id) => request(`/api/files/${encodeURIComponent(id)}/replica`, { method: 'DELETE' }),
 

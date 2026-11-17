@@ -17,6 +17,7 @@ import { onPreviousKey } from '../keys'
 import { RelocateClouds, fileScheme, schemeName, storedParts } from './CloudSelect'
 import { RebuildRepo } from './RebuildRepo'
 import { ReplicaBadges, ReplicaDots, ReplicateFolderDialog } from './Replication'
+import { KeepHereDialog } from './KeepHere'
 import MoveToFolder from './MoveToFolder'
 import FolderArtPicker from './FolderArt'
 import RenameDialog from './Rename'
@@ -74,6 +75,7 @@ export function useFileActions({
   const [renaming, setRenaming] = useState(false)
   const [assigning, setAssigning] = useState(false)
   const [sending, setSending] = useState(false)
+  const [keeping, setKeeping] = useState(false)
 
   /* Where this could be sent. Standing in the main vault that is every open
      sub vault; standing inside one it is the way back out. A locked sub vault
@@ -262,6 +264,17 @@ export function useFileActions({
               danger: true,
               onSelect: dropReplica,
             },
+            /* Its sealed parts on this machine's disk until a date, so it
+               opens without the clouds. Main vault only, and only a file that
+               can be read at an offset — the old whole-file format converts
+               first. See KeepHere. */
+            !vault && !legacy && {
+              key: 'keep',
+              glyph: '⤓',
+              label: 'Keep on this machine',
+              hint: 'Its encrypted parts on this machine\'s disk until a date, so it opens without the clouds',
+              onSelect: () => setKeeping(true),
+            },
             /* Rename and the two moves, together: all three change where a
                file answers from and none of them touch what is stored. */
             {
@@ -346,6 +359,14 @@ export function useFileActions({
           Every part is erased from the accounts holding it, on the machine — you can keep
           working, and the row goes when it is done. This cannot be undone.
         </ConfirmDialog>
+      )}
+
+      {keeping && (
+        <KeepHereDialog
+          path={filePath}
+          name={file.name}
+          onClose={() => setKeeping(false)}
+        />
       )}
 
       {relocating && (
@@ -998,6 +1019,7 @@ function useFolderActions({
   const [zipping, setZipping] = useState(false)
   const [watching, setWatching] = useState(false)
   const [sending, setSending] = useState(false)
+  const [keeping, setKeeping] = useState(false)
 
   const [busy, setBusy] = useState(false)
 
@@ -1095,6 +1117,15 @@ function useFolderActions({
                 : 'A second copy on the replication clouds, in a folder of their own',
               onSelect: () => setReplicating(true),
             },
+            /* Everything under it on this machine's disk, sealed, until a
+               date — what is added later too. See KeepHere. */
+            !vault && {
+              key: 'keep',
+              glyph: '⤓',
+              label: 'Keep on this machine',
+              hint: 'Its files\' encrypted parts on this machine\'s disk until a date, so they open without the clouds',
+              onSelect: () => setKeeping(true),
+            },
             /* Only where there is something to choose from. A folder with
                nothing picturable inside it has nothing to offer, and the entry
                would open a dialog whose whole content is an apology. */
@@ -1146,6 +1177,15 @@ function useFolderActions({
               onSelect: () => setConfirming(true),
             },
           ]}
+        />
+      )}
+
+      {keeping && (
+        <KeepHereDialog
+          path={path}
+          name={name}
+          folder
+          onClose={() => setKeeping(false)}
         />
       )}
 

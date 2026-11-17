@@ -20,6 +20,7 @@ environment variables, file locations and tuning knobs in one place see
 - [Accounts](#accounts)
 - [Files](#files)
 - [Replication](#replication)
+- [Keeping files on this machine](#keeping-files-on-this-machine)
 - [Snapshots](#snapshots)
 - [Automation](#automation)
 - [Repositories](#repositories)
@@ -1000,6 +1001,71 @@ sand replicate run
 
 Makes the wanted replicas in the foreground, keeping to `--per-day`, for a
 machine that does not run the server. Ctrl-C stops between files.
+
+---
+
+## Keeping files on this machine
+
+Keeping a file or folder puts enough of its sealed parts (k of n per chunk) on
+this machine's own disk, in a folder beside the vault (`vault.sand.cache`), that
+it opens, streams and seeks without the clouds. The parts are kept exactly as
+the clouds hold them, encrypted; a file is put back together only in memory,
+when it is read. Every pin has an end date, and a folder pin keeps what is added
+to it later too. Main vault only. `sand serve` fetches what is kept while the
+vault is open; `sand cache fill` does it in the foreground. Guide:
+[streaming](../guide/streaming.md#keep-files-on-this-machine).
+
+### sand cache keep
+
+```
+sand cache keep <path> (--for LENGTH | --until DATE)
+```
+
+| Flag | Meaning |
+|---|---|
+| `--for` | How long: `12h`, `7d`, `2w` |
+| `--until` | A date (`2026-12-31`, kept to the end of that day) or an RFC 3339 time |
+
+Keeping a path that is already kept moves its date.
+
+### sand cache ls
+
+```
+sand cache ls
+```
+
+What is kept, until when, how much of each has arrived, and the room left.
+
+### sand cache rm
+
+```
+sand cache rm <id-or-path>
+```
+
+Stops keeping it, and frees at once whatever no other pin still keeps.
+
+### sand cache limit
+
+```
+sand cache limit [--max SIZE|none] [--reserve SIZE|default|none]
+```
+
+| Flag | Meaning |
+|---|---|
+| `--max` | The most the cache may hold. `none` (the default) sets no limit of its own |
+| `--reserve` | The free space it always leaves on the disk. `default` is a tenth of the disk, between 1 and 20 GB |
+
+A pin that does not fit is filled as far as it goes; nothing already kept is
+pushed out for it.
+
+### sand cache fill
+
+```
+sand cache fill
+```
+
+Fetches what is kept, in the foreground, until it has all arrived or the cache
+is out of room. Ctrl-C stops it; what arrived stays.
 
 ---
 

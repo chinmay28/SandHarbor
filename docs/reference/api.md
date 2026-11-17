@@ -22,7 +22,8 @@ standalone mode): [server design](../design/server.md). SAND TV's side:
   [accounts](#accounts) · [sign-in flows](#sign-in-flows) · [sub vaults](#sub-vaults) ·
   [files](#files) · [reading and streaming](#reading-and-streaming) · [folders](#folders) ·
   [moving and deleting](#moving-and-deleting) · [checks and checksums](#checks-and-checksums) ·
-  [snapshots](#snapshots) · [replication](#replication) · [automation](#automation) ·
+  [snapshots](#snapshots) · [replication](#replication) ·
+  [kept on this machine](#kept-on-this-machine) · [automation](#automation) ·
   [repositories](#repositories) · [film details](#film-details) · [assistant](#assistant) ·
   [machines (SFTP sources)](#machines-sftp-sources) · [statistics](#statistics) ·
   [this machine](#this-machine) · [SAND TV](#sand-tv) · [WebDAV](#webdav) ·
@@ -346,6 +347,9 @@ unlocked vault; **quiet** is a session check that does not count as use;
 | POST | `/api/snapshots/restore` · `/stop` | session | Restore job · stop |
 | GET · PUT | `/api/vault/replication` | session | Replication status · policy |
 | POST | `/api/replicate` | session | Replicate, exclude or reset a path |
+| GET · POST | `/api/cache` | session | Kept on this machine · keep a path |
+| DELETE | `/api/cache/{id}` | session | Stop keeping it |
+| PUT | `/api/cache/limits` | session | The cache's limit and reserve |
 | GET · POST · DELETE | `/api/automation` | session | Folder policies |
 | POST | `/api/automation/run` | session | Run a policy now |
 | GET | `/api/git` | session | Stored repositories |
@@ -1135,6 +1139,19 @@ A `target` is `{"account": "<id>"}` or `{"machine": "<id>", "dir?": "…"}`. Gui
 | `PUT /api/vault/replication` | `{accounts: [{id, replica_folder}], scheme, bytes_per_day, paused}` (empty `accounts` clears) | the status |
 | `POST /api/replicate` | `{path, enabled}`: `true` replicate, `false` exclude, `null` follow the parent | the status |
 | `DELETE /api/files/{id}/replica` | | `{warnings}`; `404 NO_REPLICA` |
+
+## Kept on this machine
+
+Files and folders whose sealed parts (k of n per chunk) are kept on the disk of
+the machine running SAND until a date, so they open without the clouds. Main
+vault only. The server fetches what is kept while the vault is open.
+
+| Endpoint | Request | Response |
+|---|---|---|
+| `GET /api/cache` | | `{dir, usage: {used, parts, limit, reserve, disk_free, disk_total, room}, limit, reserve, pins: [{id, path, folder, entry_id?, added, until, found, files, unsupported, bytes, cached, complete}], full, problem?, filling}` |
+| `POST /api/cache` | `{path, for?: "12h"\|"7d"\|"2w", until?: RFC 3339, vault_id?}`, exactly one of `for` and `until` | `201` the pin `{id, path, folder, entry_id?, added, until}`. Keeping a kept path moves its date. `400 SUB_VAULT` for a sub vault; `404 NOT_FOUND` for a missing path |
+| `DELETE /api/cache/{id}` | | `204`; frees at once what no other pin keeps. `404 NOT_FOUND` |
+| `PUT /api/cache/limits` | `{limit, reserve}`: `limit` 0 is none; `reserve` 0 is a tenth of the disk (1–20 GB), negative none | the status |
 
 ## Automation
 
