@@ -277,6 +277,9 @@ func TestCountsPerChunk(t *testing.T) {
 	if len(got) != 2 || got[0] != 2 || got[2] != 1 {
 		t.Fatalf("Counts = %v", got)
 	}
+	if s.Count(archA, 0) != 2 || s.Count(archA, 1) != 0 {
+		t.Fatalf("Count = %d, %d", s.Count(archA, 0), s.Count(archA, 1))
+	}
 	if got := s.Counts("nothing"); len(got) != 0 {
 		t.Fatalf("Counts of an unknown archive = %v", got)
 	}

@@ -1006,12 +1006,13 @@ machine that does not run the server. Ctrl-C stops between files.
 
 ## Keeping files on this machine
 
-Keeping a file or folder puts enough of its sealed parts (k of n per chunk) on
-this machine's own disk, in a folder beside the vault (`vault.sand.cache`), that
+Keeping a file or folder puts the fewest of its sealed parts that rebuild it
+(k of n per chunk, never more) on this machine's own disk, in a folder beside the vault (`vault.sand.cache`), that
 it opens, streams and seeks without the clouds. The parts are kept exactly as
 the clouds hold them, encrypted; a file is put back together only in memory,
 when it is read. Every pin has an end date, and a folder pin keeps what is added
-to it later too. Main vault only. `sand serve` fetches what is kept while the
+to it later too. A chunk the parts cannot give is kept from the file's replica
+instead, when it has one cut at the same chunk size. Main vault only. `sand serve` fetches what is kept while the
 vault is open; `sand cache fill` does it in the foreground. Guide:
 [streaming](../guide/streaming.md#keep-files-on-this-machine).
 

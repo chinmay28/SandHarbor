@@ -29,8 +29,17 @@ import (
 // takes its parts from the disk first and the clouds only for what is missing.
 //
 // **What is kept is the parts, sealed.** The cache holds the very objects the
-// clouds hold — compressed, erasure-coded, AES-256-GCM sealed — and only enough
-// of them per chunk to rebuild it (k of n). A file is put back together only
+// clouds hold — compressed, erasure-coded, AES-256-GCM sealed — and only the
+// fewest that rebuild each chunk: k of n, never more. A 2-of-3 film costs its
+// own size here, not one and a half times it.
+//
+// **A replica can stand in.** A file with a replica cut at the same chunk seams
+// (see replica.go) has two ways to rebuild chunk i: k of its parts, or k of its
+// replica's shards. Either counts as kept, and only one is kept per chunk —
+// once a chunk is whole from one, what is here of the other is dropped. The
+// fill asks the parts first and the replica only for a chunk the parts cannot
+// give, and a read of a kept file takes a chunk kept from its replica before
+// asking any cloud for its parts. A file is put back together only
 // when it is opened, in memory, exactly as it is from parts off the network;
 // nothing readable is ever written to the disk. Each part read from the cache
 // is opened and checked like one from a cloud, so a cached part that has
@@ -103,8 +112,12 @@ type localCacheState struct {
 	mu     sync.Mutex // a leaf lock; nothing is taken while it is held
 	store  *shardcache.Store
 	wanted map[string]bool // archives some unexpired pin wants; nil while locked
-	full   bool            // the last fill stopped for want of room
-	last   string          // what the last fill could not do, if anything
+	// partner pairs a kept file's parts archive with its replica's, both ways:
+	// the other placement of the same chunks, whose shards for a chunk are
+	// surplus once this one holds k of it.
+	partner map[string]string
+	full    bool   // the last fill stopped for want of room
+	last    string // what the last fill could not do, if anything
 
 	fill sync.Mutex // the one slot a fill runs in, taken with TryLock
 }
@@ -255,6 +268,9 @@ func (v *Vault) editLocalPins(edit func(file *localPinsFile, m *Manifest) error)
 type pinnedFiles struct {
 	// entries is every chunked file some unexpired pin wants, by archive.
 	entries map[string]*Entry
+	// replicas is each of those files' replica, by the file's archive, where
+	// it has one that can stand in chunk for chunk (see keptReplica).
+	replicas map[string]*Entry
 	// byPin is each pin's files, and whether what it names was found.
 	byPin       map[string][]*Entry
 	found       map[string]bool
@@ -264,6 +280,7 @@ type pinnedFiles struct {
 func resolvePins(pins []CachePin, m *Manifest, now time.Time) pinnedFiles {
 	out := pinnedFiles{
 		entries:     map[string]*Entry{},
+		replicas:    map[string]*Entry{},
 		byPin:       map[string][]*Entry{},
 		found:       map[string]bool{},
 		unsupported: map[string]int{},
@@ -301,19 +318,55 @@ func resolvePins(pins []CachePin, m *Manifest, now time.Time) pinnedFiles {
 			snapshot.Shards = append([]Shard(nil), e.Shards...)
 			out.byPin[pin.ID] = append(out.byPin[pin.ID], &snapshot)
 			out.entries[e.ArchiveID] = &snapshot
+			if r := keptReplica(e); r != nil {
+				out.replicas[e.ArchiveID] = r
+			}
 		}
 	}
 	return out
 }
 
+// keptReplica is the replica that can stand in for a file's parts chunk for
+// chunk, or nil: one cut at the same seams, so that its chunk i is the file's
+// chunk i. The rule the reader's own fallback keeps to (see OpenReader).
+func keptReplica(e *Entry) *Entry {
+	view := e.replicaView()
+	if view == nil || !view.Chunked() || view.ChunkSize != e.ChunkSize || view.ChunkCount != e.ChunkCount {
+		return nil
+	}
+	return view
+}
+
 func (v *Vault) setLocalWanted(p pinnedFiles) {
 	wanted := make(map[string]bool, len(p.entries))
+	partner := map[string]string{}
 	for archive := range p.entries {
 		wanted[archive] = true
 	}
+	for archive, r := range p.replicas {
+		wanted[r.ArchiveID] = true
+		partner[archive], partner[r.ArchiveID] = r.ArchiveID, archive
+	}
 	v.local.mu.Lock()
-	v.local.wanted = wanted
+	v.local.wanted, v.local.partner = wanted, partner
 	v.local.mu.Unlock()
+}
+
+// settleChunk drops the other placement's shards of a chunk once this
+// archive holds k of it, so a chunk is never kept twice over.
+func (v *Vault) settleChunk(store *shardcache.Store, archive string, index, need int) {
+	if store.Count(archive, index) < need {
+		return
+	}
+	v.local.mu.Lock()
+	other := v.local.partner[archive]
+	v.local.mu.Unlock()
+	if other == "" {
+		return
+	}
+	for _, part := range store.Parts(other, index) {
+		_ = store.Remove(cacheKeyOf(other, index, part))
+	}
 }
 
 // loadLocalWantedLocked works out what the pins want as the vault opens. The
@@ -339,7 +392,7 @@ func (v *Vault) loadLocalWantedLocked() {
 // they are sealed, and keeping them across a lock is the point.
 func (v *Vault) forgetLocalWanted() {
 	v.local.mu.Lock()
-	v.local.wanted = nil
+	v.local.wanted, v.local.partner = nil, nil
 	v.local.mu.Unlock()
 }
 
@@ -400,6 +453,37 @@ func (v *Vault) keepFetchedShards(entry *Entry, index int, fetched map[int][]byt
 			return
 		}
 	}
+	v.settleChunk(store, entry.ArchiveID, index, entry.Scheme().Data)
+}
+
+// chunkFromKeptReplica rebuilds one chunk of a file from its replica's shards
+// on this machine, when that is how the chunk is kept here: the file's own
+// parts are not (k of them would have answered first), and its replica's are.
+// No cloud is asked. False sends the read on its ordinary way.
+func (v *Vault) chunkFromKeptReplica(entry *Entry, index int, obs ReadObserver) ([]byte, bool) {
+	store, err := v.localStore(false)
+	if err != nil || store == nil || store.Count(entry.ArchiveID, index) >= entry.Scheme().Data {
+		return nil, false
+	}
+	r := keptReplica(entry)
+	if r == nil || store.Count(r.ArchiveID, index) < r.Scheme().Data {
+		return nil, false
+	}
+	snap, err := v.snapshotRead(r, provider.Replicas)
+	if err != nil {
+		return nil, false
+	}
+	defer crypto.ZeroBytes(snap.dataKey)
+	held := v.cachedChunkShards(r, index, snap.dataKey, obs)
+	if len(held) < r.Scheme().Data {
+		return nil, false
+	}
+	notifyRead(obs, entry, ReadEvent{Kind: ReadChunkDecrypting, Chunk: index})
+	decoded, err := archive.AssembleChunk(heldShards(held))
+	if err != nil {
+		return nil, false
+	}
+	return decoded.Data, true
 }
 
 // --- what the outside world calls -------------------------------------------
@@ -551,10 +635,15 @@ func (v *Vault) LocalCache() (LocalCacheStatus, error) {
 			Unsupported: resolved.unsupported[pin.ID], Complete: true}
 		for _, e := range resolved.byPin[pin.ID] {
 			row.Files++
+			r := resolved.replicas[e.ArchiveID]
 			need := cachedBytesNeeded(e)
+			here := held[e.ArchiveID]
+			if r != nil {
+				here += held[r.ArchiveID]
+			}
 			row.Bytes += need
-			row.Cached += min(held[e.ArchiveID], need)
-			if store == nil || !chunksComplete(e, store.Counts(e.ArchiveID)) {
+			row.Cached += min(here, need)
+			if store == nil || !entryKept(store, e, r) {
 				row.Complete = false
 			}
 		}
@@ -574,10 +663,24 @@ func cachedBytesNeeded(e *Entry) int64 {
 	return largest * int64(e.Scheme().Data)
 }
 
-func chunksComplete(e *Entry, counts map[int]int) bool {
-	need := e.Scheme().Data
+// chunkKept is chunk i of a file being rebuildable from this machine alone:
+// k of its parts here, or k of its replica's shards.
+func chunkKept(parts, replica map[int]int, e, r *Entry, index int) bool {
+	if parts[index] >= e.Scheme().Data {
+		return true
+	}
+	return r != nil && replica[index] >= r.Scheme().Data
+}
+
+// entryKept is every chunk of a file being kept.
+func entryKept(store *shardcache.Store, e, r *Entry) bool {
+	parts := store.Counts(e.ArchiveID)
+	var replica map[int]int
+	if r != nil {
+		replica = store.Counts(r.ArchiveID)
+	}
 	for i := 0; i < e.ChunkCount; i++ {
-		if counts[i] < need {
+		if !chunkKept(parts, replica, e, r, i) {
 			return false
 		}
 	}
@@ -644,13 +747,12 @@ func (v *Vault) FillLocalCache(ctx context.Context, budget int64) (LocalCacheSte
 	})
 
 	for _, archive := range archives {
-		entry := resolved.entries[archive]
-		counts := store.Counts(archive)
-		if chunksComplete(entry, counts) {
+		entry, replica := resolved.entries[archive], resolved.replicas[archive]
+		if entryKept(store, entry, replica) {
 			continue
 		}
 		step.Path = entry.Path()
-		err := v.fillEntry(ctx, store, entry, counts, budget, &step)
+		err := v.fillEntry(ctx, store, entry, replica, budget, &step)
 		v.noteFill(step.Full, err)
 		if err != nil || step.Full || step.Fetched >= budget {
 			return step, err
@@ -674,16 +776,37 @@ func (v *Vault) noteFill(full bool, err error) {
 	}
 }
 
-// fillEntry fetches the chunks of one file the cache does not yet hold k
-// parts of, a window of them at a time, until the budget is spent.
-func (v *Vault) fillEntry(ctx context.Context, store *shardcache.Store, entry *Entry, counts map[int]int, budget int64, step *LocalCacheStep) error {
+// fillEntry fetches the chunks of one file that are not yet kept here, a
+// window of them at a time, until the budget is spent.
+//
+// Each chunk is asked of the file's parts first, and only k of them are kept.
+// A chunk the parts cannot give — too many of their clouds down or emptied —
+// is asked of the file's replica (r, when it has one that can stand in), and k
+// of the replica's shards are kept instead. Never both.
+func (v *Vault) fillEntry(ctx context.Context, store *shardcache.Store, entry, r *Entry, budget int64, step *LocalCacheStep) error {
 	snap, err := v.snapshotRead(entry, provider.Parts)
 	if err != nil {
 		return err
 	}
 	defer crypto.ZeroBytes(snap.dataKey)
 
-	need := entry.Scheme().Data
+	// The replica is sealed under its own key generation and lives on the
+	// accounts' replica roots, so it has a snapshot of its own. One that
+	// cannot be taken leaves the parts to answer alone.
+	var replicaSnap *readSnapshot
+	if r != nil {
+		if rs, err := v.snapshotRead(r, provider.Replicas); err == nil {
+			replicaSnap = rs
+			defer crypto.ZeroBytes(rs.dataKey)
+		}
+	}
+
+	parts := store.Counts(entry.ArchiveID)
+	var replica map[int]int
+	if r != nil {
+		replica = store.Counts(r.ArchiveID)
+	}
+
 	// What one chunk takes here, roughly: k of its parts. Asked of the room
 	// before each fetch, so a full cache does not cost a window of downloads
 	// that are then thrown away.
@@ -701,7 +824,7 @@ func (v *Vault) fillEntry(ctx context.Context, store *shardcache.Store, entry *E
 	}
 
 	for index := 0; index < entry.ChunkCount && !stop(); index++ {
-		if counts[index] >= need {
+		if chunkKept(parts, replica, entry, r, index) {
 			continue
 		}
 		// The key in hand is a copy; a fill must stop with the lock rather
@@ -728,31 +851,29 @@ func (v *Vault) fillEntry(ctx context.Context, store *shardcache.Store, entry *E
 			if stop() {
 				return
 			}
+			from := entry
 			_, fetched, err := v.raceChunkShards(ctx, entry, index, snap.configs, snap.dataKey, nil)
-			var kept int64
-			full := false
-			for part, blob := range fetched {
-				if err != nil {
-					break
+			if err != nil && replicaSnap != nil && ctx.Err() == nil {
+				var rerr error
+				_, fetched, rerr = v.raceChunkShards(ctx, r, index, replicaSnap.configs, replicaSnap.dataKey, nil)
+				if rerr == nil {
+					from, err = r, nil
+				} else {
+					err = fmt.Errorf("%w; nor from its replica: %v", err, rerr)
 				}
-				perr := store.Put(cacheKeyOf(entry.ArchiveID, index, part), blob)
-				if errors.Is(perr, shardcache.ErrFull) {
-					full = true
-					break
-				}
-				if perr != nil {
-					err = perr
-					break
-				}
-				kept += int64(len(blob))
 			}
+			kept, full, perr := v.keepChunk(store, from, index, fetched, err)
 			mu.Lock()
 			defer mu.Unlock()
 			step.Fetched += kept
-			if full {
+			switch {
+			case full:
 				step.Full = true
-			} else if err == nil {
+			case err == nil && perr == nil:
 				step.Chunks++
+			}
+			if err == nil {
+				err = perr
 			}
 			if err != nil && first == nil && ctx.Err() == nil {
 				first = fmt.Errorf("keeping %s: %w", entry.Path(), err)
@@ -764,6 +885,26 @@ func (v *Vault) fillEntry(ctx context.Context, store *shardcache.Store, entry *E
 		return ctx.Err()
 	}
 	return first
+}
+
+// keepChunk files the shards a fill fetched for one chunk of from (the file
+// or its replica), then drops whatever the other placement had of the chunk.
+func (v *Vault) keepChunk(store *shardcache.Store, from *Entry, index int, fetched map[int][]byte, fetchErr error) (kept int64, full bool, err error) {
+	if fetchErr != nil {
+		return 0, false, nil
+	}
+	for part, blob := range fetched {
+		perr := store.Put(cacheKeyOf(from.ArchiveID, index, part), blob)
+		if errors.Is(perr, shardcache.ErrFull) {
+			return kept, true, nil
+		}
+		if perr != nil {
+			return kept, false, perr
+		}
+		kept += int64(len(blob))
+	}
+	v.settleChunk(store, from.ArchiveID, index, from.Scheme().Data)
+	return kept, false, nil
 }
 
 // expireLocalPins drops the pins whose date has passed, writing the list back

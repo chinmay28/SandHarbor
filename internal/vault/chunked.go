@@ -385,6 +385,11 @@ func (v *Vault) eraseShardChunks(ctx context.Context, target *transferTarget, pl
 // by whichever Scheme.Data distinct shards answer first.
 func (v *Vault) gatherChunk(ctx context.Context, entry *Entry, index int, configs map[string]provider.Config, dataKey []byte, obs ReadObserver) ([]byte, error) {
 	started := time.Now()
+	// Kept on this machine by way of its replica: rebuilt from there, and no
+	// cloud asked. See localcache.go.
+	if data, ok := v.chunkFromKeptReplica(entry, index, obs); ok {
+		return data, nil
+	}
 	shards, fetched, err := v.raceChunkShards(ctx, entry, index, configs, dataKey, obs)
 	if err != nil {
 		return nil, err

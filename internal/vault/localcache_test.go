@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chinmay28/SandHarbor/internal/archive"
 	"github.com/chinmay28/SandHarbor/internal/sandfile"
 )
 
@@ -443,5 +444,167 @@ func TestParseKeepFor(t *testing.T) {
 		if _, err := ParseKeepFor(in); err == nil {
 			t.Errorf("ParseKeepFor(%q) accepted", in)
 		}
+	}
+}
+
+// keptReplicaFile is one file in a vault whose replica is cut 2-of-3 across
+// replica folders of its own, kept on this machine, with nothing fetched yet.
+func keptReplicaFile(t *testing.T) (v *Vault, e *Entry, payload []byte, roots, replicaRoots []string) {
+	t.Helper()
+	v, roots, replicaRoots = replicaVault(t, 3, 3, archive.Scheme{Data: 2, Total: 3})
+	if err := v.SetLocalCacheLimits(0, -1); err != nil {
+		t.Fatal(err)
+	}
+	if err := v.SetReplicate("/", on(true)); err != nil {
+		t.Fatal(err)
+	}
+	payload = readerPayload(5000)
+	e = putFile(t, v, "/", "film.mkv", payload)
+	replicate(t, v)
+	if _, err := v.KeepLocally(MainScope, "/film.mkv", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	return v, e, payload, roots, replicaRoots
+}
+
+func replicaArchive(t *testing.T, v *Vault, id string) string {
+	t.Helper()
+	r := replicaOf(t, v, id)
+	if r == nil {
+		t.Fatal("no replica")
+	}
+	return r.ArchiveID
+}
+
+func TestKeptFileFillsFromItsReplicaWhenThePartsCannot(t *testing.T) {
+	v, e, payload, roots, replicaRoots := keptReplicaFile(t)
+	emptyCloud(t, roots[0])
+	emptyCloud(t, roots[1])
+
+	fillAll(t, v)
+	if pin := pinStatus(t, v, "/film.mkv"); !pin.Complete {
+		t.Fatalf("not kept with the parts gone and the replica whole: %+v", pin)
+	}
+	store, _ := v.localStore(false)
+	ra := replicaArchive(t, v, e.ID)
+	for chunk := 0; chunk < e.ChunkCount; chunk++ {
+		if n := store.Count(ra, chunk); n != 2 {
+			t.Errorf("chunk %d: %d replica shards kept, want exactly 2", chunk, n)
+		}
+		if n := store.Count(e.ArchiveID, chunk); n != 0 {
+			t.Errorf("chunk %d: %d parts kept beside a whole replica chunk", chunk, n)
+		}
+	}
+
+	// Every cloud gone now, parts and replica alike: an ordinary read of the
+	// file — from its parts, as every read is unless it says otherwise —
+	// comes off this machine.
+	for _, root := range append(append([]string{}, roots...), replicaRoots...) {
+		darken(t, root)
+	}
+	if got := readWhole(t, v, e.ID); !bytes.Equal(got, payload) {
+		t.Fatal("the file read back from its kept replica is not the file")
+	}
+	if data, _, err := v.Fetch(t.Context(), e.ID); err != nil || !bytes.Equal(data, payload) {
+		t.Fatalf("Fetch from the kept replica: %v", err)
+	}
+}
+
+func TestPartsArePreferredAndOnlyKShardsKept(t *testing.T) {
+	v, e, _, _, _ := keptReplicaFile(t)
+	fillAll(t, v)
+	store, _ := v.localStore(false)
+	held := store.Archives()
+	if held[replicaArchive(t, v, e.ID)] != 0 {
+		t.Fatal("replica shards kept though the parts answered")
+	}
+	for chunk := 0; chunk < e.ChunkCount; chunk++ {
+		if n := store.Count(e.ArchiveID, chunk); n != e.Scheme().Data {
+			t.Errorf("chunk %d: %d parts kept, want exactly %d", chunk, n, e.Scheme().Data)
+		}
+	}
+}
+
+func TestAChunkIsNeverKeptFromBothPlacements(t *testing.T) {
+	v, e, _, roots, _ := keptReplicaFile(t)
+	fillAll(t, v)
+
+	// Each chunk is left one part short, and the parts can no longer make it
+	// up: the replica has to, and the stray part goes.
+	store, _ := v.localStore(false)
+	for chunk := 0; chunk < e.ChunkCount; chunk++ {
+		_ = store.Remove(cacheKeyOf(e.ArchiveID, chunk, store.Parts(e.ArchiveID, chunk)[0]))
+	}
+	for _, root := range roots {
+		emptyCloud(t, root)
+	}
+	fillAll(t, v)
+
+	ra := replicaArchive(t, v, e.ID)
+	for chunk := 0; chunk < e.ChunkCount; chunk++ {
+		if p, r := store.Count(e.ArchiveID, chunk), store.Count(ra, chunk); p != 0 || r != 2 {
+			t.Errorf("chunk %d: %d parts and %d replica shards kept, want 0 and 2", chunk, p, r)
+		}
+	}
+}
+
+func TestReadingFromTheReplicaKeepsWhatItFetched(t *testing.T) {
+	v, e, payload, roots, replicaRoots := keptReplicaFile(t)
+	emptyCloud(t, roots[0])
+	emptyCloud(t, roots[1])
+
+	v.chunks.clear()
+	got, err := readFrom(t, v, e.ID, ReadEither)
+	if err != nil || !bytes.Equal(got, payload) {
+		t.Fatalf("ReadEither with the parts gone: %v", err)
+	}
+	if pin := pinStatus(t, v, "/film.mkv"); !pin.Complete {
+		t.Fatalf("the replica's shards the read fetched were not kept: %+v", pin)
+	}
+	for _, root := range replicaRoots {
+		darken(t, root)
+	}
+	if got := readWhole(t, v, e.ID); !bytes.Equal(got, payload) {
+		t.Fatal("read back wrong from what the replica read kept")
+	}
+}
+
+func TestReplicaShardsAreSweptWithTheirFile(t *testing.T) {
+	v, e, _, roots, _ := keptReplicaFile(t)
+	emptyCloud(t, roots[0])
+	emptyCloud(t, roots[1])
+	fillAll(t, v)
+	if err := v.StopKeeping("/film.mkv"); err != nil {
+		t.Fatal(err)
+	}
+	store, _ := v.localStore(false)
+	if store.Archives()[replicaArchive(t, v, e.ID)] != 0 || store.Usage().Used != 0 {
+		t.Fatal("replica shards outlived their pin")
+	}
+}
+
+func TestAWholeCopyReplicaKeepsOneShardAChunk(t *testing.T) {
+	v, roots, replicaRoots := replicaVault(t, 3, 1, archive.Scheme{})
+	_ = v.SetLocalCacheLimits(0, -1)
+	_ = v.SetReplicate("/", on(true))
+	payload := readerPayload(4000)
+	e := putFile(t, v, "/", "a.bin", payload)
+	replicate(t, v)
+	_, _ = v.KeepLocally(MainScope, "/a.bin", time.Now().Add(time.Hour))
+	for _, root := range roots {
+		emptyCloud(t, root)
+	}
+	fillAll(t, v)
+
+	store, _ := v.localStore(false)
+	ra := replicaArchive(t, v, e.ID)
+	for chunk := 0; chunk < e.ChunkCount; chunk++ {
+		if n := store.Count(ra, chunk); n != 1 {
+			t.Errorf("chunk %d: %d shards of a whole-copy replica kept, want 1", chunk, n)
+		}
+	}
+	darken(t, replicaRoots[0])
+	if got := readWhole(t, v, e.ID); !bytes.Equal(got, payload) {
+		t.Fatal("read back wrong from a kept whole-copy replica")
 	}
 }

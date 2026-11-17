@@ -9,8 +9,9 @@
 // the same way it is from parts that came off the network. A stolen cache
 // folder is therefore worth what a stolen cloud account is: noise.
 //
-// The store is a bounded blob store and nothing more. Which files deserve a
-// place in it, and for how long, is the vault's policy (see the vault's
+// The store is a bounded blob store and nothing more. How many parts of a
+// chunk to keep (the vault keeps k of n, never more), which files deserve a
+// place in it, and for how long, are the vault's policy (see the vault's
 // localcache.go); the store answers only "is this part here", "keep this
 // part" and "how much room is left". Room is bounded two ways, whichever
 // bites first:
@@ -139,8 +140,8 @@ type Store struct {
 
 	mu      sync.Mutex
 	limit   int64
-	reserve int64 // as set: zero is the default, negative none
-	held    map[string]map[Key]int64
+	reserve int64                            // as set: zero is the default, negative none
+	held    map[string]map[int]map[int]int64 // archive → chunk → part → bytes
 	used    int64
 	parts   int
 	pending int64 // bytes promised to writes not yet finished
@@ -156,7 +157,7 @@ func Open(dir string, opts Options) (*Store, error) {
 	s := &Store{
 		dir:   dir,
 		disk:  opts.Disk,
-		held:  map[string]map[Key]int64{},
+		held:  map[string]map[int]map[int]int64{},
 		limit: max(opts.Limit, 0),
 	}
 	s.reserve = opts.Reserve
@@ -225,39 +226,52 @@ func isTemp(name string) bool {
 func (s *Store) path(k Key) string { return filepath.Join(s.dir, k.Archive, k.fileName()) }
 
 func (s *Store) recordLocked(k Key, size int64) {
-	parts := s.held[k.Archive]
-	if parts == nil {
-		parts = map[Key]int64{}
-		s.held[k.Archive] = parts
+	chunks := s.held[k.Archive]
+	if chunks == nil {
+		chunks = map[int]map[int]int64{}
+		s.held[k.Archive] = chunks
 	}
-	if old, ok := parts[k]; ok {
+	parts := chunks[k.Chunk]
+	if parts == nil {
+		parts = map[int]int64{}
+		chunks[k.Chunk] = parts
+	}
+	if old, ok := parts[k.Part]; ok {
 		s.used -= old
 		s.parts--
 	}
-	parts[k] = size
+	parts[k.Part] = size
 	s.used += size
 	s.parts++
 }
 
 func (s *Store) forgetLocked(k Key) {
-	parts := s.held[k.Archive]
-	size, ok := parts[k]
+	chunks := s.held[k.Archive]
+	size, ok := chunks[k.Chunk][k.Part]
 	if !ok {
 		return
 	}
-	delete(parts, k)
-	if len(parts) == 0 {
+	delete(chunks[k.Chunk], k.Part)
+	if len(chunks[k.Chunk]) == 0 {
+		delete(chunks, k.Chunk)
+	}
+	if len(chunks) == 0 {
 		delete(s.held, k.Archive)
 	}
 	s.used -= size
 	s.parts--
 }
 
+func (s *Store) sizeLocked(k Key) (int64, bool) {
+	size, ok := s.held[k.Archive][k.Chunk][k.Part]
+	return size, ok
+}
+
 // Has reports whether the store holds a part.
 func (s *Store) Has(k Key) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, ok := s.held[k.Archive][k]
+	_, ok := s.sizeLocked(k)
 	return ok
 }
 
@@ -266,10 +280,8 @@ func (s *Store) Parts(archive string, chunk int) []int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []int
-	for k := range s.held[archive] {
-		if k.Chunk == chunk {
-			out = append(out, k.Part)
-		}
+	for part := range s.held[archive][chunk] {
+		out = append(out, part)
 	}
 	sort.Ints(out)
 	return out
@@ -281,10 +293,17 @@ func (s *Store) Counts(archive string) map[int]int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := map[int]int{}
-	for k := range s.held[archive] {
-		out[k.Chunk]++
+	for chunk, parts := range s.held[archive] {
+		out[chunk] = len(parts)
 	}
 	return out
+}
+
+// Count is how many parts are held for one chunk of an archive.
+func (s *Store) Count(archive string, chunk int) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.held[archive][chunk])
 }
 
 // Get returns a held part's bytes, or ErrMiss. A part whose file has gone
@@ -294,7 +313,7 @@ func (s *Store) Get(k Key) ([]byte, error) {
 		return nil, ErrBadKey
 	}
 	s.mu.Lock()
-	_, ok := s.held[k.Archive][k]
+	_, ok := s.sizeLocked(k)
 	s.mu.Unlock()
 	if !ok {
 		return nil, ErrMiss
@@ -321,7 +340,7 @@ func (s *Store) Put(k Key, blob []byte) error {
 	n := int64(len(blob))
 
 	s.mu.Lock()
-	old := s.held[k.Archive][k]
+	old, _ := s.sizeLocked(k)
 	if err := s.fitsLocked(n - old); err != nil {
 		s.mu.Unlock()
 		return err
@@ -434,10 +453,12 @@ func (s *Store) RemoveArchive(archive string) (int64, error) {
 	}
 	s.mu.Lock()
 	var freed int64
-	for _, size := range s.held[archive] {
-		freed += size
-		s.used -= size
-		s.parts--
+	for _, parts := range s.held[archive] {
+		for _, size := range parts {
+			freed += size
+			s.used -= size
+			s.parts--
+		}
 	}
 	delete(s.held, archive)
 	s.mu.Unlock()
@@ -452,9 +473,11 @@ func (s *Store) Archives() map[string]int64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make(map[string]int64, len(s.held))
-	for archive, parts := range s.held {
-		for _, size := range parts {
-			out[archive] += size
+	for archive, chunks := range s.held {
+		for _, parts := range chunks {
+			for _, size := range parts {
+				out[archive] += size
+			}
 		}
 	}
 	return out

@@ -180,7 +180,8 @@ your own.
 
 | | |
 |---|---|
-| What is kept | The file's parts exactly as the clouds hold them: compressed, erasure-coded and encrypted. Only enough to rebuild it (two of three, on the default 2-of-3), so a film takes about its own size |
+| What is kept | The file's parts exactly as the clouds hold them: compressed, erasure-coded and encrypted. Only the fewest that rebuild each chunk, k of n and never more (two of three on the default 2-of-3), so a film takes about its own size |
+| Replicas | A file with a [replica](storing-files.md#replication) cut at the same chunk size can be kept from it instead, chunk by chunk, when its parts cannot be had: too many of their clouds down or emptied. Then k of the replica's shards are kept for that chunk (one, for a whole-copy replica), never the parts and the replica both. The parts are always asked first |
 | When it is put together | Only when it is opened, in memory, exactly as from parts off the network. Nothing readable is written to the disk |
 | Where | A folder beside the vault, `vault.sand.cache` (`/var/lib/sand` under the service, `~/.sand` on a desktop). On the machine running SAND, which for a browser on a laptop looking at a home server is the server |
 | A folder | Everything under it, including what is added later |
@@ -193,7 +194,9 @@ your own.
 **Filling.** The server fetches what is kept in the background while the vault is
 open, and holds off the idle lock while it is fetching, the way it does for
 replication. Opening a kept file before then keeps whatever that read had to
-fetch, so watching a kept film fills it as it plays. Each part read from the
+fetch, so watching a kept film fills it as it plays, and that includes a read
+the replica stood in for. A file kept from its replica opens from this machine
+like any other: no cloud is asked, its parts' or its replica's. Each part read from the
 disk is checked the way one from a cloud is: one that has rotted is dropped and
 fetched again.
 

@@ -1142,9 +1142,10 @@ A `target` is `{"account": "<id>"}` or `{"machine": "<id>", "dir?": "…"}`. Gui
 
 ## Kept on this machine
 
-Files and folders whose sealed parts (k of n per chunk) are kept on the disk of
-the machine running SAND until a date, so they open without the clouds. Main
-vault only. The server fetches what is kept while the vault is open.
+Files and folders whose sealed parts (k of n per chunk, never more) are kept on
+the disk of the machine running SAND until a date, so they open without the
+clouds. A chunk the parts cannot give is kept from the file's replica instead,
+where it is cut at the same chunk size; `cached` counts both. Main vault only. The server fetches what is kept while the vault is open.
 
 | Endpoint | Request | Response |
 |---|---|---|
