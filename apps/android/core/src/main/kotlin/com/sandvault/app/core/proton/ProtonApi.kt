@@ -220,6 +220,15 @@ class ProtonApi(
     companion object {
         const val DEFAULT_BASE_URL = "https://drive-api.proton.me"
 
+        /**
+         * [baseUrl] as the Drive SDK takes it: ending in exactly one '/'. The
+         * SDK resolves its paths against it as a directory and refuses to
+         * create a client from one without the slash ("Base URL must end with
+         * a '/'"). The calls in this class are made the other way round, with
+         * the slash at the start of each path.
+         */
+        fun sdkBaseUrl(baseUrl: String = DEFAULT_BASE_URL): String = baseUrl.trimEnd('/') + "/"
+
         private fun encode(s: String) = java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20")
     }
 }

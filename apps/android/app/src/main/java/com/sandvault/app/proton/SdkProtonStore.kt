@@ -198,7 +198,8 @@ class SdkProtonStore(
             coroutineScope = scope,
             host = host,
             request = ClientCreateRequest(
-                baseUrl = baseUrl,
+                // The SDK refuses a base URL without its trailing slash.
+                baseUrl = ProtonApi.sdkBaseUrl(baseUrl),
                 loggerProvider = logger,
                 // Nothing on disk: the vault is where this account's secrets live.
                 cachePath = null,
