@@ -92,7 +92,10 @@ The library has three tabs:
   single film.
 - **All films**: every video under the folder at once.
 - **⋯**: when the code runs out, an About panel with the app and server versions,
-  **Sign out of this TV**, and **Change server**.
+  **Sign out of this TV**, **Change server**, and **Restart SAND TV** and
+  **Quit SAND TV**. Restart starts the app over from scratch, which is the cure
+  for a screen or player that has stopped answering; it stays on the same
+  server. The connect page has **Restart** and **Quit** too.
 
 A film's page shows what film lookup stored: poster (blurred behind the page too),
 year, runtime, rating, genres, tagline, synopsis, director and cast. Turn

@@ -172,6 +172,8 @@ get. An `https://` address works when there is a TLS proxy.
 | `playWith(json)` | TV page | Open the native player with `{url, title, startMs, itemId, subtitles}` |
 | `play(url, title, startMs, itemId)` | TV page | The same, without subtitles; kept for older pages |
 | `changeServer()` | TV page | Forget the server and go back to the connect page |
+| `restart()` | both | Start the app again in a fresh process, keeping the saved server |
+| `quit()` | both | Leave the app and take it off the recent-apps list |
 | `appVersion()` | both | The app's version, shown in the header, the About panel and Info |
 | `discover()` | connect page | Run discovery and report the servers found |
 | `connect(typed)` | connect page | Check and save an address, then open its `/tv/` |
@@ -180,8 +182,10 @@ get. An `https://` address works when there is a TLS proxy.
 The app calls back into the page through `window.sandTV`: `back()` returns true
 if the page handled Back, and `onPlaybackStopped(itemId, posMs, durMs)` lets the
 page offer to resume. The connect page gets its answers through
-`window.sandConnect`: `onDiscovered` and `onConnectFailed(message)`. (The comment block at the top of `tv.js` lists only `play`
-and `changeServer`; the table above is the full set.)
+`window.sandConnect`: `onDiscovered` and `onConnectFailed(message)`. (The comment block at the top of `tv.js` lists only the calls
+the TV page makes; the table above is the full set.) The TV page shows a button
+for a call only when the bridge has it, so an older app on a newer server simply
+goes without.
 
 ### Player internals
 

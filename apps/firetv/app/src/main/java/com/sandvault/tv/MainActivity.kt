@@ -30,9 +30,9 @@ import kotlin.concurrent.thread
  * own connect page, bundled in assets, which lists the servers discovery found
  * and takes an address typed by hand.
  *
- * Both pages get [Bridge] as window.SandTVNative, for the two things a page
- * cannot do: shout on the network for servers, and play a film in a player
- * that handles MKV, HEVC and surround sound. Navigation is held to the server
+ * Both pages get [Bridge] as window.SandTVNative, for the things a page
+ * cannot do: shout on the network for servers, play a film in a player that
+ * handles MKV, HEVC and surround sound, and quit or restart the app itself. Navigation is held to the server
  * and the app's own assets, because whatever page is showing holds that bridge.
  */
 class MainActivity : Activity() {
@@ -207,6 +207,21 @@ class MainActivity : Activity() {
             }
         }
 
+        /** Leaves the app and takes it off the recent-apps list. */
+        @JavascriptInterface
+        fun quit() {
+            main.post { finishAndRemoveTask() }
+        }
+
+        /**
+         * Starts the app again in a fresh process, so a WebView or player that
+         * has wedged comes back clean. The saved server is kept.
+         */
+        @JavascriptInterface
+        fun restart() {
+            main.post { restartApp() }
+        }
+
         @JavascriptInterface
         fun savedServer(): String = origin ?: ""
 
@@ -264,6 +279,18 @@ class MainActivity : Activity() {
                 )
             }
         }
+    }
+
+    private fun restartApp() {
+        val launch = packageManager.getLaunchIntentForPackage(packageName)?.component
+        if (launch == null) {
+            recreate()
+            return
+        }
+        startActivity(Intent.makeRestartActivityTask(launch))
+        finishAndRemoveTask()
+        // The new task starts in a new process once this one is gone.
+        Runtime.getRuntime().exit(0)
     }
 
     /** Null when origin answers /api/health as SAND; otherwise what went wrong. */

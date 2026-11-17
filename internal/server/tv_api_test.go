@@ -453,10 +453,16 @@ func TestTheTVPageIsServed(t *testing.T) {
 			t.Errorf("GET %s = %d %s", path, w.Code, w.Header().Get("Content-Type"))
 		}
 	}
-	for path, want := range map[string]string{"/tv/": "SAND TV", "/tv/tv.js": "SandTVNative", "/tv/tv.css": "--accent"} {
+	for path, wants := range map[string][]string{
+		"/tv/":       {"SAND TV", "menu-restart", "menu-quit"},
+		"/tv/tv.js":  {"SandTVNative", "native.restart", "native.quit"},
+		"/tv/tv.css": {"--accent"},
+	} {
 		w := c.do(http.MethodGet, path, nil, "")
-		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), want) {
-			t.Errorf("GET %s = %d, missing %q", path, w.Code, want)
+		for _, want := range wants {
+			if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), want) {
+				t.Errorf("GET %s = %d, missing %q", path, w.Code, want)
+			}
 		}
 		if csp := w.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") {
 			t.Errorf("GET %s CSP = %q", path, csp)
