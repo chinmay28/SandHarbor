@@ -1,6 +1,7 @@
 package sftp
 
 import (
+	"context"
 	"io"
 	"slices"
 	"sync"
@@ -30,8 +31,8 @@ const (
 // RemoteFile is a file on the server opened for reading.
 //
 // It reads like any other file. What it adds is WriteTo, which is what io.Copy
-// uses when it can: a large file is read through several sessions at once, so
-// a copy to anywhere is not held to what one session can carry. See
+// uses when it can: a large file is read through several connections at once,
+// so a copy to anywhere is not held to what one connection can carry. See
 // copyStriped for why that matters.
 type RemoteFile struct {
 	c    *Client
@@ -52,11 +53,11 @@ func (r *RemoteFile) Close() error { return r.f.Close() }
 
 // WriteTo copies the file from its current offset to its end into w.
 //
-// A file with at least defaultStripeMin left to go is read through every session the
-// connection has, or can open, up to Config.Streams. Anything smaller, a
-// connection limited to one stream, or a server that will not open a second
-// session goes through the primary session's own WriteTo, which is what this
-// replaced and is still the right thing when one window is enough.
+// A file with at least defaultStripeMin left to go is read through every
+// connection this one has opened, or can open, up to Config.Streams. Anything
+// smaller, a connection limited to one stream, or a server that will not take
+// a second connection goes through the primary session's own WriteTo, which
+// is what this replaced and is still the right thing when one flow is enough.
 //
 // The copy runs to the size measured at open, then reads on from there until
 // the file ends: a file that grew in between is copied whole, and one that
@@ -127,12 +128,22 @@ func (r *RemoteFile) openOn(sessions []*pkgsftp.Client) []*pkgsftp.File {
 }
 
 // extraSessions returns the sessions beyond the primary one that a large read
-// may use, opening any that are missing.
+// may use, dialling any connections that are missing.
 //
-// They are opened all at once, and a refusal is remembered: a server whose
-// MaxSessions is lower than Config.Streams turns some of them down, which is
-// the server saying how many it allows rather than something going wrong, so
-// the connection carries on with what it was given and does not ask again.
+// Each is a connection of its own rather than another session on this one,
+// and that is the point. Sessions sharing a connection share its TCP flow, and
+// a flow over a path that loses packets — a commercial VPN's exit is the
+// usual one — runs at whatever its congestion window recovers to after each
+// loss: at 60 ms and a percent of loss, around 100 kB/s however wide the link
+// is. Every session on it slows together. Separate connections are separate
+// flows, each losing and recovering on its own, which is how a speed test
+// fills a link that one download cannot.
+//
+// They are dialled all at once, held to the host key this connection was
+// verified against, and a refusal is remembered: a server that will take fewer
+// connections than Config.Streams is saying how many it allows rather than
+// failing, so reads carry on through what it accepted and it is not asked
+// again.
 func (c *Client) extraSessions() []*pkgsftp.Client {
 	want := c.streams - 1
 	c.extraMu.Lock()
@@ -142,38 +153,43 @@ func (c *Client) extraSessions() []*pkgsftp.Client {
 	}
 
 	if missing := want - len(c.extra); missing > 0 && !c.extraFull {
-		opened := make([]*pkgsftp.Client, missing)
+		opened := make([]*Client, missing)
 		var wg sync.WaitGroup
 		for i := range opened {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				if s, err := newSession(c.ssh); err == nil {
-					opened[i] = s
+				if extra, err := Dial(context.Background(), c.cfg); err == nil {
+					opened[i] = extra
 				}
 			}()
 		}
 		wg.Wait()
-		for _, s := range opened {
-			if s == nil {
+		for _, extra := range opened {
+			if extra == nil {
 				c.extraFull = true
 				continue
 			}
-			c.extra = append(c.extra, s)
+			c.extra = append(c.extra, extra)
 		}
 	}
-	return slices.Clone(c.extra)
+
+	sessions := make([]*pkgsftp.Client, len(c.extra))
+	for i, extra := range c.extra {
+		sessions[i] = extra.sftp
+	}
+	return sessions
 }
 
-// pruneExtraSessions drops the extra sessions that no longer answer, and lets
-// the next large read open replacements for them.
+// pruneExtraSessions drops the extra connections that no longer answer, and
+// lets the next large read dial replacements for them.
 func (c *Client) pruneExtraSessions() {
 	c.extraMu.Lock()
 	defer c.extraMu.Unlock()
 	before := len(c.extra)
-	c.extra = slices.DeleteFunc(c.extra, func(s *pkgsftp.Client) bool {
-		if _, err := s.Getwd(); err != nil {
-			s.Close()
+	c.extra = slices.DeleteFunc(c.extra, func(extra *Client) bool {
+		if !extra.Alive() {
+			extra.Close()
 			return true
 		}
 		return false
@@ -183,12 +199,12 @@ func (c *Client) pruneExtraSessions() {
 	}
 }
 
-// dropExtraSessions closes every extra session.
+// dropExtraSessions closes every extra connection.
 func (c *Client) dropExtraSessions() {
 	c.extraMu.Lock()
 	defer c.extraMu.Unlock()
-	for _, s := range c.extra {
-		s.Close()
+	for _, extra := range c.extra {
+		extra.Close()
 	}
 	c.extra = nil
 }

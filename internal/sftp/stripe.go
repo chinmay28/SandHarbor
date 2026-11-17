@@ -9,19 +9,19 @@ import (
 // copyStriped copies [start, end) of a file to w, reading it a block at a time
 // through several readers at once and writing the blocks out in order.
 //
-// It exists because one SFTP session cannot go faster than its SSH channel's
-// window allows, and golang.org/x/crypto/ssh fixes that window at 2 MiB with
-// no way to change it. A session can therefore have at most 2 MiB on the wire
-// at a time — however many requests pkg/sftp queues behind it — which caps it
-// at 2 MiB per round trip: about 30 MB/s to a machine 60 ms away, on a link
-// that could carry several times that. Every session is its own channel with
-// its own window, so reading one file through several sessions on the same
-// SSH connection multiplies the cap without another handshake.
+// It exists because one SFTP session over one SSH connection is held to less
+// than the link, two ways. golang.org/x/crypto/ssh fixes a channel's window at
+// 2 MiB with no way to change it, so a session has at most 2 MiB on the wire
+// however many requests pkg/sftp queues — about 30 MB/s to a machine 60 ms
+// away. And one connection is one TCP flow, which on a path that loses
+// packets runs far slower again: see Client.extraSessions. Each reader is a
+// session on a connection of its own, so each brings its own window and its
+// own flow.
 //
 // The readers are interchangeable: each is the same file, opened on a
-// different session. Which block a reader is handed is decided by whichever
-// of its reads is free first, so a slow session holds up only the blocks it
-// is reading.
+// different connection. Which block a reader is handed is decided by whichever
+// of its reads is free first, so a slow connection holds up only the blocks
+// it is reading.
 //
 // Each reader has inFlight blocks being read at once. Blocks are meant to be
 // small — one SFTP packet — and inFlight large enough to fill the window, the

@@ -59,8 +59,16 @@ type Server struct {
 	// no cap.
 	MaxSessions int
 
-	// sessionsOpened counts session channels accepted, across connections.
-	sessionsOpened atomic.Int64
+	// maxConnections is LimitConnections' cap, zero for none. Atomic because
+	// it is set on a server that is already accepting.
+	maxConnections atomic.Int64
+
+	// sessionsOpened counts session channels accepted, across connections;
+	// connectionsOpened counts connections accepted; open is how many are
+	// open now.
+	sessionsOpened    atomic.Int64
+	connectionsOpened atomic.Int64
+	open              atomic.Int64
 
 	hostKey  ssh.Signer
 	listener net.Listener
@@ -121,6 +129,16 @@ func (s *Server) HostPort(t testing.TB) (string, int) {
 // since it started, across every connection.
 func (s *Server) SessionsOpened() int { return int(s.sessionsOpened.Load()) }
 
+// LimitConnections caps how many connections may be open at once, closing the
+// next as soon as it arrives — what a server looks like whose sshd
+// MaxStartups, or a firewall's per-address limit, has been reached. Zero
+// removes the cap.
+func (s *Server) LimitConnections(n int) { s.maxConnections.Store(int64(n)) }
+
+// ConnectionsOpened reports how many connections the server has accepted —
+// not counting ones LimitConnections turned away — since it started.
+func (s *Server) ConnectionsOpened() int { return int(s.connectionsOpened.Load()) }
+
 func (s *Server) serve(root string) {
 	defer s.wg.Done()
 	for {
@@ -128,9 +146,16 @@ func (s *Server) serve(root string) {
 		if err != nil {
 			return
 		}
+		if max := s.maxConnections.Load(); max > 0 && s.open.Load() >= max {
+			conn.Close()
+			continue
+		}
+		s.open.Add(1)
+		s.connectionsOpened.Add(1)
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
+			defer s.open.Add(-1)
 			s.handle(conn, root)
 		}()
 	}
