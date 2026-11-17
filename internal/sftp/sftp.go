@@ -85,21 +85,25 @@ type Config struct {
 	// Timeout bounds connect and handshake. Zero means DefaultTimeout.
 	Timeout time.Duration
 
-	// Streams is how many SFTP sessions a large file is read through at once,
-	// all on the one SSH connection. Zero means DefaultStreams; one reads
-	// every file through a single session. See copyStriped for why more than
-	// one is worth having on a link with any distance in it.
+	// Streams is how many connections a large file is read through at once,
+	// this one included: each extra stream is an SSH connection of its own,
+	// carrying one SFTP session. Zero means DefaultStreams; one reads every
+	// file through this connection alone. See copyStriped and
+	// Client.extraSessions for why more than one is worth having on a link
+	// with any distance, or any loss, in it.
 	Streams int
 }
 
-// DefaultStreams is how many sessions a large file is read through.
+// DefaultStreams is how many connections a large file is read through.
 //
-// Each adds one SSH channel window — 2 MiB on the wire — so eight carry about
-// 16 MiB per round trip, enough to fill a home link over a VPN with most of a
-// hundred milliseconds in it. It also stays under sshd's MaxSessions, which
-// defaults to ten per connection and has to leave room for the session every
-// other operation uses. A server that allows fewer is not an error: reads go
-// through however many it does allow. See Client.sessions.
+// Each is its own TCP flow with its own SSH window, so eight carry eight
+// times what one can: on a clean but distant link that is 16 MiB per round
+// trip rather than 2, and on a lossy one — a commercial VPN in the path — it
+// is eight congestion windows each recovering from its own losses, rather
+// than one halving for all of them. Eight is also under sshd's MaxStartups,
+// which starts refusing at ten handshakes in progress at once. A server that
+// takes fewer is not an error: reads go through however many it accepted. See
+// Client.extraSessions.
 const DefaultStreams = 8
 
 // streams resolves Streams' zero value.
@@ -143,17 +147,25 @@ type Client struct {
 	roots   map[string]string
 
 	// streams is how many sessions a large read may use, the primary one
-	// included, and block the size of each read they are handed. See
-	// RemoteFile.WriteTo.
-	streams int
-	block   int
+	// included; block, inFlight and stripeMin are how it is cut up, and are
+	// fields rather than the constants they default to so that tests can
+	// spread a small file. See RemoteFile.WriteTo.
+	streams   int
+	block     int
+	inFlight  int
+	stripeMin int64
 
-	// extra holds the sessions opened for reading beyond the primary one,
-	// opened the first time a large file needs them and kept for the life of
-	// the connection, since each costs a few round trips to start. extraFull
-	// records that the server refused one, so they are not asked for again.
+	// cfg is what this connection was dialled with, its host key pinned to
+	// the one it was given, so that further connections to the same host can
+	// be dialled with no chance of meeting a different one.
+	cfg Config
+
+	// extra holds the connections opened for reading beyond this one, opened
+	// the first time a large file needs them and kept for the life of this
+	// one, since each costs a handshake. extraFull records that the server
+	// refused one, so they are not asked for again.
 	extraMu   sync.Mutex
-	extra     []*pkgsftp.Client
+	extra     []*Client
 	extraFull bool
 }
 
@@ -290,7 +302,18 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 	return &Client{
 		ssh: sshClient, sftp: session, hostKey: checker.seen,
 		streams: cfg.streams(), block: defaultStripeBlock,
+		inFlight: defaultStripeInFlight, stripeMin: defaultStripeMin,
+		cfg: pinned(cfg, checker.seen),
 	}, nil
+}
+
+// pinned is cfg as it should be dialled again to reach the same server: held
+// to the host key it presented this time, and reading through one connection,
+// since a connection dialled to help another does not open helpers of its own.
+func pinned(cfg Config, seen string) Config {
+	cfg.HostKey = seen
+	cfg.Streams = 1
+	return cfg
 }
 
 // newSession opens one SFTP session on an SSH connection, configured the way

@@ -9,29 +9,33 @@ import (
 // copyStriped copies [start, end) of a file to w, reading it a block at a time
 // through several readers at once and writing the blocks out in order.
 //
-// It exists because one SFTP session cannot go faster than its SSH channel's
-// window allows, and golang.org/x/crypto/ssh fixes that window at 2 MiB with
-// no way to change it. A session can therefore have at most 2 MiB on the wire
-// at a time — however many requests pkg/sftp queues behind it — which caps it
-// at 2 MiB per round trip: about 30 MB/s to a machine 60 ms away, on a link
-// that could carry several times that. Every session is its own channel with
-// its own window, so reading one file through several sessions on the same
-// SSH connection multiplies the cap without another handshake.
+// It exists because one SFTP session over one SSH connection is held to less
+// than the link, two ways. golang.org/x/crypto/ssh fixes a channel's window at
+// 2 MiB with no way to change it, so a session has at most 2 MiB on the wire
+// however many requests pkg/sftp queues — about 30 MB/s to a machine 60 ms
+// away. And one connection is one TCP flow, which on a path that loses
+// packets runs far slower again: see Client.extraSessions. Each reader is a
+// session on a connection of its own, so each brings its own window and its
+// own flow.
 //
 // The readers are interchangeable: each is the same file, opened on a
-// different session. Which block a reader is handed is decided by whichever
-// is free first, so a slow session holds up only the blocks it is reading.
+// different connection. Which block a reader is handed is decided by whichever
+// of its reads is free first, so a slow connection holds up only the blocks
+// it is reading.
 //
-// Each reader is asked for readsPerReader blocks at a time. One would leave a
-// gap at every block boundary: a session's window empties while its last
-// requests are answered, and stays empty for the round trip it takes the next
-// block's first requests to arrive. With two the next block is already queued
-// behind the first, and the window stays full.
+// Each reader has inFlight blocks being read at once. Blocks are meant to be
+// small — one SFTP packet — and inFlight large enough to fill the window, the
+// way pkg/sftp's own WriteTo does it: then w is handed the file a packet at a
+// time, each as soon as it is next in order, and whoever is counting what
+// has arrived sees it arrive. Large blocks would carry the same bytes as fast
+// but would hand nothing on until a whole block was in, which on a slow link
+// is minutes of a transfer that looks stopped.
 //
-// Memory is bounded. At most aheadPerReader blocks per reader are out at once,
+// Memory is bounded. At most inFlight+1 blocks per reader are out at once,
 // counting the ones being read and the ones waiting behind a slower block for
 // their turn to be written; no block is handed out until the writer has given
-// one back.
+// one back. The one over inFlight is what lets a reader start its next block
+// while the writer is still busy with the last.
 //
 // The copy ends at end, or earlier at the first block that comes back short
 // with io.EOF — a file that shrank after it was measured — in which case what
@@ -39,22 +43,15 @@ import (
 // answer a sequential read of the file would have given. Any other error ends
 // the copy and is returned with the count of bytes w accepted before it, all
 // of which are the file's leading bytes in order.
-const (
-	// readsPerReader is how many blocks each reader is reading at once.
-	readsPerReader = 2
-
-	// aheadPerReader is how many blocks per reader may be out at once. It has
-	// to exceed readsPerReader, or a reader that has finished both its blocks
-	// would wait for the writer even when the writer is only waiting for it.
-	aheadPerReader = readsPerReader + 1
-)
-
-func copyStriped(w io.Writer, readers []io.ReaderAt, start, end int64, block int) (int64, error) {
+func copyStriped(w io.Writer, readers []io.ReaderAt, start, end int64, block, inFlight int) (int64, error) {
 	if len(readers) == 0 {
 		return 0, errors.New("copyStriped: no readers")
 	}
 	if block <= 0 {
 		return 0, errors.New("copyStriped: block size must be positive")
+	}
+	if inFlight <= 0 {
+		return 0, errors.New("copyStriped: reads in flight must be positive")
 	}
 	if end <= start {
 		return 0, nil
@@ -62,7 +59,7 @@ func copyStriped(w io.Writer, readers []io.ReaderAt, start, end int64, block int
 
 	size := int64(block)
 	blocks := (end - start + size - 1) / size
-	ahead := aheadPerReader * len(readers)
+	ahead := (inFlight + 1) * len(readers)
 
 	type job struct {
 		idx int64
@@ -109,7 +106,7 @@ func copyStriped(w io.Writer, readers []io.ReaderAt, start, end int64, block int
 	}()
 
 	for _, r := range readers {
-		for range readsPerReader {
+		for range inFlight {
 			wg.Add(1)
 			go func(r io.ReaderAt) {
 				defer wg.Done()

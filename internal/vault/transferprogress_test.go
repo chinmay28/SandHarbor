@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 // delegatingReader is a source with a faster way to move bytes than Read —
@@ -73,5 +74,67 @@ func TestProgressReaderWriteToWithoutADelegate(t *testing.T) {
 	}
 	if last != int64(len(body)) {
 		t.Errorf("the final report said %d bytes, want %d", last, len(body))
+	}
+}
+
+// A slow transfer is still heard from. Four megabytes is six minutes at
+// 90 kbit/s, and a reader that waited for them would leave the dialog with
+// nothing to show a speed from — so bytes moving at all are said at least
+// once a progressInterval.
+func TestProgressReaderSpeaksUpOnASlowTransfer(t *testing.T) {
+	clock := time.Unix(1_000_000, 0)
+	var reports []int64
+	p := &progressReader{
+		r:   strings.NewReader(strings.Repeat("x", 100)),
+		say: func(done int64) { reports = append(reports, done) },
+		now: func() time.Time { return clock },
+	}
+
+	buf := make([]byte, 10)
+	read := func() {
+		if _, err := p.Read(buf); err != nil {
+			t.Fatalf("read: %v", err)
+		}
+	}
+
+	read() // counting starts
+	clock = clock.Add(progressInterval / 2)
+	read()
+	if len(reports) != 0 {
+		t.Fatalf("reported %v within one interval of a few bytes", reports)
+	}
+	clock = clock.Add(progressInterval / 2)
+	read()
+	if len(reports) != 1 || reports[0] != 30 {
+		t.Fatalf("reports %v, want one saying 30 once the interval passed", reports)
+	}
+
+	// And the interval runs from that report, not from the start.
+	clock = clock.Add(progressInterval - time.Millisecond)
+	read()
+	if len(reports) != 1 {
+		t.Fatalf("reported again %v before an interval had passed since the last", reports)
+	}
+	clock = clock.Add(time.Millisecond)
+	read()
+	if len(reports) != 2 || reports[1] != 50 {
+		t.Fatalf("reports %v, want a second saying 50", reports)
+	}
+}
+
+// Time alone says nothing: a stalled transfer is not reported as moving.
+func TestProgressReaderSaysNothingWhenNothingMoves(t *testing.T) {
+	clock := time.Unix(1_000_000, 0)
+	var reports []int64
+	p := &progressReader{
+		r:   strings.NewReader("abc"),
+		say: func(done int64) { reports = append(reports, done) },
+		now: func() time.Time { return clock },
+	}
+	p.count(0)
+	clock = clock.Add(10 * progressInterval)
+	p.count(0)
+	if len(reports) != 0 {
+		t.Errorf("reported %v with no bytes moved", reports)
 	}
 }
