@@ -10,6 +10,28 @@ Each section below is the body of the corresponding GitHub release. A heading
 must name the tag exactly — a tag whose commit builds a different version is a
 tag that shouldn't be published.
 
+## v2026.11.252
+
+**Downloads:** `sand-v2026.11.252-linux-arm64` (the server),
+**`sand-vault.apk`** (SAND Vault for Android — on the phone, open
+`https://github.com/chinmay28/SandHarbor/releases/latest/download/sand-vault.apk`;
+it installs over the previous version) and **`sand-tv.apk`** (the SAND TV app
+for Fire TV). All are in `SHA256SUMS`.
+
+### Proton Drive: signing an account in again works
+
+**Sign in here** and **Sign in again** on a Proton Drive account went through
+Proton's sign-in, showed *Signed in as …*, and then failed with "Proton Drive is
+not connected by signing in". Saving the new sign-in onto the account now works,
+on a computer (Proton's command-line client) and on the phone alike.
+
+### SAND Vault for Android: Proton Drive reaches Proton
+
+On a phone running the vault, connecting to Proton Drive then failed with "Base
+URL must end with a '/'", because Proton's Drive SDK was given its API address
+without the trailing slash it requires. It is now given the address in the
+form it expects.
+
 ## v2026.11.250
 
 **Downloads:** `sand-v2026.11.250-linux-arm64` (the server),

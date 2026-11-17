@@ -150,4 +150,13 @@ class ProtonApiTest {
         } catch (_: ProtonSignedOut) {
         }
     }
+
+    /** The Drive SDK will not create a client from a base URL without its trailing slash. */
+    @Test
+    fun theSdkIsGivenABaseUrlEndingInOneSlash() {
+        assertEquals("https://drive-api.proton.me/", ProtonApi.sdkBaseUrl())
+        assertEquals("https://proton.test/", ProtonApi.sdkBaseUrl("https://proton.test"))
+        assertEquals("https://proton.test/", ProtonApi.sdkBaseUrl("https://proton.test/"))
+        assertEquals("https://proton.test/", ProtonApi.sdkBaseUrl("https://proton.test//"))
+    }
 }
