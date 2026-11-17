@@ -1092,6 +1092,20 @@ func (v *Vault) Providers() ([]provider.Config, error) {
 	return out, nil
 }
 
+// Provider returns one connected account's config, secrets redacted.
+func (v *Vault) Provider(id string) (provider.Config, error) {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	if v.dataKey == nil {
+		return provider.Config{}, ErrLocked
+	}
+	cfg, ok := v.configForLocked(id)
+	if !ok {
+		return provider.Config{}, fmt.Errorf("no connected account with id %s", id)
+	}
+	return cfg.Redacted(), nil
+}
+
 // configForLocked looks up a connected account's config. The caller must hold
 // at least the read lock.
 func (v *Vault) configForLocked(id string) (provider.Config, bool) {

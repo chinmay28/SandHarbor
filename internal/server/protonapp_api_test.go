@@ -121,3 +121,55 @@ func TestProtonAppSignInConnectsAnAccount(t *testing.T) {
 		t.Fatalf("the account is not listed: %v", list)
 	}
 }
+
+// TestProtonAppSignInAgainReplacesTheSession is the way back for an account
+// already connected: its Edit panel signs in again, and the finished sign-in
+// is spent on that account. It used to be refused with "Proton Drive is not
+// connected by signing in", because the step that spends it looked the account
+// up as an OAuth one, and Proton signs in by link instead.
+func TestProtonAppSignInAgainReplacesTheSession(t *testing.T) {
+	fakeAndroidApp(t)
+	c := newTestClient(t)
+	c.setup("correct horse battery staple", 0)
+
+	signIn := func(body map[string]any) string {
+		t.Helper()
+		w, start := c.json(http.MethodPost, "/api/providers/proton/signin", body)
+		if w.Code != http.StatusOK {
+			t.Fatalf("start: %d %v", w.Code, start)
+		}
+		flowID, _ := start["flow_id"].(string)
+		ready := awaitFlow(t, c, flowID, func(s map[string]any) bool {
+			return s["status"] == "ready" || s["status"] == "error"
+		})
+		if ready["status"] != "ready" {
+			t.Fatalf("sign-in finished as %v", ready)
+		}
+		return flowID
+	}
+
+	first := signIn(map[string]any{"options": map[string]string{"folder": "/my-files/sand"}})
+	w, done := c.json(http.MethodPost, "/api/providers/oauth/complete", map[string]any{
+		"flow_id": first, "name": "proton", "options": map[string]string{"folder": "/my-files/sand"},
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("complete: %d %v", w.Code, done)
+	}
+	id, _ := done["provider"].(map[string]any)["id"].(string)
+
+	again := signIn(map[string]any{"provider_id": id})
+	w, re := c.json(http.MethodPost, "/api/providers/oauth/reauthorize", map[string]any{
+		"flow_id": again, "provider_id": id,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("reauthorize: %d %v", w.Code, re)
+	}
+	account, _ := re["provider"].(map[string]any)
+	if account["id"] != id || account["name"] != "proton" {
+		t.Fatalf("signed in again as %v", account)
+	}
+	options, _ := account["options"].(map[string]any)
+	if options["folder"] != "/my-files/sand" {
+		t.Errorf("the folder did not survive signing in again: %v", options["folder"])
+	}
+}

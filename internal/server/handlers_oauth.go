@@ -490,8 +490,10 @@ func (s *Server) handleOAuthReauthorize(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	// Signing a Dropbox account in with Google would store credentials nothing
-	// on the account can use, so the backend has to be the same one.
-	account, err := v.ProviderSignIn(req.ProviderID)
+	// on the account can use, so the backend has to be the same one. Only the
+	// account's kind is asked for: an account that signs in by link (Proton)
+	// has no OAuth app, and ProviderSignIn would refuse it for that.
+	account, err := v.Provider(req.ProviderID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error(), "BAD_REQUEST")
 		return
