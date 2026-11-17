@@ -1382,3 +1382,29 @@ func TestUploadOverwriteForgetsWhatTheReplacedFileCarried(t *testing.T) {
 		t.Error("the folder's picture still names the replaced file")
 	}
 }
+
+// Provider looks up one account whatever way it signs in, with its secrets
+// redacted, and says so when there is none.
+func TestProviderLooksUpOneAccount(t *testing.T) {
+	v, _ := newTestVault(t, 2)
+	all, err := v.Providers()
+	if err != nil || len(all) != 2 {
+		t.Fatalf("Providers: %v %v", all, err)
+	}
+	ids := []string{all[0].ID, all[1].ID}
+
+	cfg, err := v.Provider(ids[1])
+	if err != nil {
+		t.Fatalf("Provider: %v", err)
+	}
+	if cfg.ID != ids[1] {
+		t.Errorf("Provider(%s) = %s", ids[1], cfg.ID)
+	}
+	if _, err := v.Provider("no-such-account"); err == nil {
+		t.Error("an unknown account was found")
+	}
+	v.Lock()
+	if _, err := v.Provider(ids[1]); !errors.Is(err, ErrLocked) {
+		t.Errorf("a locked vault answered %v, want ErrLocked", err)
+	}
+}
