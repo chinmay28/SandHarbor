@@ -18,6 +18,7 @@ import {
   DefaultClouds, PARTS_PER_FILE, defaultSchemeFor, parseScheme, schemeName,
 } from './CloudSelect'
 import { ReplicationSettings, replicationStatusLine, replicationStatusTone } from './Replication'
+import { LocalCacheSettings, cacheStatusLine } from './KeepHere'
 
 /* Everything you set on the vault itself, in one place.
 
@@ -62,6 +63,7 @@ export default function VaultSettings({
   const [assistant, setAssistant] = useState(null)
   const [kit, setKit] = useState(null)
   const [machine, setMachine] = useState(null)
+  const [cache, setCache] = useState(null)
 
   const defaults = (stats?.default_accounts || []).filter(
     (id) => providers.some((p) => p.id === id))
@@ -79,6 +81,9 @@ export default function VaultSettings({
       .catch(() => {})
     api.machine()
       .then((resp) => { if (!cancelled) setMachine(resp) })
+      .catch(() => {})
+    api.cacheStatus()
+      .then((resp) => { if (!cancelled) setCache(resp) })
       .catch(() => {})
     return () => { cancelled = true }
   }, [])
@@ -125,6 +130,20 @@ export default function VaultSettings({
             status={replicationStatusLine(stats)}
             tone={replicationStatusTone(stats)}
             onClick={() => setOpen('replication')}
+          />
+        )}
+
+        {/* What this machine keeps on its own disk, sealed, so it opens
+            without the clouds. The pins are set from a file's or folder's
+            menu; this is where they are seen together, with the room. */}
+        {providers.length > 0 && (
+          <Setting
+            icon="⤓"
+            label="Kept on this machine"
+            hint="Files and folders whose encrypted parts are on this disk, so they open without the clouds"
+            status={cacheStatusLine(cache)}
+            tone={cache?.full ? COLORS.warn : undefined}
+            onClick={() => setOpen('cache')}
           />
         )}
 
@@ -325,6 +344,16 @@ export default function VaultSettings({
           zIndex={CHILD_Z}
           onClose={close}
           onChanged={onChanged}
+        />
+      )}
+
+      {open === 'cache' && (
+        <LocalCacheSettings
+          zIndex={CHILD_Z}
+          onClose={() => {
+            close()
+            api.cacheStatus().then(setCache).catch(() => {})
+          }}
         />
       )}
 

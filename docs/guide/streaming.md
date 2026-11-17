@@ -12,6 +12,10 @@ film plays, see [Streaming performance](../design/streaming-performance.md).
 | Browse a folder of films on a TV | [Watch on a TV](#watch-on-a-tv) | A four-character code for that folder |
 | Browse the whole vault from a file manager | [Mount it as a drive](#mount-it-as-a-drive) | Your vault password, on every request |
 
+Whichever you use, a film or folder of large photos you open often can be
+[kept on this machine](#keep-files-on-this-machine), so it opens from local disk
+rather than the clouds.
+
 ## Stream a file to VLC
 
 `▶` on a video or audio row, or **Stream in VLC** in the row's menu, opens the
@@ -164,3 +168,62 @@ every sub vault as before.
 > that exposure for that one sub vault.
 
 Sub vaults themselves are covered in [Vault management](vault-management.md).
+
+## Keep files on this machine
+
+A film streams as fast as the slower of the two clouds it needs, and a folder of
+RAW photos is a round trip to the clouds per picture. **Keep on this machine**,
+in a file's or folder's menu, puts enough of its parts on the disk of the
+machine running SAND that it opens, streams and seeks from there instead, until
+a date you choose: a day, a week, a month, three months, a year, or a date of
+your own.
+
+| | |
+|---|---|
+| What is kept | The file's parts exactly as the clouds hold them: compressed, erasure-coded and encrypted. Only the fewest that rebuild each chunk, k of n and never more (two of three on the default 2-of-3), so a film takes about its own size |
+| Parts or replica | Where a file or folder is [replicated](storing-files.md#replication), the dialog offers the same **Read from** choice a stream link does. **Parts** (the default) keeps the parts. **Replica** keeps the replica alone, often the copy on a cloud of its own, and none of the parts. **Either** keeps the parts, and the replica only for a chunk the parts cannot give (too many of their clouds down or emptied). Whichever it is, only the fewest shards that rebuild each chunk are kept, and never the parts and the replica both. A folder kept from its replica leaves out the files under it that have none |
+| Overlapping | A file's own choice beats its folder's, and a deeper folder's beats a shallower one's |
+| When it is put together | Only when it is opened, in memory, exactly as from parts off the network. Nothing readable is written to the disk |
+| Where | A folder beside the vault, `vault.sand.cache` (`/var/lib/sand` under the service, `~/.sand` on a desktop). On the machine running SAND, which for a browser on a laptop looking at a home server is the server |
+| A folder | Everything under it, including what is added later |
+| A file | Followed by its ID, so renaming or moving it keeps it kept |
+| Until | The date you picked. Then its parts are let go of. Keeping it again moves the date |
+| Locking the vault | Keeps what is kept: it is ciphertext. Nothing is fetched while the vault is locked |
+| Other machines | Pins are this machine's own. Another machine opening the same vault keeps its own, or none |
+| Sub vaults | Not kept: the list of what is kept is sealed under the main vault's key, which must not name a sub vault's folders |
+
+**Filling.** The server fetches what is kept in the background while the vault is
+open, and holds off the idle lock while it is fetching, the way it does for
+replication. Opening a kept file before then keeps whatever that read had to
+fetch, so watching a kept film fills it as it plays, and that includes a read
+the replica stood in for. A file kept from its replica opens from this machine
+when it is played from the replica; when the replica is cut at the same chunk
+size as the parts, which it is unless the chunk size changed in between, any read
+of it does. Each part read from the
+disk is checked the way one from a cloud is: one that has rotted is dropped and
+fetched again.
+
+**Room.** The cache never takes the disk below a reserve, a tenth of the disk
+(between 1 and 20 GB) unless you set another, and never past a limit if you set
+one. **Vault settings → Kept on this machine** lists what is kept, how much of
+each has arrived, and the room left, and sets both. What does not fit stays on
+the clouds and still opens from there; nothing already kept is pushed out to
+make room.
+
+From the command line:
+
+```bash
+sand cache keep /films/Dune.mkv --for 7d
+sand cache keep /photos/2026 --until 2026-12-31
+sand cache keep /films --for 30d --from replica
+sand cache ls
+sand cache limit --max 200G --reserve 20G
+sand cache rm /photos/2026
+sand cache fill          # fetch now, in the foreground
+```
+
+A file still in the format SAND used before chunking has to be
+converted (`sand vault convert`; see the
+[CLI reference](../reference/cli.md#sand-vault-convert)) before it can be kept,
+as before it can be streamed.
+

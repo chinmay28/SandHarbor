@@ -277,6 +277,11 @@ type Vault struct {
 	replicateSlot sync.Mutex
 	replicateMu   sync.Mutex
 	replicate     replicateMemory
+
+	// local is the cache of sealed parts kept on this machine's disk for the
+	// files and folders pinned to it, and what is remembered about it. Its
+	// own leaf lock, inside. See localcache.go.
+	local localCacheState
 }
 
 // Tuning is the machine-sized knobs the vault is running on.
@@ -631,6 +636,10 @@ func (v *Vault) Unlock(password string) error {
 	// of the first things somebody opens after signing in.
 	v.loadReadHistoryLocked()
 
+	// Which files this machine keeps, so that reading one keeps what the read
+	// fetched from the first moment rather than from the first fill.
+	v.loadLocalWantedLocked()
+
 	// A local folder connected before machines had names belongs to the
 	// machine that can see it. Looked for now, with the lock held and a
 	// short deadline per folder, so the listing that follows the unlock
@@ -769,6 +778,11 @@ func (v *Vault) lockLocked() {
 	// the files themselves.
 	v.forgetAllThumbs()
 	v.chunks.clear()
+
+	// The parts kept on this disk stay — they are sealed, and outliving a lock
+	// is what they are for — but with the key gone nothing can say which of
+	// them are wanted, so reads stop adding to them.
+	v.forgetLocalWanted()
 
 	// What the clouds last said about themselves goes too. It names accounts
 	// whose names live in the section that just went away, and a figure kept

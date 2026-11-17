@@ -370,6 +370,9 @@ func (v *Vault) rotate(oldPassword, newPassword string, plan *RekeySettings) err
 	} else {
 		v.resealReadHistoryLocked(current.dataKey, dataKey)
 	}
+	// The list of files kept on this machine is sealed the same way, and is
+	// only ever on disk, so it is always re-sealed. See localcache.go.
+	v.resealLocalPinsLocked(current.dataKey, dataKey)
 	// What the old password opened is finished with: the vault key it
 	// derived opens nothing on disk any more, and the data keys the files
 	// still need are the copies in the retired map. Wiped rather than left

@@ -385,16 +385,27 @@ func (v *Vault) eraseShardChunks(ctx context.Context, target *transferTarget, pl
 // by whichever Scheme.Data distinct shards answer first.
 func (v *Vault) gatherChunk(ctx context.Context, entry *Entry, index int, configs map[string]provider.Config, dataKey []byte, obs ReadObserver) ([]byte, error) {
 	started := time.Now()
-	shards, err := v.gatherChunkShards(ctx, entry, index, configs, dataKey, obs)
+	// Kept on this machine by way of its replica: rebuilt from there, and no
+	// cloud asked. See localcache.go.
+	if data, ok := v.chunkFromKeptReplica(entry, index, obs); ok {
+		return data, nil
+	}
+	shards, fetched, err := v.raceChunkShards(ctx, entry, index, configs, dataKey, obs)
 	if err != nil {
 		return nil, err
 	}
+	v.keepFetchedShards(entry, index, fetched)
 	notifyRead(obs, entry, ReadEvent{Kind: ReadChunkDecrypting, Chunk: index})
 	decoded, err := archive.AssembleChunk(shards)
 	if err != nil {
 		return nil, fmt.Errorf("rebuilding chunk %d of %s: %w", index, entry.Path(), err)
 	}
-	v.reads.loaded(kindOf(entry), loadOpen, int64(len(decoded.Data)), time.Since(started))
+	// A chunk rebuilt wholly from this machine's own disk says nothing about
+	// what opening a file off the clouds costs, so it is not counted in the
+	// speed figures. See throughput.go.
+	if len(fetched) > 0 {
+		v.reads.loaded(kindOf(entry), loadOpen, int64(len(decoded.Data)), time.Since(started))
+	}
 	return decoded.Data, nil
 }
 
@@ -407,7 +418,31 @@ func (v *Vault) gatherChunk(ctx context.Context, entry *Entry, index int, config
 // this (see lostparts.go), and wants the shards rather than what they decode
 // to.
 func (v *Vault) gatherChunkShards(ctx context.Context, entry *Entry, index int, configs map[string]provider.Config, dataKey []byte, obs ReadObserver) ([]*archive.OpenedShard, error) {
+	shards, fetched, err := v.raceChunkShards(ctx, entry, index, configs, dataKey, obs)
+	if err != nil {
+		return nil, err
+	}
+	// A file kept on this machine keeps what this read had to fetch, so
+	// watching a pinned film fills it as surely as the background fill does.
+	// See localcache.go.
+	v.keepFetchedShards(entry, index, fetched)
+	return shards, nil
+}
+
+// raceChunkShards is gatherChunkShards without keeping anything: the opened
+// shards, and the sealed bytes of the ones that came off the network, by part.
+//
+// The parts this machine keeps are taken first (see localcache.go). Only when
+// they fall short of Scheme.Data is any account asked, and then only for the
+// parts not already in hand.
+func (v *Vault) raceChunkShards(ctx context.Context, entry *Entry, index int, configs map[string]provider.Config, dataKey []byte, obs ReadObserver) ([]*archive.OpenedShard, map[int][]byte, error) {
 	scheme := entry.Scheme()
+
+	held := v.cachedChunkShards(entry, index, dataKey, obs)
+	fetched := map[int][]byte{}
+	if len(held) >= scheme.Data {
+		return heldShards(held), fetched, nil
+	}
 
 	fetchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -421,7 +456,7 @@ func (v *Vault) gatherChunkShards(ctx context.Context, entry *Entry, index int, 
 	if obs != nil {
 		var asked []Shard
 		for _, shard := range entry.Shards {
-			if _, ok := configs[shard.ProviderID]; ok {
+			if _, ok := configs[shard.ProviderID]; ok && held[shard.Part] == nil {
 				asked = append(asked, shard)
 			}
 		}
@@ -431,7 +466,7 @@ func (v *Vault) gatherChunkShards(ctx context.Context, entry *Entry, index int, 
 	pending := 0
 	for _, shard := range entry.Shards {
 		cfg, ok := configs[shard.ProviderID]
-		if !ok {
+		if !ok || held[shard.Part] != nil {
 			continue
 		}
 		pending++
@@ -461,7 +496,6 @@ func (v *Vault) gatherChunkShards(ctx context.Context, entry *Entry, index int, 
 	// rebuilt, and went on failing it for as long as that account kept
 	// answering first. A code that survives n−k lost shards has to survive
 	// them when they are lost by being wrong, not only by being absent.
-	held := map[int]*archive.OpenedShard{}
 	var failures []string
 	taken := 0
 	for i := 0; i < pending; i++ {
@@ -486,6 +520,7 @@ func (v *Vault) gatherChunkShards(ctx context.Context, entry *Entry, index int, 
 			continue
 		}
 		held[r.shard.Part] = opened
+		fetched[r.shard.Part] = r.blob
 		v.reads.record(r, shardWon)
 		notifyRead(obs, entry, ReadEvent{Kind: ReadShardArrived, Chunk: index, Shard: r.shard, Took: r.took})
 		if len(held) >= scheme.Data {
@@ -496,16 +531,19 @@ func (v *Vault) gatherChunkShards(ctx context.Context, entry *Entry, index int, 
 
 	if len(held) < scheme.Data {
 		v.reads.shortfall()
-		return nil, fmt.Errorf("could not gather %d shards for chunk %d of %s (got %d): %s",
+		return nil, nil, fmt.Errorf("could not gather %d shards for chunk %d of %s (got %d): %s",
 			scheme.Data, index, entry.Path(), len(held),
 			strings.Join(failures, "; "))
 	}
+	return heldShards(held), fetched, nil
+}
 
+func heldShards(held map[int]*archive.OpenedShard) []*archive.OpenedShard {
 	shards := make([]*archive.OpenedShard, 0, len(held))
 	for _, opened := range held {
 		shards = append(shards, opened)
 	}
-	return shards, nil
+	return shards
 }
 
 // ErrShardDamaged marks a stored shard that answered but is not the object

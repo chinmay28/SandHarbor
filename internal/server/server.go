@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -210,6 +211,12 @@ type Server struct {
 	// on its next tick; see handlers_rekey.go.
 	rekeyWakeOnce sync.Once
 	rekeyWake     chan struct{}
+
+	// cacheWake has the local-cache loop fill now rather than on its next
+	// tick, and cacheFilling says it is mid-fill; see handlers_cache.go.
+	cacheWakeOnce sync.Once
+	cacheWake     chan struct{}
+	cacheFilling  atomic.Bool
 
 	// dav is the share, when one is served. It is asked whether a request is
 	// still running before the vault is locked for being idle.
@@ -491,6 +498,12 @@ func (s *Server) Handler() (http.Handler, error) {
 		"PUT /api/vault/replication": s.handleReplicationSet,
 		"POST /api/replicate":        s.handleReplicateSet,
 		"POST /api/vault/backup":     s.handleVaultBackup,
+		// Files and folders kept on this machine's disk, as sealed parts,
+		// until a date. See handlers_cache.go and vault/localcache.go.
+		"GET /api/cache":         s.handleCacheStatus,
+		"POST /api/cache":        s.handleCacheKeep,
+		"DELETE /api/cache/{id}": s.handleCacheStop,
+		"PUT /api/cache/limits":  s.handleCacheLimits,
 		// How far apart the pushes of the index are kept, so a burst of
 		// changes is a few of them rather than one per change.
 		"POST /api/vault/backup/delay": s.handleVaultBackupDelay,
@@ -1046,6 +1059,10 @@ func (s *Server) Start() error {
 	// And what the other machines opening this vault wrote to the index,
 	// pulled on its schedule, and nothing while locked — see syncLoop.
 	go s.syncLoop()
+	// And the files and folders this machine was asked to keep on its own
+	// disk, fetched a slice at a time, and nothing while locked — see
+	// localCacheLoop.
+	go s.localCacheLoop()
 	// And the answer to a TV on the network asking where SAND is — only on a
 	// bind a TV could reach. See internal/tvdiscover.
 	if port := s.discoveryPort(); port > 0 {
@@ -1405,6 +1422,10 @@ func vaultErrorResponse(w http.ResponseWriter, err error) {
 		// it is the machine that has to change — sand installed, or a login
 		// that may run commands — before this one can be done as asked.
 		writeError(w, http.StatusConflict, err.Error(), "GRIND_UNAVAILABLE")
+	case errors.Is(err, vault.ErrNoSuchPin):
+		writeError(w, http.StatusNotFound, err.Error(), "NOT_FOUND")
+	case errors.Is(err, vault.ErrCacheSubVault):
+		writeError(w, http.StatusBadRequest, err.Error(), "SUB_VAULT")
 	case errors.Is(err, vault.ErrNeedsConversion):
 		// 409 rather than 400: nothing about the request is wrong, the file is
 		// simply in a state that has to change before it can be answered for.

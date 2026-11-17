@@ -75,7 +75,8 @@ Two layering rules keep this honest:
 
 **Unlock.** The password derives the vault key (Argon2id), which opens the vault
 file's sections: the data key, account configs, the index and settings. Locking
-zeroes the keys and drops every cache. The server locks after every session has
+zeroes the keys and drops every in-memory cache (the sealed parts kept on disk
+for files pinned to this machine stay; they are ciphertext). The server locks after every session has
 been idle for 30 minutes. See [vault](design/vault.md).
 
 **Store.** An upload is spooled beside the vault (the whole-file SHA-256 must be
@@ -90,7 +91,9 @@ have landed to rebuild the file; a missing spare is recorded, not fatal. See
 **Open and stream.** A read fetches, for each chunk it needs, shards from every
 account holding one and uses the first k to answer (the race routes around a slow
 or dead account), then decrypts, decodes and decompresses. Seeking fetches only
-the chunk it lands in, and decrypted chunks are cached. Players and TVs get
+the chunk it lands in, and decrypted chunks are cached in memory. A file or
+folder *kept on this machine* has its sealed parts on the local disk until a
+date, and the race takes those first (see `internal/shardcache`). Players and TVs get
 time-limited stream tickets (`/stream/{token}`) instead of the session. See
 [data pipeline](design/data-pipeline.md),
 [streaming performance](design/streaming-performance.md) and
@@ -131,6 +134,7 @@ Verified against each package's doc comment.
 | `internal/davfs` | Presents one vault scope as a WebDAV filesystem (`/dav` for the main vault, `/sub/<name>/` per sub vault). An adapter over the vault's chunked reader and streaming upload |
 | `internal/archive` | The pipeline in both directions: chunk planning, per-chunk encode (compress, code, seal), shard opening and assembly, remaking one lost shard, schemes, the legacy whole-file format, and standalone archive/restore |
 | `internal/splitter` | The erasure coder: k data shards of n over GF(2^8), any k rebuild; plus the original split-and-XOR two-of-three kept for reading old parts |
+| `internal/shardcache` | The local cache: sealed parts kept on this machine's disk, bounded by a limit and a free-space reserve. Knows no keys; which files are kept, and until when, is `internal/vault`'s (`localcache.go`). See [streaming](guide/streaming.md#keep-files-on-this-machine) |
 | `internal/compress` | zstd, applied to every chunk before it is coded |
 | `internal/crypto` | Argon2id (vault and recovery-kit parameters), HKDF-SHA256 chunk keys, AES-256-GCM |
 | `internal/sandfile` | The on-disk format of one encrypted part: a clear header with what is needed to derive its key, everything else inside the ciphertext |
@@ -172,10 +176,10 @@ Verified against each package's doc comment.
   written from ping paths that must never wait on the index), `thumbMu`, the chunk
   cache and per-chunk single-flight, `spoolMu` (temp files in flight), `keyUseMu`
   (data-key generations in use by transfers), `readsMu`, `pruneMu`, `syncMu`,
-  `backupMu`, `rekeyMu`, `replicateMu`, `ledgerMu`. `thumbLoad` is the exception,
+  `backupMu`, `rekeyMu`, `replicateMu`, `ledgerMu`, `local.mu` (the local cache's pins-wanted set and store handle). `thumbLoad` is the exception,
   taken before `mu`.
 - **One-at-a-time slots**, taken with `TryLock` and never waited on: `migrateMu`
-  (a re-encryption pass), `replicateSlot` (making a replica), and the automation
+  (a re-encryption pass), `replicateSlot` (making a replica), `local.fill` (filling the local cache), and the automation
   runner (`autoMu`). The loser returns a busy error (`ErrMigrationBusy`,
   `ErrAutomationBusy`) or retries later.
 - **Deferred work runs off the lock.** The manifest backup is *scheduled* while
@@ -186,7 +190,7 @@ Verified against each package's doc comment.
   running vault without taking `mu`.
 
 The server's background loops (`autoLockLoop`, `automationLoop`, `healthLoop`,
-`pruneLoop`, `checksumLedgerLoop`, `rekeyLoop`, `replicationLoop`, `syncLoop`,
+`pruneLoop`, `checksumLedgerLoop`, `rekeyLoop`, `replicationLoop`, `syncLoop`, `localCacheLoop`,
 and `discoveryLoop` on a bind a TV can reach) all do nothing while the vault is
 locked.
 
