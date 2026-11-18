@@ -224,28 +224,28 @@ thumbnails** gives every such file in the folder, and in every folder below it,
 its picture in one go.
 
 It counts the pictures and PDFs in this folder **and all its subfolders** that
-have no thumbnail, then reads each one back from its clouds, draws it small, and
-stores the thumbnail. Files over 80 MB are left out and counted. A folder keeps
-at most 2,048 thumbnails; in a folder with more pictures than that, the ones it
-lists last are left out and counted rather than drawn and then dropped.
+have no thumbnail. Then the server reads each one back from its clouds, draws it
+small, and stores the thumbnail. Files over 80 MB are left out and counted. A
+folder keeps at most 2,048 thumbnails; in a folder with more pictures than that,
+the ones it lists last are left out and counted rather than drawn and then
+dropped.
 
-The dialog closes as soon as the run starts. A strip above the file list shows
-how far it has got, with a **Stop** button, and the pictures appear in the list
-as each batch is stored. You can keep browsing, including into other folders,
-while it runs. One runs at a time.
+It's a **background job on the server**, like the other long jobs. The dialog
+closes as soon as it starts, and a strip above the file list shows how far it
+has got, with a **Stop** button. The pictures appear in the list as each batch
+is stored. You can close the page, or let the phone sleep, and it carries on.
 
-**It runs to the end.** Only **Stop** ends it. A file that can't be read or
-drawn, or a picture the server won't store, is counted and the run moves on.
-If the connection drops (a tab in the background, a phone that slept), the run
-waits and carries on when it's back. If the vault locks meanwhile, the strip
-says so, and once you unlock it the run carries on from the same file. When it
-finishes, the strip says how many thumbnails were made and how many failed, and
-why. Running it again tries the failed ones once more.
+**It runs to the end.** Only **Stop** ends it. A file that can't be read, can't
+be drawn, or won't store is counted and the run moves on. While it runs, the
+vault doesn't lock itself for being idle. If you lock it by hand, the run waits
+and carries on from the same file once you unlock it. When it finishes, the
+strip says how many thumbnails were made and how many failed, and why. Running
+it again tries the failed ones once more.
 
-The run happens **in the browser tab**, not on the server, because only a
-browser can decode HEIC photos, honour a photo's rotation, and draw a PDF's first
-page. Closing the tab ends it. Nothing is lost except the pictures not yet sent:
-run it again and it carries on with the files that still have none.
+**What the server can draw:** JPEG (turned the way the camera recorded),
+PNG, GIF and HEIC/HEIF (iPhone photos) on every machine. A PDF's first page
+needs `pdftoppm` on the server (`sudo apt install poppler-utils` on a Pi); on a
+machine without it, PDFs are counted as failed with a note saying so.
 
 ## Snapshots of a folder
 

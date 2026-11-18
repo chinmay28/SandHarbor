@@ -34,8 +34,11 @@ val serverLibs = layout.buildDirectory.dir("generated/sandServer/jniLibs")
 // app — see internal/hostenv.
 data class GoTarget(val goos: String, val goarch: String, val tags: String)
 val goTargets = mapOf(
-    "arm64-v8a" to GoTarget("android", "arm64", ""),
-    "x86_64" to GoTarget("linux", "amd64", "timetzdata"),
+    // nodynamic: the HEIC decoder (internal/thumb) runs its own WebAssembly
+    // build rather than looking for a system libheif, which on Android would
+    // need cgo to load.
+    "arm64-v8a" to GoTarget("android", "arm64", "nodynamic"),
+    "x86_64" to GoTarget("linux", "amd64", "timetzdata,nodynamic"),
 )
 
 android {

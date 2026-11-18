@@ -32,11 +32,14 @@ endif
 # internal/version and scripts/version.mjs). A bare `go build` leaves the patch
 # at 0, which reads as "unstamped development build".
 VERSION_PKG := github.com/chinmay28/SandHarbor/internal/version
+# nodynamic: the HEIC decoder internal/thumb uses runs its own WebAssembly build
+# everywhere rather than whichever libheif a machine happens to have installed.
+GO_TAGS := nodynamic
 PATCH := $(shell node scripts/version.mjs --patch 2>/dev/null || echo 0)
 DATE := $(shell node scripts/version.mjs --date 2>/dev/null || echo "")
 
 build-go:
-	CGO_ENABLED=0 go build -trimpath \
+	CGO_ENABLED=0 go build -trimpath -tags $(GO_TAGS) \
 		-ldflags="-s -w -X $(VERSION_PKG).Patch=$(PATCH) -X $(VERSION_PKG).Date=$(DATE)" \
 		-o $(BUILD_OUT) ./cmd/sand
 
@@ -48,7 +51,7 @@ VERSION_STR := $(shell node scripts/version.mjs 2>/dev/null || echo v0.0.0)
 build-grind:
 	mkdir -p grind
 	for arch in amd64 arm64; do \
-		CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -trimpath \
+		CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -trimpath -tags $(GO_TAGS) \
 			-ldflags="-s -w -X $(VERSION_PKG).Patch=$(PATCH) -X $(VERSION_PKG).Date=$(DATE)" \
 			-o grind/sand-$(VERSION_STR)-linux-$$arch ./cmd/sand; \
 	done
