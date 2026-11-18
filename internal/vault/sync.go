@@ -387,6 +387,7 @@ func (v *Vault) foldCopies(copies []cloudCopy, report *SyncReport, push bool) er
 	for _, sub := range shut {
 		sub.zero()
 	}
+	v.forgetChangedPacks(before.Thumbs, current.Thumbs)
 	return nil
 }
 

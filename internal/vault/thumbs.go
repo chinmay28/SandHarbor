@@ -592,7 +592,19 @@ func (v *Vault) loadPack(ctx context.Context, scope Scope, dir string) (map[stri
 		return nil, fmt.Errorf("reading the thumbnails for %s: %w", dir, err)
 	}
 
-	v.cacheThumbs(scope, dir, items)
+	// A pull may have pointed the folder at another machine's pack while this
+	// one was being gathered. What was gathered is still the right answer to
+	// this call, but it is no longer the folder's pack, and caching it would
+	// put back exactly what the pull dropped (forgetChangedPacks).
+	v.mu.RLock()
+	var current *ThumbPack
+	if now, err := v.manifestForLocked(scope); err == nil {
+		current = now.Thumbs[dir]
+	}
+	v.mu.RUnlock()
+	if current != nil && samePack(current, pack) {
+		v.cacheThumbs(scope, dir, items)
+	}
 	return items, nil
 }
 
@@ -715,6 +727,59 @@ func (v *Vault) dropPack(ctx context.Context, scope Scope, dir string) {
 	v.forgetThumbs(scope, dir)
 	if err == nil && pack != nil {
 		v.deleteShards(context.WithoutCancel(ctx), pack.Shards)
+	}
+}
+
+// samePack reports whether two index records name the same stored pack. A
+// pack is never changed in place — adding or dropping a picture writes a new
+// one, on new parts, with a new UpdatedAt — so the parts it is stored as say
+// which pack it is.
+func samePack(a, b *ThumbPack) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if !a.UpdatedAt.Equal(b.UpdatedAt) || a.KeyID != b.KeyID || len(a.Shards) != len(b.Shards) {
+		return false
+	}
+	for i := range a.Shards {
+		if a.Shards[i].ProviderID != b.Shards[i].ProviderID || a.Shards[i].Key != b.Shards[i].Key {
+			return false
+		}
+	}
+	return true
+}
+
+// changedPacks lists the folders whose pack is not the same between two
+// copies of an index's thumbnail records: changed, added or dropped. Sorted.
+func changedPacks(before, after map[string]*ThumbPack) []string {
+	var out []string
+	for dir, pack := range before {
+		if !samePack(pack, after[dir]) {
+			out = append(out, dir)
+		}
+	}
+	for dir, pack := range after {
+		if _, seen := before[dir]; !seen && pack != nil {
+			out = append(out, dir)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// forgetChangedPacks drops from the memory cache every main-vault folder
+// whose pack a pull replaced. The cache is by folder and outlives the index
+// it was read under: without this, a phone that had opened a films folder
+// before the primary matched it would go on drawing its own pictures, or
+// none, in place of the posters the pull brought, until the vault was locked.
+// Sub vaults' packs do not travel between machines, so only the main vault's
+// can change under a pull.
+func (v *Vault) forgetChangedPacks(before, after map[string]*ThumbPack) {
+	for _, dir := range changedPacks(before, after) {
+		v.forgetThumbs(MainScope, dir)
 	}
 }
 
