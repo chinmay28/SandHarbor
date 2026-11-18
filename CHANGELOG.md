@@ -36,13 +36,11 @@ the parts exactly as the clouds hold them, sealed; a file is put back together
 only in memory when it is opened. Room is bounded by a limit you can set and by
 a free-space reserve. From the command line: `sand cache keep|ls|rm|limit|fill`.
 
-### Thumbnails for a whole tree, made by the server
+### Missing thumbnails are made by the server
 
-**Make missing thumbnails** now runs on the server and covers a folder and
-every folder below it, to the end, whether or not the page stays open. A
-folder's thumbnails used to stop at 512 pictures, so the last files of a large
-folder were drawn and dropped on every run; the limit is now 2048. A run in the
-browser that loses its connection waits and carries on rather than stopping.
+**Make missing thumbnails** now runs on the server and goes on to the end
+whether or not the page stays open. A run in the browser that loses its
+connection waits and carries on rather than stopping.
 
 ### Faster imports over SFTP on slow or lossy links
 
@@ -66,12 +64,6 @@ player that has stopped answering.
 
 Back closes the open dialog, then steps back through folders, and only leaves
 the app when there is nothing left to undo. It used to quit from anywhere.
-
-### Proton Drive: signing in again works
-
-**Sign in here** and **Sign in again** on a Proton Drive account no longer fail
-with *Proton Drive is not connected by signing in*, and signing in on the phone
-no longer fails with *Base URL must end with a '/'*.
 
 ## v2026.11.253
 
