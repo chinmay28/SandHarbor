@@ -10,6 +10,69 @@ Each section below is the body of the corresponding GitHub release. A heading
 must name the tag exactly — a tag whose commit builds a different version is a
 tag that shouldn't be published.
 
+## v2026.11.262
+
+**Downloads:** `sand-v2026.11.262-linux-arm64` (the server),
+**`sand-vault.apk`** (SAND Vault for Android — on the phone, open
+`https://github.com/chinmay28/SandHarbor/releases/latest/download/sand-vault.apk`;
+it installs over the previous version) and **`sand-tv.apk`** (the SAND TV app
+for Fire TV). All are in `SHA256SUMS`.
+
+### SAND Vault for Android: film posters from the primary
+
+A phone running the vault never looks films up itself; the primary does, and
+the details and posters reach the phone in the shared index. The details
+arrived, but a films folder the phone had already opened kept the pictures it
+had in memory (a frame from the video, or none at all) until the vault was
+locked. A pull now drops the pictures of every folder it brought new ones for,
+so the primary's posters show on the phone as soon as it pulls.
+
+### Keep files or folders on this machine
+
+**Keep on this machine**, in the file and folder menus, keeps a file or folder
+on the disk of the machine running SAND until a date you choose, so it opens,
+streams and seeks from there instead of waiting on the clouds. What is kept is
+the parts exactly as the clouds hold them, sealed; a file is put back together
+only in memory when it is opened. Room is bounded by a limit you can set and by
+a free-space reserve. From the command line: `sand cache keep|ls|rm|limit|fill`.
+
+### Thumbnails for a whole tree, made by the server
+
+**Make missing thumbnails** now runs on the server and covers a folder and
+every folder below it, to the end, whether or not the page stays open. A
+folder's thumbnails used to stop at 512 pictures, so the last files of a large
+folder were drawn and dropped on every run; the limit is now 2048. A run in the
+browser that loses its connection waits and carries on rather than stopping.
+
+### Faster imports over SFTP on slow or lossy links
+
+A large file is read through several SSH connections at once, each its own
+flow: behind a 60 ms link a 96 MiB file went from 31 to 98 MB/s. The transfer
+speed is shown once a second while bytes move.
+
+### Mislaid replica parts are found and put back
+
+The stray-parts scan now reattaches a replica's part whose record a disconnect
+dropped, instead of re-cutting and re-uploading the whole replica once the
+cloud came back.
+
+### SAND TV: restart or quit from the app
+
+The TV menu (⋯) and the connect page gain **Restart SAND TV** and **Quit SAND
+TV**. Restart starts the app afresh, keeping the saved server, which clears a
+player that has stopped answering.
+
+### SAND Vault for Android: Back goes back
+
+Back closes the open dialog, then steps back through folders, and only leaves
+the app when there is nothing left to undo. It used to quit from anywhere.
+
+### Proton Drive: signing in again works
+
+**Sign in here** and **Sign in again** on a Proton Drive account no longer fail
+with *Proton Drive is not connected by signing in*, and signing in on the phone
+no longer fails with *Base URL must end with a '/'*.
+
 ## v2026.11.253
 
 **Downloads:** `sand-v2026.11.253-linux-arm64` (the server),
