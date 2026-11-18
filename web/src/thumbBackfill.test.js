@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { backoffDelay, classifyError, planBackfill, runBackfill } from './thumbBackfill.js'
+import { backoffDelay, classifyError, failedTotal, planBackfill, runBackfill } from './thumbBackfill.js'
 
 const imagesOnly = (mime, name) => (mime.startsWith('image/') || /\.heic$/i.test(name) ? 'image' : null)
 
@@ -67,7 +67,6 @@ test('every file is made once and stored in batches no larger than asked', async
   assert.equal(result.made, 5)
   assert.equal(result.stored, 5)
   assert.equal(result.stopped, false)
-  assert.equal(result.error, null)
 })
 
 test('a file with no picture is skipped and one that throws is failed', async () => {
@@ -129,11 +128,12 @@ const offline = () => Object.assign(new Error('Failed to fetch'), { offline: tru
 const status = (code, message = `status ${code}`) => Object.assign(new Error(message), { status: code })
 const noWait = async () => {}
 
-test('errors are read as offline, worth retrying, ending the run, or one failure', () => {
+test('errors are read as offline, a locked vault, worth retrying, or one failure', () => {
   assert.equal(classifyError(offline()), 'offline')
   assert.equal(classifyError(status(503)), 'retry')
   assert.equal(classifyError(status(429)), 'retry')
-  assert.equal(classifyError(status(401)), 'end')
+  assert.equal(classifyError(status(401)), 'locked')
+  assert.equal(classifyError(status(403)), 'fail')
   assert.equal(classifyError(status(404)), 'fail')
   assert.equal(classifyError(new Error('cannot decode')), 'fail')
 })
@@ -163,7 +163,6 @@ test('losing the connection waits and carries on, failing nothing', async () => 
   assert.equal(result.failed, 0)
   assert.equal(result.made, 6)
   assert.equal(result.stored, 6)
-  assert.equal(result.error, null)
   assert.equal(result.waiting, false)
   assert.ok(waits.includes(true), 'never said it was waiting')
 })
@@ -196,7 +195,6 @@ test('a store that cannot reach the server waits and is sent again', async () =>
     lanes: 1,
   })
   assert.equal(result.stored, 4)
-  assert.equal(result.error, null)
 })
 
 test('a busy server is tried a few times, then that file is failed and the rest go on', async () => {
@@ -216,7 +214,6 @@ test('a busy server is tried a few times, then that file is failed and the rest 
   assert.equal(attempts.get('busy'), 3)
   assert.equal(result.failed, 1)
   assert.equal(result.stored, 1)
-  assert.equal(result.error, null)
 })
 
 test('a batch turned down is let go and the run goes on', async () => {
@@ -233,12 +230,11 @@ test('a batch turned down is let go and the run goes on', async () => {
     batch: 2,
     lanes: 1,
   })
-  assert.equal(result.error, null)
   assert.equal(result.made, 6)
   assert.equal(result.stored, 4)
 })
 
-test('several batches turned down in a row end the run', async () => {
+test('batches turned down are counted and the run goes on to the end', async () => {
   const result = await runBackfill({
     files: Array.from({ length: 20 }, (_, i) => file(`f${i}`)),
     make: async () => { await new Promise((r) => setTimeout(r, 1)); return 'pic' },
@@ -246,31 +242,48 @@ test('several batches turned down in a row end the run', async () => {
     pause: noWait,
     batch: 2,
     lanes: 1,
-    storeFails: 3,
   })
-  assert.equal(result.error, 'refused')
-  assert.ok(result.done < 20, `kept going after the store kept refusing: ${result.done}`)
+  assert.equal(result.done, 20)
+  assert.equal(result.stored, 0)
+  assert.equal(result.refused, 20)
+  assert.equal(failedTotal(result), 20)
 })
 
-test('a locked vault while reading ends the run', async () => {
+test('pictures the server turns down one by one are counted as refused', async () => {
+  const result = await runBackfill({
+    files: ['a', 'b', 'c'].map((id) => file(id)),
+    make: async () => 'pic',
+    store: async (pictures) => ({ stored: pictures.size - 1 }),
+    batch: 3,
+  })
+  assert.equal(result.stored, 2)
+  assert.equal(result.refused, 1)
+})
+
+test('a vault that locks while reading is waited for, and the run carries on', async () => {
+  let locked = true
   const made = []
+  const states = []
   const result = await runBackfill({
     files: Array.from({ length: 10 }, (_, i) => file(`f${i}`)),
     make: async (f) => {
+      if (f.id === 'f3' && locked) throw status(401, 'vault is locked')
       made.push(f.id)
-      if (made.length === 3) throw status(401, 'vault is locked')
       return 'pic'
     },
     store: async (pictures) => ({ stored: pictures.size }),
-    pause: noWait,
+    // Somebody unlocks it during the third wait.
+    pause: async (attempt) => { if (attempt === 3) locked = false },
+    onProgress: (c) => states.push(c.locked),
     lanes: 1,
   })
-  assert.equal(result.error, 'vault is locked')
-  assert.equal(made.length, 3)
-  // Drawn, but a locked vault would turn the batch down too, so none is sent.
-  assert.equal(result.made, 2)
-  assert.equal(result.stored, 0)
+  assert.equal(result.done, 10)
+  assert.equal(result.made, 10)
+  assert.equal(result.stored, 10)
   assert.equal(result.failed, 0)
+  assert.equal(result.locked, false)
+  assert.ok(states.includes(true), 'the wait for an unlock was never reported')
+  assert.deepEqual(made, Array.from({ length: 10 }, (_, i) => `f${i}`))
 })
 
 test('stopping ends an offline wait', async () => {
@@ -292,27 +305,28 @@ test('stopping ends an offline wait', async () => {
   assert.equal(result.waiting, false)
 })
 
-test('a locked vault while storing ends the run and keeps what went before', async () => {
+test('a vault that locks while storing is waited for, and nothing drawn is lost', async () => {
   let calls = 0
-  const made = []
   const result = await runBackfill({
     files: Array.from({ length: 10 }, (_, i) => file(`f${i}`)),
-    make: async (f) => {
-      made.push(f.id)
-      await new Promise((r) => setTimeout(r, 1))
-      return 'pic'
-    },
+    make: async () => { await new Promise((r) => setTimeout(r, 1)); return 'pic' },
     store: async (pictures) => {
       calls += 1
-      if (calls === 2) throw status(401, 'vault is locked')
+      if (calls === 2 || calls === 3) throw status(401, 'vault is locked')
       return { stored: pictures.size }
     },
+    pause: noWait,
     batch: 2,
     lanes: 1,
   })
-  assert.equal(result.error, 'vault is locked')
-  assert.equal(result.stored, 2)
-  assert.ok(made.length < 10, `kept fetching after the store failed: ${made.length}`)
+  assert.equal(result.done, 10)
+  assert.equal(result.stored, 10)
+  assert.equal(failedTotal(result), 0)
+})
+
+test('the total failed is every file without a thumbnail, whatever the reason', () => {
+  assert.equal(failedTotal({ failed: 2, skipped: 3, refused: 4 }), 9)
+  assert.equal(failedTotal({}), 0)
 })
 
 test('stopping takes no new files and still stores what was drawn', async () => {
@@ -368,5 +382,4 @@ test('nothing to do resolves at once', async () => {
     store: async () => { throw new Error('not called') },
   })
   assert.equal(result.total, 0)
-  assert.equal(result.error, null)
 })

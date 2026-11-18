@@ -234,6 +234,14 @@ how far it has got, with a **Stop** button, and the pictures appear in the list
 as each batch is stored. You can keep browsing, including into other folders,
 while it runs. One runs at a time.
 
+**It runs to the end.** Only **Stop** ends it. A file that can't be read or
+drawn, or a picture the server won't store, is counted and the run moves on.
+If the connection drops (a tab in the background, a phone that slept), the run
+waits and carries on when it's back. If the vault locks meanwhile, the strip
+says so, and once you unlock it the run carries on from the same file. When it
+finishes, the strip says how many thumbnails were made and how many failed, and
+why. Running it again tries the failed ones once more.
+
 The run happens **in the browser tab**, not on the server, because only a
 browser can decode HEIC photos, honour a photo's rotation, and draw a PDF's first
 page. Closing the tab ends it. Nothing is lost except the pictures not yet sent:

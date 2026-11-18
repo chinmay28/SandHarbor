@@ -9,8 +9,9 @@
 
    It runs in this tab, not on the server, because only a browser can draw
    these pictures (see thumbs.js). A tab in the background keeps it, though
-   the browser may cut its connection there: the run then waits, and carries
-   on when the connection is back (see runBackfill). Closing the tab ends it. Nothing is lost by
+   the browser may cut its connection there, and the vault may lock while it
+   is cut off: the run then waits, and carries on when the connection is back
+   and the vault is unlocked (see runBackfill). Nothing but Stop ends it. Closing the tab ends it. Nothing is lost by
    that beyond the pictures not yet sent: a file that got its picture keeps it,
    and pressing the button again plans from the listing as it now stands, so it
    carries on from where it was.
@@ -106,7 +107,7 @@ export function startThumbJob({ path, vault = '', files }) {
   const startedAt = Date.now()
   publish({
     id, path, vault, startedAt, running: true, stopping: false,
-    counts: { total: files.length, done: 0, made: 0, stored: 0, skipped: 0, failed: 0, waiting: false, stopped: false, error: null },
+    counts: { total: files.length, done: 0, made: 0, stored: 0, refused: 0, skipped: 0, failed: 0, waiting: false, locked: false, stopped: false },
   })
 
   const update = (counts) => {

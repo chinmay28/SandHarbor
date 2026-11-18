@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { COLORS, FONT } from '../theme'
 import { api } from '../api'
 import { MAX_SOURCE_BYTES, thumbnailKind } from '../thumbs'
-import { planBackfill } from '../thumbBackfill'
+import { failedTotal, planBackfill } from '../thumbBackfill'
 import { dismissThumbJob, startThumbJob, stopThumbJob, useThumbJob } from '../thumbJob'
 import { Banner, Button, Modal, Spinner } from './ui'
 import { RunCard } from './BackgroundRuns'
@@ -160,8 +160,10 @@ export function ThumbJobStrip({ mobile, onChanged }) {
           title={`Making thumbnails in ${job.path}`}
           label={job.stopping
             ? `Stopping — sending the ${plural(c.made - c.stored, 'picture')} already drawn…`
-            : c.waiting
-              ? `Waiting for the connection — it carries on by itself · ${c.done.toLocaleString()} of ${c.total.toLocaleString()} · ${elapsed}`
+            : c.locked
+              ? `The vault locked — unlock it and this carries on where it was · ${c.done.toLocaleString()} of ${c.total.toLocaleString()} · ${elapsed}`
+              : c.waiting
+                ? `Waiting for the connection — it carries on by itself · ${c.done.toLocaleString()} of ${c.total.toLocaleString()} · ${elapsed}`
               : `${c.done.toLocaleString()} of ${c.total.toLocaleString()} · ${plural(c.stored, 'thumbnail')} stored · ${elapsed}`}
           fraction={c.total ? c.done / c.total : null}
           action={(
@@ -176,7 +178,7 @@ export function ThumbJobStrip({ mobile, onChanged }) {
 
   return (
     <div style={pad}>
-      <Banner tone={c.error ? 'error' : c.failed ? 'warn' : 'success'} onDismiss={dismissThumbJob}>
+      <Banner tone={failedTotal(c) > 0 ? 'warn' : 'success'} onDismiss={dismissThumbJob}>
         {thumbOutcomeText(job.path, c)}
       </Banner>
     </div>
@@ -185,14 +187,17 @@ export function ThumbJobStrip({ mobile, onChanged }) {
 
 /* The sentence a finished run comes to. */
 export function thumbOutcomeText(path, c) {
-  const parts = [`${plural(c.stored, 'thumbnail')} made in ${path}.`]
-  if (c.skipped) parts.push(`${plural(c.skipped, 'file')} could not be drawn and kept ${c.skipped === 1 ? 'its' : 'their'} icon.`)
-  if (c.failed) parts.push(`${plural(c.failed, 'file')} could not be read from ${c.failed === 1 ? 'its' : 'their'} clouds.`)
+  const failed = failedTotal(c)
+  const parts = [`${plural(c.stored, 'thumbnail')} made in ${path}, ${failed.toLocaleString()} failed.`]
+  // Why, for whatever failed.
+  const why = []
+  if (c.failed) why.push(`${c.failed.toLocaleString()} could not be read from ${c.failed === 1 ? 'its' : 'their'} clouds`)
+  if (c.skipped) why.push(`${c.skipped.toLocaleString()} could not be drawn`)
   // Drawn here but turned down by the server, which re-reads every picture.
-  const refused = c.error ? 0 : c.made - c.stored
-  if (refused > 0) parts.push(`${plural(refused, 'picture')} drawn here could not be stored.`)
-  if (c.error) parts.push(`It stopped early: ${c.error}.`)
-  else if (c.stopped) parts.push(`Stopped with ${plural(c.total - c.done, 'file')} still to do — run it again to finish.`)
+  if (c.refused) why.push(`${c.refused.toLocaleString()} could not be stored`)
+  if (why.length) parts.push(`Of those, ${why.join(', ')}.`)
+  if (c.stopped) parts.push(`Stopped with ${plural(c.total - c.done, 'file')} still to do — run it again to finish.`)
+  else if (failed > 0) parts.push('Running it again tries the failed ones once more.')
   return parts.join(' ')
 }
 
