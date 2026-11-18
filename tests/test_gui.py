@@ -3158,7 +3158,7 @@ class TestMakeMissingThumbnails:
 
         # The dialog is gone the moment the run starts; the strip says how it went.
         expect(dialog).to_have_count(0)
-        expect(app.get_by_text("3 thumbnails made in /unpictured.")).to_be_visible(timeout=60000)
+        expect(app.get_by_text("3 thumbnails made in /unpictured, 0 failed.")).to_be_visible(timeout=60000)
         assert len(thumbs()) == 2
         assert len(thumbs("/unpictured/deeper")) == 1
         expect(app.locator('img[src*="/thumb"]')).to_have_count(2, timeout=20000)

@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { COLORS, FONT, formatBytes } from '../theme'
-import { useFilmScan, useLostRestore, useOrphanSweep, useReattach } from '../hooks'
+import { useFilmScan, useLostRestore, useOrphanSweep, useReattach, useThumbMaking } from '../hooks'
+import { api } from '../api'
 import { isRunClaimed } from '../runClaims'
-import { Banner, Spinner } from './ui'
+import { Banner, Button, Spinner } from './ui'
 import { describeProgress, formatElapsed } from './ScanProgress'
 import { describeRestore, restoreOutcomeText } from './LostParts'
 import { describeFilmScan, filmScanOutcomeText } from './FilmDetails'
+import { describeThumbMaking, thumbOutcomeText } from './ThumbBackfill'
 
 /* The housekeeping that carries on after its dialog is closed, drawn above
    the file list — and what each run came to, until that is dismissed.
@@ -75,6 +77,24 @@ export default function BackgroundRuns({ mobile, onChanged }) {
         mobile={mobile}
         onChanged={onChanged}
       />
+      <JobStrip
+        kind="thumb-making"
+        useJob={useThumbMaking}
+        title={(status) => `Making thumbnails in ${status.progress?.path || 'a folder'}`}
+        describe={(status, elapsed) => describeThumbMaking(status.progress, elapsed)}
+        outcome={(run) => (run.error
+          ? `Making the thumbnails did not finish: ${run.error}`
+          : thumbOutcomeText(run.result))}
+        tone={(run) => (run.error ? 'error' : run.result?.failed > 0 ? 'warn' : 'success')}
+        /* The pictures appear as they are stored, not all at the end. */
+        progressKey={(status) => status.progress?.made || 0}
+        changed={(run) => run.result?.made > 0}
+        action={() => (
+          <Button size="sm" variant="ghost" onClick={() => { api.thumbMakingStop().catch(() => {}) }}>Stop</Button>
+        )}
+        mobile={mobile}
+        onChanged={onChanged}
+      />
     </>
   )
 }
@@ -131,15 +151,38 @@ export function describeSweep(at, elapsed) {
 /* One background job's strip. `useJob` is the hook that views it (constant
    for the life of the strip); `describe(status, elapsed)` gives the bar's
    {label, detail, fraction}; `outcome(run)` the sentence a finished run comes
-   to; `changed(run)` whether it changed what the page is showing. */
-function JobStrip({ kind, useJob, title, describe, outcome, changed, mobile, onChanged }) {
+   to; `changed(run)` whether it changed what the page is showing.
+
+   Optional: `tone(run)` colours the finished line (error or success by
+   default); `action(status)` sits beside a running bar — a Stop; and
+   `progressKey(status)`, when it changes while the run goes, refreshes the
+   page at most every few seconds, for a job whose results show as it works. */
+const PROGRESS_REFRESH_MS = 4000
+
+function JobStrip({ kind, useJob, title, describe, outcome, changed, tone, action, progressKey, mobile, onChanged }) {
   const { status } = useJob()
   const [, rerender] = useState(0)
+
+  const lastKey = useRef(null)
+  const lastRefresh = useRef(0)
+  const key = progressKey && status?.running ? progressKey(status) : null
+  useEffect(() => {
+    if (key === null || key === lastKey.current) return
+    const first = lastKey.current === null
+    lastKey.current = key
+    if (first || Date.now() - lastRefresh.current < PROGRESS_REFRESH_MS) return
+    lastRefresh.current = Date.now()
+    onChanged?.()
+  }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* The ids of runs this strip saw running, so a page opened onto a report
      from before it was loaded does not announce it, and one it saw land is
      announced once. */
   const seenRunning = useRef(new Set())
+  /* A run that finished after this page was opened is news too, even if it
+     was quick enough to start and land between two polls. */
+  const openedAt = useRef(Date.now())
+  const announced = useRef(new Set())
   const [landed, setLanded] = useState(null)
   useEffect(() => {
     if (!status?.id) return
@@ -147,7 +190,10 @@ function JobStrip({ kind, useJob, title, describe, outcome, changed, mobile, onC
       seenRunning.current.add(status.id)
       return
     }
-    if (!seenRunning.current.has(status.id)) return
+    const finishedHere = status.finished_at && Date.parse(status.finished_at) > openedAt.current
+    if (!seenRunning.current.has(status.id) && !finishedHere) return
+    if (announced.current.has(status.id)) return
+    announced.current.add(status.id)
     seenRunning.current.delete(status.id)
     // A dialog drawing the run says what it came to and refreshes on its own.
     if (isRunClaimed(kind, status.id)) return
@@ -173,14 +219,20 @@ function JobStrip({ kind, useJob, title, describe, outcome, changed, mobile, onC
     const { label, detail, fraction } = describe(status, elapsed)
     return (
       <div style={pad}>
-        <RunCard title={typeof title === 'function' ? title(status) : title} label={label} detail={detail !== elapsed ? detail : ''} fraction={fraction} />
+        <RunCard
+          title={typeof title === 'function' ? title(status) : title}
+          label={label}
+          detail={detail !== elapsed ? detail : ''}
+          fraction={fraction}
+          action={action?.(status)}
+        />
       </div>
     )
   }
   if (landed) {
     return (
       <div style={pad}>
-        <Banner tone={landed.error ? 'error' : 'success'} onDismiss={() => setLanded(null)}>
+        <Banner tone={tone ? tone(landed) : landed.error ? 'error' : 'success'} onDismiss={() => setLanded(null)}>
           {outcome(landed)}
         </Banner>
       </div>

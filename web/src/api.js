@@ -1153,17 +1153,20 @@ export const api = {
      32 — writing each folder's pack once rather than once a picture. What the
      organizer's "Make missing thumbnails" sends. Resolves {stored, rejected},
      rejected naming the ids whose picture the server could not read. */
-  /* Every file under a folder — it and all the folders below — that has no
-     thumbnail, folder by folder, with how many more each folder can keep:
-     { folders: [{ dir, room, files }], per_folder }. What "Make missing
-     thumbnails" plans from; see planBackfill. */
-  missingThumbs: (path, vault = '') =>
-    request(`/api/thumbs/missing?path=${encodeURIComponent(path)}${vaultParam(vault)}`),
-  putThumbs: (pictures) => {
-    const form = new FormData()
-    for (const [id, blob] of pictures) form.append(id, blob, 'thumb.jpg')
-    return request('/api/thumbs', { method: 'POST', formData: form })
-  },
+  /* Making a folder's missing thumbnails, as a job on the server: it and every
+     folder below it. thumbPlan counts what a run would do — {files, folders,
+     bytes, too_large, over_full}. thumbMakingStart starts one (or joins the
+     one going for the same folder); thumbMakingStatus is the job, with its
+     counts under `progress` while it runs and `result` once it is done —
+     {total, done, made, failed, unread, undrawn, unstored, errors, locked,
+     stopped}. Locking the vault pauses it rather than ending it. */
+  thumbPlan: (path, vault = '') =>
+    request(`/api/thumbs/plan?path=${encodeURIComponent(path)}${vaultParam(vault)}`),
+  thumbMakingStart: (path, vault = '') =>
+    request(`/api/thumbs/making${vault ? `?vault=${encodeURIComponent(vault)}` : ''}`,
+      { method: 'POST', body: { path } }),
+  thumbMakingStatus: () => request('/api/thumbs/making'),
+  thumbMakingStop: () => request('/api/thumbs/making', { method: 'DELETE' }),
 
   /* Film details, for the folders that ask for them.
      ---------------------------------------------------------------------

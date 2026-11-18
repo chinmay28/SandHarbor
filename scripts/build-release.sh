@@ -48,7 +48,7 @@ build() {
 
     echo "    compiling ${GOOS}/${GOARCH}…"
     CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" \
-        go build -trimpath -ldflags="${LDFLAGS}" -o "${OUT}" ./cmd/sand
+        go build -trimpath -tags nodynamic -ldflags="${LDFLAGS}" -o "${OUT}" ./cmd/sand
 }
 
 build linux   amd64
