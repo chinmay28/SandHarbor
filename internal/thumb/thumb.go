@@ -1,14 +1,10 @@
-// Package thumb normalizes the small preview images the browser produces into
-// something the vault can store: a JPEG of a known size, decoded and
-// re-encoded rather than trusted.
+// Package thumb makes the thumbnails the vault stores: a JPEG of a known size.
 //
-// The pictures are made in the tab that uploads the file, because that is the
-// only place they can be made at all — the browser decodes HEIC, honours EXIF
-// orientation and, with pdf.js, renders the first page of a PDF, none of which
-// the Go standard library can do. What arrives here is therefore someone
-// else's bytes, and re-encoding them is what makes them the vault's own: it
-// caps the dimensions, strips whatever metadata the source carried, and
-// guarantees the stored bytes really are an image of the size claimed.
+// They come two ways. At upload, the tab drew the picture already, and
+// Normalize re-encodes it rather than trusting it: that caps the dimensions,
+// strips whatever metadata the source carried, and guarantees the stored bytes
+// really are an image of the size claimed. For a file that arrived without
+// one, FromSource (source.go) draws it on the server from the file itself.
 package thumb
 
 import (
@@ -104,10 +100,11 @@ func shrink(src image.Image, max int) image.Image {
 	}
 
 	// Work in RGBA so the averaging below reads uniform 8-bit channels
-	// whatever the source's own model is.
-	rgba := image.NewRGBA(bounds)
-	draw.Draw(rgba, bounds, src, bounds.Min, draw.Src)
-
+	// whatever the source's own model is — but one band of source rows at a
+	// time, the rows that make up one row of the thumbnail, rather than the
+	// whole picture at once. A 48-megapixel photograph is 190 MB as RGBA; a
+	// band of it is a few hundred kilobytes.
+	band := image.NewRGBA(image.Rect(0, 0, w, h/dh+2))
 	dst := image.NewRGBA(image.Rect(0, 0, dw, dh))
 	for y := 0; y < dh; y++ {
 		y0 := bounds.Min.Y + y*h/dh
@@ -115,18 +112,24 @@ func shrink(src image.Image, max int) image.Image {
 		if y1 <= y0 {
 			y1 = y0 + 1
 		}
+		rows := image.Rect(0, 0, w, y1-y0)
+		if rows.Dy() > band.Bounds().Dy() {
+			band = image.NewRGBA(rows)
+		}
+		draw.Draw(band, rows, src, image.Pt(bounds.Min.X, y0), draw.Src)
+
 		for x := 0; x < dw; x++ {
-			x0 := bounds.Min.X + x*w/dw
-			x1 := bounds.Min.X + (x+1)*w/dw
+			x0 := x * w / dw
+			x1 := (x + 1) * w / dw
 			if x1 <= x0 {
 				x1 = x0 + 1
 			}
 
 			var r, g, b, a, n uint32
-			for sy := y0; sy < y1; sy++ {
-				row := rgba.PixOffset(x0, sy)
+			for sy := 0; sy < y1-y0; sy++ {
+				row := band.PixOffset(x0, sy)
 				for sx := x0; sx < x1; sx++ {
-					p := rgba.Pix[row : row+4 : row+4]
+					p := band.Pix[row : row+4 : row+4]
 					r += uint32(p[0])
 					g += uint32(p[1])
 					b += uint32(p[2])

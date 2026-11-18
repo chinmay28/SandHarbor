@@ -309,6 +309,8 @@ unlocked vault; **quiet** is a session check that does not count as use;
 | GET · PUT | `/api/files/{id}/thumb` | session | Thumbnail |
 | POST | `/api/thumbs` | session | Store a batch of thumbnails |
 | GET | `/api/thumbs/missing` | session | Files under a folder with no thumbnail |
+| GET | `/api/thumbs/plan` | session | What making the missing thumbnails would do |
+| POST · GET · DELETE | `/api/thumbs/making` | session | Make the missing thumbnails (server job) · status · stop |
 | GET | `/api/files/{id}/health` | session | Per-part reachability |
 | POST | `/api/files/{id}/move` | session | Rename or move a file |
 | POST | `/api/files/move` | session | Move a batch |
@@ -890,6 +892,19 @@ room, files}], per_folder}`, one row per folder with something missing, sorted b
 path. `files` is in name order, which is the order a folder's pack keeps
 pictures in once it is full; `room` is how many more it will keep (`per_folder`,
 2048, less what it holds). A folder that does not exist is an error.
+
+#### GET /api/thumbs/plan · POST · GET · DELETE /api/thumbs/making
+
+Making a folder's missing thumbnails, as a job on the server: the folder and every folder below it.
+`GET /api/thumbs/plan?path=&vault=` → `{files, folders, bytes, too_large, over_full}`, counting the files the
+server can draw (JPEG, PNG, GIF, HEIC/HEIF, and PDF where `pdftoppm` is installed) that have no thumbnail.
+
+`POST /api/thumbs/making?vault=` `{"path": "/Photos"}` starts a run → `202` with the job, or `200` joining the
+run already going for the same folder, or `409 THUMBS_BUSY` when another folder's is running. `GET` is the
+job — `{id, running, started_at, finished_at?, progress?, result?, error?}` — with `progress` and `result`
+both `{path, total, done, made, failed, unread, undrawn, unstored, errors: [{path, error}], locked?,
+current?, stopped?}`. `DELETE` stops it; its counts stand as the result. A run never stops for a file; it
+holds off the idle lock, and locking the vault by hand pauses it (`locked`) until the next unlock.
 
 #### GET /api/degraded
 

@@ -103,7 +103,8 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           mkdir -p dist
           for target in linux/arm64 linux/amd64 darwin/arm64 darwin/amd64; do
-            CGO_ENABLED=0 GOOS="${target%/*}" GOARCH="${target#*/}" go build -trimpath \
+            # nodynamic: the bundled HEIC decoder, never a system libheif.
+            CGO_ENABLED=0 GOOS="${target%/*}" GOARCH="${target#*/}" go build -trimpath -tags nodynamic \
               -ldflags="-s -w -X github.com/chinmay28/SandHarbor/internal/version.Patch=${{ steps.version.outputs.patch }} -X github.com/chinmay28/SandHarbor/internal/version.Date=${{ steps.version.outputs.date }}" \
               -o "dist/sand-${VERSION}-${target%/*}-${target#*/}" ./cmd/sand
           done

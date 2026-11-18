@@ -83,13 +83,19 @@ export function useFilmScan() {
   return useServerJob(api.filmScanStatus, api.filmScanStart, 'sand:film-scan')
 }
 
+/* Making a folder's missing thumbnails, on the server; see ThumbBackfill.jsx. */
+export function useThumbMaking() {
+  return useServerJob(api.thumbMakingStatus, api.thumbMakingStart, 'sand:thumb-making')
+}
+
 /* A job the server runs apart from any request (see jobWatch on the server):
    `ask` answers its status, `begin` starts one or joins the one going. Both
    must be stable functions. `status` is null until the first answer, then
    whatever the server said — {id, running, scope, started_at, finished_at,
    progress, result, error}, or an empty run when nothing has been asked. It
    is re-asked every 800ms while running and left standing once it is not.
-   `start(...args)` passes its arguments to `begin`. Failures of the polling
+   `start(...args)` passes its arguments to `begin`, and resolves true when
+   it started or joined a run. Failures of the polling
    itself are kept quiet; the job reports its own in `status.error`, and a
    failure to start is `error`.
 
@@ -114,11 +120,13 @@ function useServerJob(ask, begin, channel) {
     try {
       setStatus(await begin(...args))
       window.dispatchEvent(new Event(channel))
+      return true
     } catch (err) {
       setError(err.message)
       // Whatever is going on the server now is still worth showing — a
       // refused start is usually another run in the way.
       refresh()
+      return false
     }
   }, [begin, refresh])
 

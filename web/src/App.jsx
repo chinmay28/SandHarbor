@@ -13,7 +13,6 @@ import RecoverVault from './components/RecoverVault'
 import CleanOrphans from './components/CleanOrphans'
 import EraseRuns from './components/EraseRuns'
 import BackgroundRuns from './components/BackgroundRuns'
-import { ThumbJobStrip } from './components/ThumbBackfill'
 import ReattachShards from './components/ReattachShards'
 import LostParts, { lostNotice } from './components/LostParts'
 import FilmDetails from './components/FilmDetails'
@@ -572,17 +571,13 @@ export default function App() {
             finishes. See erase.js. */}
         <EraseRuns mobile={mobile} onChanged={refreshAll} />
 
-        {/* Putting mislaid parts back and erasing abandoned ones, once their
-            dialog is closed: both run on the server and carry on without the
+        {/* Putting mislaid parts back, erasing abandoned ones, looking films
+            up and making thumbnails, once their dialog is closed: all run on
+            the server and carry on without the
             page, so this is their bar until they land and the line saying
             what they did. See BackgroundRuns. */}
         <BackgroundRuns mobile={mobile} onChanged={refreshAll} />
 
-        {/* Thumbnails being made for a folder's pictures, from the organizer.
-            This one runs in this tab rather than on the server — only a
-            browser can draw the pictures — so it is its own strip. See
-            thumbJob.js. */}
-        <ThumbJobStrip mobile={mobile} onChanged={() => refreshListing()} />
 
         {/* The listing below also says what a cloud should be holding and is
             not. Said first and on its own: the other two notices are about

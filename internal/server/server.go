@@ -188,6 +188,11 @@ type Server struct {
 	// dialog that asked was closed. See movie_scan_run.go.
 	movieScans *movieScanWatch
 
+	// thumbMakes is the run making a folder's missing thumbnails. Unlike the
+	// jobs above, locking the vault does not end it — it waits for the next
+	// unlock. See thumb_make_run.go.
+	thumbMakes *thumbMakeWatch
+
 	// erasures is where the deletes running right now say how far they have
 	// got — the relocation watch's shape, for the same two readers: a progress
 	// bar, and a delete that was detached from the page that started it. See
@@ -350,6 +355,9 @@ func (s *Server) Handler() (http.Handler, error) {
 	}
 	if s.movieScans == nil {
 		s.movieScans = newMovieScanWatch()
+	}
+	if s.thumbMakes == nil {
+		s.thumbMakes = newThumbMakeWatch()
 	}
 	if s.checks == nil {
 		s.checks = newJobWatch[vault.CheckProgress, vault.CheckReport]()
@@ -772,6 +780,11 @@ func (s *Server) Handler() (http.Handler, error) {
 		"POST /api/thumbs": s.handleThumbsSet,
 		// Which files under a folder still want a picture. See handleThumbsMissing.
 		"GET /api/thumbs/missing": s.handleThumbsMissing,
+		// Making them, as a job on the server; see thumb_make_run.go.
+		"GET /api/thumbs/plan":      s.handleThumbPlan,
+		"POST /api/thumbs/making":   s.handleThumbMakeStart,
+		"GET /api/thumbs/making":    s.handleThumbMakeStatus,
+		"DELETE /api/thumbs/making": s.handleThumbMakeStop,
 
 		// The whole folder tree in one answer, which is what choosing a
 		// destination needs — GET /api/files walks one level at a time.
@@ -1174,7 +1187,7 @@ func (s *Server) autoLockLoop() {
 		// A stray-parts scan somebody started and walked away from is use
 		// too: it says so as each cloud answers, but says nothing while it
 		// waits on the slowest one, and that wait is the whole of it.
-		if s.strayScans.running() || s.reattaches.running() || s.sweeps.running() || s.movieScans.running() ||
+		if s.strayScans.running() || s.reattaches.running() || s.sweeps.running() || s.movieScans.running() || s.thumbMakes.running() ||
 			s.checks.running() || s.repairs.running() || s.checksums.busy() ||
 			s.lostScans.running() || s.lostRestores.running() || s.snapshots.running() {
 			continue
