@@ -223,6 +223,7 @@ func (s *Server) handleVaultLock(w http.ResponseWriter, r *http.Request) {
 	// move is already there.
 	s.sessions.clear()
 	s.streams.clear()
+	s.discs.clear()
 	s.zips.clear()
 	s.transfers.stopAll()
 	// A relocation is the same case with less at stake: every file already

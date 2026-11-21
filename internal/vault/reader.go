@@ -590,10 +590,23 @@ func (v *Vault) OpenSequential(ctx context.Context, id string) (io.ReadSeeker, *
 // caller is expected to offer Convert rather than to retry. Conversion is a
 // sequential read, which that format handles perfectly well — see convert.go.
 func (v *Vault) OpenReadSeeker(ctx context.Context, id string, opts ...ReadOption) (io.ReadSeeker, *Entry, error) {
+	reader, entry, err := v.OpenReaderAt(ctx, id, opts...)
+	if err != nil {
+		return nil, nil, err
+	}
+	return io.NewSectionReader(reader, 0, entry.Size), entry, nil
+}
+
+// OpenReaderAt is OpenReadSeeker for a caller that reads at offsets of its own
+// choosing rather than front to back: something serving one part of a stored
+// file as though it were a file itself, such as the film inside a disc image.
+// The same bargain holds — a read costs the chunks it covers, reads are
+// abandoned when ctx ends, and a file in the pre-chunking format is refused
+// with ErrNeedsConversion.
+func (v *Vault) OpenReaderAt(ctx context.Context, id string, opts ...ReadOption) (io.ReaderAt, *Entry, error) {
 	reader, err := v.OpenReader(id, opts...)
 	if err != nil {
 		return nil, nil, err
 	}
-	return io.NewSectionReader(
-		ctxReaderAt{ctx: ctx, reader: reader}, 0, reader.Size()), reader.Entry(), nil
+	return ctxReaderAt{ctx: ctx, reader: reader}, reader.Entry(), nil
 }

@@ -143,6 +143,8 @@ Verified against each package's doc comment.
 | `internal/grind` | The protocol for making an import's parts on the source machine: `sand grind`'s side, the vault's checking session, and the memory budget that keeps the machine standing. See [Grinding](design/grind.md) |
 | `internal/grindbin` | A `sand` binary for another machine's platform: this executable, or the matching release asset, checksum-verified and cached. See [Grinding](design/grind.md) |
 | `internal/git` | The small part of git needed: `ls-remote`, bare mirrors, bundles. Shells out to the machine's git for its credentials; URLs are allow-listed. See [index: repositories](design/index.md#repositories-kept-as-bundles) |
+| `internal/udf` | A read-only reader for the UDF filesystem inside a disc image: lists directories and says where a file's bytes lie in the image. `udftest` builds images for tests |
+| `internal/bluray` | Finds the main title of a Blu-ray disc image and serves its clips as a plain transport stream, read in place out of the image. `bluraytest` builds discs for tests. See [streaming: Blu-ray disc images](guide/streaming.md#blu-ray-disc-images) |
 | `internal/movie` | File name to film guess, and the TMDb client. Reached only for folders opted in by name. See [index: film details](design/index.md#film-details) |
 | `internal/assistant` | Sandy: a chat model in front of read-only tools over the index, speaking the OpenAI-compatible chat-completions protocol to a model server the user configures. See [Sandy](guide/sandy.md) |
 | `internal/thumb` | Normalises browser-made preview images into re-encoded JPEGs of a known size |

@@ -108,7 +108,7 @@ export function needsDownloadLink() {
    and the page does not move: an attachment is a download, not a navigation.
    No bytes pass through this page, so there is no progress to report. */
 export async function downloadThroughLink(file, from = '') {
-  const link = await api.streamLink(file.id, from)
+  const link = await api.streamLink(file.id, from, { download: true })
   const url = `${link.url}${link.url.includes('?') ? '&' : '?'}download=1`
   downloadFromLink(url, file.name)
 }

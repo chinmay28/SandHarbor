@@ -128,6 +128,8 @@ status each is sent with:
 | `NO_THUMBNAIL` | 404 | The file or folder has no picture |
 | `BAD_THUMBNAIL` | 400 | An uploaded thumbnail was refused |
 | `NO_TICKET` | 404 | The stream link has expired, was voided by a lock, or its TV code was revoked |
+| `DISC_ENCRYPTED` | 422 | A TV asked to play a Blu-ray disc image that is still encrypted |
+| `DISC_UNPLAYABLE` | 422 | A TV asked to play a disc image that is not a Blu-ray, or has no title that could be found |
 | `NO_BACKUP` | 404 | The account named for recovery holds no backup |
 | `NO_KIT_CODE` | 404 | The vault holds no code for that kit |
 | `NOT_A_KIT`, `KIT_DAMAGED`, `KIT_CODE_TYPO`, `KIT_CODE_LENGTH`, `KIT_SECRET_WRONG` | 400 | Recovery kit problems: not a kit, damaged, a code with a typo or wrong length, wrong secret |
@@ -946,6 +948,12 @@ abandoned.
 URL is relative; the client resolves it against the origin it reached the
 server on.
 
+For a Blu-ray disc image (`.iso`) the ticket is for the film inside it: `name`
+ends in `.ts`, `mime` is `video/mp2t`, and the stream is the main title's
+transport stream rather than the image. `?download=1` asks for a link to the
+file itself, which is also what an `.iso` with no playable film gets. See
+[Blu-ray disc images](../guide/streaming.md#blu-ray-disc-images).
+
 #### GET /stream/{token}/{name}
 
 No session: the token is the credential. `{name}` is cosmetic (players choose a
@@ -1374,7 +1382,10 @@ poster}]}`. `all=1` lists every video at or below the folder, flat.
 
 → `201 {url: "/stream/…", name, mime?, expires_at, expires_in, subtitles: [{url,
 label, language?, mime}]}`: a stream link bound to the code, and links for the
-sidecar subtitle files beside the video.
+sidecar subtitle files beside the video. A Blu-ray disc image is linked as the
+film inside it, as `POST /api/files/{id}/stream` does. An image with no film to
+give is refused with `422 DISC_ENCRYPTED` (the disc was copied without
+decrypting it) or `422 DISC_UNPLAYABLE` (not a Blu-ray, or no title found).
 
 Errors throughout: `401 TV_UNPAIRED` (pair again), `401 LOCKED` (unlock the
 vault).

@@ -249,11 +249,16 @@ export function previewKind(mime = '', name = '') {
    with no recognised type at all, since Go's built-in table stops at the
    handful of web formats and a server without an /etc/mime.types has nothing
    else to consult. That is precisely the file a browser cannot play and a
-   player can. */
+   player can.
+
+   A disc image is on the list for what the server does with one: the link for
+   a Blu-ray .iso plays the film inside it, as a stream any player opens (see
+   internal/server/disc.go). An .iso that is not a Blu-ray gets a link to
+   itself, which is as much as it ever had. */
 export function isPlayable(mime = '', name = '') {
   const type = mime.split(';')[0].trim().toLowerCase()
   if (type.startsWith('video/') || type.startsWith('audio/')) return true
-  return /\.(mp4|m4v|mov|mkv|webm|avi|wmv|flv|mpe?g|m2ts|ts|ogv|3gp|mp3|m4a|aac|flac|wav|ogg|oga|opus|wma)$/i
+  return /\.(mp4|m4v|mov|mkv|webm|avi|wmv|flv|mpe?g|m2ts|ts|iso|ogv|3gp|mp3|m4a|aac|flac|wav|ogg|oga|opus|wma)$/i
     .test(name)
 }
 

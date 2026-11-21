@@ -577,16 +577,39 @@ func (s *Server) handleTVPlay(w http.ResponseWriter, r *http.Request, grant tvac
 	}
 	s.tvActive(v)
 
-	token, expiry, err := s.streams.issue(streamTicket{fileID: entry.ID, source: vault.ReadParts, grant: grant.Code})
+	ticket := streamTicket{fileID: entry.ID, source: vault.ReadParts, grant: grant.Code}
+	name, mimeType := entry.Name, entry.MIME
+
+	// A disc image plays as the film inside it, or not at all: the TV's
+	// player reads films, not discs, so an image with no film to give is
+	// refused here, with the reason, rather than handed on to fail there
+	// without one. See disc.go.
+	if isDiscImage(entry) {
+		ctx, cancel := contextWithTimeout(r, discProbeTimeout)
+		film, err := s.discFilmOf(ctx, v, entry, vault.ReadParts)
+		cancel()
+		if err != nil {
+			if unplayableDisc(err) {
+				discErrorResponse(w, err)
+			} else {
+				vaultErrorResponse(w, err)
+			}
+			return
+		}
+		ticket.disc = film
+		name, mimeType = discStreamName(entry.Name), discStreamMIME
+	}
+
+	token, expiry, err := s.streams.issue(ticket)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not mint a stream link", "INTERNAL_ERROR")
 		return
 	}
 	resp := tvPlayResponse{
 		streamLinkResponse: streamLinkResponse{
-			URL:       streamPath(token, entry.Name),
-			Name:      entry.Name,
-			MIME:      entry.MIME,
+			URL:       streamPath(token, name),
+			Name:      name,
+			MIME:      mimeType,
 			ExpiresAt: expiry,
 			ExpiresIn: int(time.Until(expiry).Round(time.Second).Seconds()),
 		},

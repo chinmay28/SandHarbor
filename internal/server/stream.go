@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
+	"io"
 	"log"
 	"mime"
 	"net/http"
@@ -133,6 +134,10 @@ type streamTicket struct {
 	// minted. A link under a code dies with the code: revoking it stops the
 	// film that is playing, not only the next one. See handlers_tv.go.
 	grant string
+
+	// disc is set when the file is a disc image and the link plays the film
+	// inside it rather than the image. See disc.go.
+	disc *discFilm
 }
 
 // streamStore holds stream tickets.
@@ -190,7 +195,25 @@ func (s *Server) handleFileStreamLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, expiry, err := s.streams.issue(streamTicket{fileID: entry.ID, source: source})
+	ticket := streamTicket{fileID: entry.ID, source: source}
+	name, mimeType := entry.Name, entry.MIME
+
+	// A disc image plays as the film inside it. A link asked for in order to
+	// save the file (download=1) is for the image itself, and so is one for
+	// an image with no film that can be found: that is the link every .iso
+	// got before, and still what a download, or a player that reads discs,
+	// wants. Not finding a film is never a reason to refuse the file.
+	if isDiscImage(entry) && r.URL.Query().Get("download") != "1" {
+		ctx, cancel := contextWithTimeout(r, discProbeTimeout)
+		film, err := s.discFilmOf(ctx, v, entry, source)
+		cancel()
+		if err == nil {
+			ticket.disc = film
+			name, mimeType = discStreamName(entry.Name), discStreamMIME
+		}
+	}
+
+	token, expiry, err := s.streams.issue(ticket)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not mint a stream link", "INTERNAL_ERROR")
 		return
@@ -198,15 +221,15 @@ func (s *Server) handleFileStreamLink(w http.ResponseWriter, r *http.Request) {
 
 	// The placement is on the address too, for the person reading it: the
 	// ticket is what decides, and this only says what it decided.
-	address := streamPath(token, entry.Name)
+	address := streamPath(token, name)
 	if source != vault.ReadParts {
 		address += "?from=" + string(source)
 	}
 
 	writeJSON(w, http.StatusCreated, streamLinkResponse{
 		URL:       address,
-		Name:      entry.Name,
-		MIME:      entry.MIME,
+		Name:      name,
+		MIME:      mimeType,
 		ExpiresAt: expiry,
 		ExpiresIn: int(time.Until(expiry).Round(time.Second).Seconds()),
 	})
@@ -270,10 +293,30 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	if ticket.source != "" && ticket.source != vault.ReadParts {
 		opts = append(opts, vault.ReadFrom(ticket.source))
 	}
-	reader, entry, err := v.OpenReadSeeker(ctx, fileID, opts...)
+	image, entry, err := v.OpenReaderAt(ctx, fileID, opts...)
 	if err != nil {
 		vaultErrorResponse(w, err)
 		return
+	}
+
+	// What is served: the file, or for a disc image's link the film inside
+	// it, which is other bytes under another name and type.
+	var (
+		reader      io.ReadSeeker = io.NewSectionReader(image, 0, entry.Size)
+		name                      = entry.Name
+		contentType               = entry.MIME
+		etag                      = entry.Hash
+	)
+	if disc := ticket.disc; disc != nil {
+		// The title is offsets into the image it was found in. The same ID
+		// holding other bytes now is a link to something that is gone.
+		if disc.hash != entry.Hash {
+			writeError(w, http.StatusNotFound, "this stream link has expired", "NO_TICKET")
+			return
+		}
+		ts := disc.title.TS(image)
+		reader = io.NewSectionReader(ts, 0, ts.Size())
+		name, contentType, etag = discStreamName(entry.Name), discStreamMIME, entry.Hash+"-ts"
 	}
 
 	// A player has no browser session keeping the vault awake, which is the
@@ -294,7 +337,6 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		out.live = func() bool { return s.tv.Live(grant) }
 	}
 
-	contentType := entry.MIME
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
@@ -302,13 +344,13 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition",
-		mime.FormatMediaType(disposition, map[string]string{"filename": entry.Name}))
+		mime.FormatMediaType(disposition, map[string]string{"filename": name}))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	w.Header().Set("Cache-Control", "private, no-store")
-	w.Header().Set("ETag", `"`+entry.Hash+`"`)
+	w.Header().Set("ETag", `"`+etag+`"`)
 
-	http.ServeContent(out, r, entry.Name, entry.ModifiedAt, reader)
+	http.ServeContent(out, r, name, entry.ModifiedAt, reader)
 
 	// The status is long since on the wire, so the log is the only place left
 	// to say why a film stopped. A player that hung up is the usual reason a
