@@ -10,6 +10,42 @@ Each section below is the body of the corresponding GitHub release. A heading
 must name the tag exactly — a tag whose commit builds a different version is a
 tag that shouldn't be published.
 
+## v2026.11.263
+
+**Downloads:** `sand-v2026.11.263-linux-arm64` (the server),
+**`sand-vault.apk`** (SAND Vault for Android — on the phone, open
+`https://github.com/chinmay28/SandHarbor/releases/latest/download/sand-vault.apk`;
+it installs over the previous version) and **`sand-tv.apk`** (the SAND TV app
+for Fire TV). All are in `SHA256SUMS`.
+
+### Blu-ray disc images play, in VLC and on SAND TV
+
+A Blu-ray kept as an `.iso` now plays like any other film. `▶` on the row, or
+**Stream in VLC**, hands the player the main film on the disc, and SAND TV
+plays it where it used to say it could not open disc images.
+
+The server reads the disc's playlists, picks the main title (the longest) and
+serves its clips as an ordinary `.ts` stream. Nothing is converted or unpacked:
+the film is read out of the stored image where it already lies, so it takes no
+extra space and seeks like any other film. **Download** still gives the whole
+`.iso`.
+
+What to know:
+
+- You get the film with its audio and subtitle tracks, not the disc's menus,
+  extras or chapters.
+- An image copied from a bought disc without decrypting it is still encrypted
+  and does not play; SAND TV says so when you press Play.
+- A DVD image, or any other `.iso`, is linked as the file itself, as before.
+- On SAND TV, AC-3 and DTS sound are the safe ones. A disc whose only track is
+  TrueHD or DTS-HD MA, and a disc's own picture subtitles, may not come
+  through; a subtitle file beside the image (`Film.iso`, `Film.srt`) works as
+  usual. Remux such a disc to MKV if its sound is missing.
+
+The server alone changed, so the SAND TV app already installed plays disc
+images once the server is updated. See
+[Blu-ray disc images](docs/guide/streaming.md#blu-ray-disc-images).
+
 ## v2026.11.262
 
 **Downloads:** `sand-v2026.11.262-linux-arm64` (the server),
