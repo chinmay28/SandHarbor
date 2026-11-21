@@ -57,6 +57,34 @@ Any player that takes a URL works: it is an ordinary HTTP address that answers
 > bearer token in the clear, like everything else sent there, so put TLS in front
 > (see [Deployment](deployment.md)).
 
+### Blu-ray disc images
+
+A Blu-ray kept as an `.iso` is a disc, not a film: a filesystem with clips,
+playlists and menus in it, which most players will not open from an address.
+So the link for one plays the **film inside it**. The server reads the disc's
+playlists, picks the main title (the longest), and serves that title's clips as
+an ordinary transport stream. The address ends in `.ts`, and VLC on a desktop or
+a phone, SAND TV, or anything else that takes a URL plays it and can seek in it.
+
+Nothing is converted or unpacked. The film is read out of the stored image at
+the offsets it already lies at, so it costs no extra space and starts as fast
+as any other film.
+
+| | |
+|---|---|
+| What you get | The main title: picture, every audio track and the disc's subtitle tracks, as they are on the disc |
+| What you do not | Menus, extras, and chapter marks |
+| Encrypted discs | Not playable. An image copied from a bought disc without decrypting it is still encrypted, and the link is then to the image itself, as below. |
+| Other `.iso` files | A DVD image, a data disc or an installer has no Blu-ray film in it. `▶` gives a link to the file itself, which is only useful to a player that opens disc images. |
+| Downloading | **Download** always gives you the whole `.iso`, never the film cut out of it. |
+| In the browser | Clicking a disc image matched to a film opens the film's page, with **Stream in VLC** and **Close**. It has no **Play** of its own: a browser cannot play a disc. |
+
+Two limits come from serving the disc's clips as they are. A title that plays
+only part of a clip gets the whole clip. And a title made of many clips (some
+discs split a film into dozens) plays them end to end, which most players
+handle, though some then show the wrong running time or seek imprecisely. If a
+disc plays badly this way, remux its main title to MKV instead.
+
 ## Watch on a TV
 
 **SAND TV** puts one folder on a television, with the posters, synopses and cast

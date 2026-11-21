@@ -577,8 +577,12 @@
 
   /* The kinds of file the player cannot open at all, whatever is inside
      them — the ones apps/firetv's ContainerSupportTest finds no Media3
-     extractor for. Said before Play, rather than after it fails. */
-  var UNPLAYABLE = { wmv: 'WMV', asf: 'ASF', wma: 'WMA', ogv: 'Ogg video', ogm: 'Ogg video', m2ts: 'M2TS', mts: 'M2TS', iso: 'disc image (ISO)', rm: 'RealMedia', rmvb: 'RealMedia' }
+     extractor for. Said before Play, rather than after it fails.
+
+     A disc image is not among them: the server plays the film inside a
+     Blu-ray .iso as a transport stream, and says why when an image has no
+     film it can give (see internal/server/disc.go). */
+  var UNPLAYABLE = { wmv: 'WMV', asf: 'ASF', wma: 'WMA', ogv: 'Ogg video', ogm: 'Ogg video', m2ts: 'M2TS', mts: 'M2TS', rm: 'RealMedia', rmvb: 'RealMedia' }
 
   function unplayableKind(name) {
     var dot = name.lastIndexOf('.')

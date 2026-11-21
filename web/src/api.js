@@ -1072,9 +1072,16 @@ export const api = {
   /* `from` is which placement the link plays from — parts, replica, or
      either — and rides in the link's own ticket, so a link made for the
      replica keeps reading the replica whoever follows it. */
-  streamLink: (id, from = '') =>
-    request(`/api/files/${encodeURIComponent(id)}/stream${from && from !== 'parts' ? `?from=${from}` : ''}`,
-      { method: 'POST' }),
+  /* `download` says the link is wanted for saving the file rather than
+     playing it. It matters for a disc image, whose link otherwise plays the
+     film inside it: a download of an .iso has to be the .iso. */
+  streamLink: (id, from = '', { download = false } = {}) => {
+    const params = []
+    if (from && from !== 'parts') params.push(`from=${from}`)
+    if (download) params.push('download=1')
+    return request(`/api/files/${encodeURIComponent(id)}/stream${params.length ? `?${params.join('&')}` : ''}`,
+      { method: 'POST' })
+  },
 
   contentURL: (id, { download = false, watch = '', from = '' } = {}) => {
     const params = []

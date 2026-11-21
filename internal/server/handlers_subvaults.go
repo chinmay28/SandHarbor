@@ -96,6 +96,7 @@ func (s *Server) handleSubVaultLock(w http.ResponseWriter, r *http.Request) {
 	// from. The links go here rather than in the vault, which knows nothing
 	// about them.
 	s.streams.clear()
+	s.discs.clear()
 	writeJSON(w, http.StatusOK, map[string]any{"id": r.PathValue("id"), "unlocked": false})
 }
 
@@ -214,6 +215,7 @@ func (s *Server) handleSubVaultDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.streams.clear()
+	s.discs.clear()
 	writeJSON(w, http.StatusOK, map[string]any{"status": "deleted", "warnings": warnings})
 }
 

@@ -100,6 +100,16 @@ export default function StreamLink({ file, autoplay, from = 'parts', zIndex, onC
             </Banner>
           )}
 
+          {/* A disc image's link is to the film inside it, under another
+              name — worth a line, since the address no longer ends in the
+              file that was clicked. */}
+          {link.name !== file.name && (
+            <Banner tone="info">
+              This is a disc image. The link plays the main film on
+              it, <code>{link.name}</code>, without the disc's menus or extras.
+            </Banner>
+          )}
+
           {file.replica && (
             <div style={{ marginBottom: '14px' }}>
               <ReadFromChoice file={file} value={source} onChange={setSource} compact={mobile} />

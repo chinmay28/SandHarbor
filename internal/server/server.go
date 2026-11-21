@@ -98,6 +98,9 @@ type Server struct {
 	vault    *vault.Vault
 	sessions *sessionStore
 	streams  *streamStore
+	// discs remembers where the film lies in each disc image that has been
+	// played. See disc.go.
+	discs discCache
 
 	// links reads the network interface a stream goes out through, for a
 	// TV's Stats panel. See stream_network.go.
@@ -1201,6 +1204,7 @@ func (s *Server) autoLockLoop() {
 		// Every stream and zip link was minted against the keys that just
 		// left memory, and so was what the last stray-parts scan found.
 		s.streams.clear()
+		s.discs.clear()
 		s.zips.clear()
 		s.strayScans.stopAll()
 		s.reattaches.stopAll()

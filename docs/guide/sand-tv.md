@@ -106,7 +106,7 @@ in its own box.
 The buttons are **▶ Play**, or **▶ Resume from …** and **Play from the start**
 when you stopped partway, plus **Mark as not watched** for a film you finished.
 Progress is kept on the TV, not on the server. Where the file's extension says the
-player cannot open it (WMV, M2TS, Ogg video, ISO…), the page warns before Play.
+player cannot open it (WMV, M2TS, Ogg video…), the page warns before Play.
 
 Subtitle files beside a film are found and offered automatically: `Film.mkv`
 claims `Film.srt`, `Film.en.srt` and `Film.English.forced.vtt`, and `.ass`/`.ssa`
@@ -201,7 +201,7 @@ HDMI passthrough to a receiver or soundbar, then FFmpeg in software.
 
 | | Plays | Does not |
 |---|---|---|
-| **Containers** | MKV, WebM, MP4, M4V, MOV, 3GP, AVI, TS, MPG (MPEG-2 program streams: DVD and TV recordings), VOB, FLV | WMV/ASF, M2TS (Blu-ray rips), Ogg video (OGV), MPEG-1 system streams (VCD-era `.mpg`), ISO disc images, RealMedia |
+| **Containers** | MKV, WebM, MP4, M4V, MOV, 3GP, AVI, TS, MPG (MPEG-2 program streams: DVD and TV recordings), VOB, FLV, and the film in a Blu-ray disc image (`.iso`, see below) | WMV/ASF, M2TS (Blu-ray rips), Ogg video (OGV), MPEG-1 system streams (VCD-era `.mpg`), DVD disc images, RealMedia |
 | **Video** | H.264, HEVC/H.265 (HDR10 where the TV supports it) and VP9 on every Fire TV; AV1 on the newer 4K models; MPEG-2, MPEG-4 part 2 (Xvid/DivX) and VC-1 where the stick's chip has a decoder, which most do | Anything the chip has no decoder for. There is no software video decoder. |
 | **Audio** | AAC, MP3, AC-3, E-AC-3 (Atmos by passthrough), DTS core, TrueHD, FLAC, ALAC, Opus, Vorbis, PCM | DTS:X and DTS-HD MA play as their DTS core unless passed through; WMA; MP2 on most sticks |
 | **Subtitles** | SRT, WebVTT, SSA/ASS, PGS, DVB, VobSub, CEA-608/708, embedded or beside the film | |
@@ -216,6 +216,25 @@ without re-encoding and takes seconds:
 ```bash
 ffmpeg -i film.m2ts -map 0 -c copy film.mkv
 ```
+
+### Blu-ray disc images
+
+A Blu-ray kept as an `.iso` plays like any other film: the server finds the main
+title on the disc and sends it to the TV as a transport stream. See
+[Blu-ray disc images](streaming.md#blu-ray-disc-images) for what that covers.
+On the TV there are two things to know:
+
+- **Sound and subtitles are whatever Media3 reads out of a transport stream**,
+  which is less than it reads out of an MKV. AC-3 and DTS tracks are the safe
+  ones. A disc whose only English track is TrueHD or DTS-HD MA, and a disc's
+  own picture subtitles (PGS), have not been checked on a Fire TV. A subtitle
+  file beside the image (`Film.iso` and `Film.srt`) works as it does for any
+  film.
+- **An image the TV cannot play says why** when you press Play: it is still
+  encrypted, it is not a Blu-ray, or no film was found on it.
+
+If a disc's sound or subtitles do not come through, remux the film to MKV:
+that is the container the player handles best.
 
 A film that plays but stops to buffer (a 4K Blu-ray rip runs 40–100 Mbit/s,
 against 4–6 for 1080p) is usually limited by the network or the stick, not the
