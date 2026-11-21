@@ -30,6 +30,11 @@ the film is read out of the stored image where it already lies, so it takes no
 extra space and seeks like any other film. **Download** still gives the whole
 `.iso`.
 
+Clicking a disc image that has been matched to a film opens the film's page,
+as it does for any other film: poster, summary and cast, with **Stream in VLC**
+and **Close** under the poster. There is no **Play** in the page itself, since
+a browser cannot play a disc.
+
 What to know:
 
 - You get the film with its audio and subtitle tracks, not the disc's menus,

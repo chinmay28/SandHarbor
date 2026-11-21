@@ -262,6 +262,13 @@ export function isPlayable(mime = '', name = '') {
     .test(name)
 }
 
+/* Whether a file is named as a disc image. The server plays the film inside a
+   Blu-ray one (see isPlayable above); a browser cannot play it at all, so the
+   places that offer an in-page player ask this first. */
+export function isDiscImage(name = '') {
+  return /\.iso$/i.test(name)
+}
+
 const TEXTUAL = new Set([
   'application/json',
   'application/x-yaml',

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { COLORS, FONT, accountColor, formatBytes, isPlayable, previewKind } from '../theme'
+import { COLORS, FONT, accountColor, formatBytes, isDiscImage, isPlayable, previewKind } from '../theme'
 import { useIsMobile } from '../hooks'
 import { api } from '../api'
 import { fetchToBlob, prefersShareSheet, useDownload } from '../download'
@@ -224,7 +224,12 @@ export default function PreviewModal({
 
   // Whether the film is what the preview is showing, which decides where the
   // controls live.
-  const filmShown = kind === 'video' && !!record && !playing
+  /* A disc image that has been matched to a film opens on the film too. It is
+     a film to whoever clicked it, and its page is the same one — less the
+     in-page player, which has nothing it could play: the film inside the image
+     reaches a player through a stream link, not a <video> element. */
+  const discFilm = !kind && isDiscImage(file.name) && !!record
+  const filmShown = (kind === 'video' && !!record && !playing) || discFilm
 
   const parts = storedParts(file.shards)
   const accounts = new Set(file.shards.map((s) => s.provider_id)).size
@@ -337,7 +342,7 @@ export default function PreviewModal({
             />
           )}
 
-          {!error && kind === 'video' && (record && !playing ? (
+          {!error && (kind === 'video' || discFilm) && (filmShown ? (
             <div style={{ width: '100%', padding: mobile ? '12px' : '18px', boxSizing: 'border-box' }}>
               <FilmSummary
                 film={record}
@@ -353,18 +358,21 @@ export default function PreviewModal({
                    the film. */
                 actions={(
                   <>
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      onClick={() => setPlaying(true)}
-                      title="Play it in this page"
-                      style={action}
-                    >▶ Play</Button>
+                    {!discFilm && (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onClick={() => setPlaying(true)}
+                        title="Play it in this page"
+                        style={action}
+                      >▶ Play</Button>
+                    )}
                     {/* Terse on a phone because the column is 112px wide, and
                         spelled out on a desk because there it is 150px and there
                         is no reason to abbreviate. */}
                     <Button
                       size="sm"
+                      variant={discFilm ? 'primary' : undefined}
                       onClick={() => setStreaming('play')}
                       title="Open it in VLC, or copy the address"
                       style={action}
@@ -437,7 +445,7 @@ export default function PreviewModal({
             )
           )}
   
-          {!error && !kind && (
+          {!error && !kind && !discFilm && (
             <div style={{
               padding: '46px 24px',
               textAlign: 'center',
@@ -447,8 +455,13 @@ export default function PreviewModal({
               lineHeight: 1.6,
             }}>
               <div style={{ fontSize: '30px', marginBottom: '10px', opacity: 0.5 }}>📦</div>
-              No inline preview for {file.mime || 'this file type'}.<br />
-              Download it to open with something else.
+              {isDiscImage(file.name) ? (
+                <>A disc image does not play in this page.<br />
+                  Stream it in VLC to watch the film on it.</>
+              ) : (
+                <>No inline preview for {file.mime || 'this file type'}.<br />
+                  Download it to open with something else.</>
+              )}
             </div>
           )}
         </div>

@@ -77,6 +77,7 @@ as any other film.
 | Encrypted discs | Not playable. An image copied from a bought disc without decrypting it is still encrypted, and the link is then to the image itself, as below. |
 | Other `.iso` files | A DVD image, a data disc or an installer has no Blu-ray film in it. `▶` gives a link to the file itself, which is only useful to a player that opens disc images. |
 | Downloading | **Download** always gives you the whole `.iso`, never the film cut out of it. |
+| In the browser | Clicking a disc image matched to a film opens the film's page, with **Stream in VLC** and **Close**. It has no **Play** of its own: a browser cannot play a disc. |
 
 Two limits come from serving the disc's clips as they are. A title that plays
 only part of a clip gets the whole clip. And a title made of many clips (some
