@@ -127,6 +127,10 @@ also crops the film itself, turn on the TV's own *Screen Fit*, *Just Scan* or
 | ⏪ / ⏩ | Back 10s / forward 30s, any time |
 | Back | Close a menu, then the controls, then the film |
 
+While a film plays, the app keeps the TV's screensaver away. Pause it and the
+screensaver comes after the TV's usual wait, and the film stays paused where it
+was.
+
 The controls are **Play/Pause**, **−10s**, **+30s**, then:
 
 | Menu | What it offers |

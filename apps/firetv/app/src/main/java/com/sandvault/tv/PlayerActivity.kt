@@ -14,6 +14,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -207,6 +208,7 @@ class PlayerActivity : Activity(), SeekBarView.Listener {
         exo.setMediaItem(item, start.coerceAtLeast(0))
         exo.prepare()
         exo.playWhenReady = true
+        holdScreen()
 
         setControlsVisible(true, playPause)
         handler.post(ticker)
@@ -432,6 +434,20 @@ class PlayerActivity : Activity(), SeekBarView.Listener {
 
     private fun updatePlayPause() {
         playPause.text = if (player?.playWhenReady == true) "Pause" else "Play"
+    }
+
+    /**
+     * Keeps the TV from its screensaver while the film plays, and lets it
+     * come once the film is paused or over (see ScreenAwake). Asked again
+     * each time either half of that changes.
+     */
+    private fun holdScreen() {
+        val p = player ?: return
+        if (ScreenAwake.whilePlaying(p.playWhenReady, p.playbackState)) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     private fun knownDuration(): Long? = player?.duration?.takeIf { it != C.TIME_UNSET && it > 0 }
@@ -824,6 +840,7 @@ class PlayerActivity : Activity(), SeekBarView.Listener {
                 finish()
             }
             refreshTime()
+            holdScreen()
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -836,6 +853,7 @@ class PlayerActivity : Activity(), SeekBarView.Listener {
             // Paused, the controls stay up: a paused film with nothing on
             // screen looks like a frozen one.
             if (!playWhenReady) setControlsVisible(true)
+            holdScreen()
         }
 
         override fun onPlayerError(error: PlaybackException) {
