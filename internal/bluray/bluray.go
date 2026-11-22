@@ -62,6 +62,10 @@ type Title struct {
 	Duration time.Duration
 	// Clips are the clip files the title plays, in order.
 	Clips []string
+	// Languages is the language of each audio and subtitle stream of the
+	// title, by the stream's PID in the transport stream, as the three-letter
+	// code the disc gives ("eng", "fra"). Empty where the disc does not say.
+	Languages map[int]string
 
 	// extents is where the title's clips lie in the image, end to end, each
 	// clip cut to a whole number of packets.
@@ -145,6 +149,11 @@ func openVolume(vol *udf.Volume, r io.ReaderAt) (*Title, error) {
 	var names []string
 	for _, item := range items {
 		names = append(names, item.clip)
+	}
+	if len(items) > 0 {
+		// Every item of a title lists the same streams; the first speaks for
+		// them all.
+		title.Languages = items[0].languages
 	}
 	if title == nil {
 		// No playlist that could be read names a clip that is there. The

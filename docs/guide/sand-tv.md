@@ -232,11 +232,12 @@ On the TV there are two things to know:
   Master Audio (DTS:X included) play as their DTS core, 5.1, which is what
   they play as from an MKV too unless passed through. TrueHD (Atmos
   included), E-AC-3 and PCM tracks are not played: choose another track from
-  the Audio menu, or remux the disc to MKV. This needs SAND TV v2026.11.265 or
+  the Audio menu, or [convert the disc to MKV](streaming.md#convert-a-disc-image-to-mkv)
+  in the browser, which plays all of them. This needs SAND TV v2026.11.265 or
   later; an older app misreads a disc's DTS-HD track and may refuse the film.
-- **Subtitles.** A disc's own picture subtitles (PGS) are not shown. A
-  subtitle file beside the image (`Film.iso` and `Film.srt`) works as it does
-  for any film.
+- **Subtitles.** A disc's own picture subtitles (PGS) are not shown out of
+  the image; they are from an MKV made from it. A subtitle file beside the
+  image (`Film.iso` and `Film.srt`) works as it does for any film.
 - **Seeking and resuming** work, including on a film the disc keeps in many
   clips.
 - **An image the TV cannot play says why** when you press Play: it is still

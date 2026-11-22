@@ -21,6 +21,30 @@ for Fire TV). All are in `SHA256SUMS`.
 **Update both the server and the SAND TV app** for Blu-ray disc images to play
 on a TV.
 
+### Convert a Blu-ray disc image to MKV
+
+A disc image's page has a new button, **⇄ Convert to MKV**, under **Stream in
+VLC** and **Close**. It writes the main film on the disc to an MKV file beside
+the image: the picture, every soundtrack and every subtitle track copied as
+they are, nothing re-encoded, each track labelled with its language. The image
+is left untouched, and the new file takes its poster and film details.
+
+The dialog says what will happen and waits for you to agree. The work is then
+the server's, so the page can be closed; open the image again to see how far
+it has got, or to stop it.
+
+- It needs **ffmpeg** on the machine running SAND. The installer now installs
+  it (re-run it to get it); elsewhere, install ffmpeg and restart SAND. The
+  button is not shown without it.
+- It needs free disk space the size of the film while it works, and for a UHD
+  disc it takes hours.
+- A disc's uncompressed PCM sound is stored as ordinary PCM at the same depth,
+  which is the same samples; everything else is bit for bit.
+- Menus, extras and chapter marks are not carried over.
+
+An MKV made this way plays on SAND TV with the sound and subtitles the TV
+cannot take from the image itself: TrueHD, and the disc's picture subtitles.
+
 ### SAND TV: Blu-ray disc images with DTS sound play
 
 A film out of a Blu-ray image could stop on the TV with

@@ -18,6 +18,19 @@ type Item struct {
 	// In is the time on the clip's own clock that the item starts at, in
 	// seconds; zero means the ten minutes most clips on a disc start at.
 	In int
+	// Streams is the item's stream table: what is in the clip, and in which
+	// language. Empty writes an item without one.
+	Streams []Stream
+}
+
+// Stream is one stream a play item lists.
+type Stream struct {
+	PID int
+	// Coding is the kind of stream as a disc codes it: 0x1b H.264, 0x24
+	// HEVC, 0x81 AC-3, 0x86 DTS-HD MA, 0x90 picture subtitles, and so on.
+	Coding byte
+	// Language is its three-letter language, for sound and subtitles.
+	Language string
 }
 
 // Disc is the contents of a disc image: clips and playlists by number, and
@@ -135,12 +148,61 @@ func Encrypt(m2ts []byte) []byte {
 	return out
 }
 
+// streamTable encodes a play item's stream table: video, then sound, then
+// picture subtitles, as a disc orders them.
+func streamTable(streams []Stream) []byte {
+	kind := func(s Stream) int {
+		switch {
+		case s.Coding == 0x90:
+			return 2
+		case s.Coding >= 0x80:
+			return 1
+		}
+		return 0
+	}
+	counts := make([]byte, 7)
+	var entries []byte
+	for k := 0; k < 3; k++ {
+		for _, s := range streams {
+			if kind(s) != k {
+				continue
+			}
+			counts[k]++
+			// Where it is: 9 bytes, of which a kind and a PID are used.
+			entries = append(entries, 9, 1, byte(s.PID>>8), byte(s.PID), 0, 0, 0, 0, 0, 0)
+			// What it is: 5 bytes — the coding, and by kind a format byte
+			// and a language.
+			what := []byte{5, s.Coding, 0, 0, 0, 0}
+			switch k {
+			case 1:
+				what[2] = 0x61
+				copy(what[3:], s.Language)
+			case 2:
+				copy(what[2:], s.Language)
+			default:
+				what[2] = 0x61
+			}
+			entries = append(entries, what...)
+		}
+	}
+	table := make([]byte, 16)
+	copy(table[4:], counts)
+	table = append(table, entries...)
+	binary.BigEndian.PutUint16(table, uint16(len(table)-2))
+	return table
+}
+
 // Playlist encodes an .mpls file playing the given items in order.
 func Playlist(items ...Item) []byte {
 	var body []byte
 	for _, item := range items {
 		entry := make([]byte, 22)
-		binary.BigEndian.PutUint16(entry, 20)
+		if len(item.Streams) > 0 {
+			// The rest of the fixed fields, then the table.
+			entry = append(entry, make([]byte, 12)...)
+			entry = append(entry, streamTable(item.Streams)...)
+		}
+		binary.BigEndian.PutUint16(entry, uint16(len(entry)-2))
 		copy(entry[2:], fmt.Sprintf("%05dM2TS", item.Clip))
 		entry[12] = 1 // connection condition
 		start := uint32(600 * 45000)

@@ -106,6 +106,8 @@
 #                    environment names even though the installed unit differs.
 #                    Nothing is moved: the vault, if any, stays at the old path.
 #   INSTALL_NODE     auto | never            install Node 22 if missing/old (default: auto; build-time only)
+#   INSTALL_FFMPEG   auto | never            install ffmpeg if missing (default: auto). SAND runs it to
+#                    convert a Blu-ray disc image's film to an MKV; everything else works without it.
 #   INSTALL_GO       auto | never            install Go if missing/old (default: auto; build-time only)
 #   BACKUP_KEEP      pre-upgrade backups kept (default: 10)
 #
@@ -397,6 +399,7 @@ WEBDAV_ARGS=""
 [ "$WEBDAV" = 1 ] && WEBDAV_ARGS=" --webdav"
 
 INSTALL_NODE="${INSTALL_NODE:-auto}"
+INSTALL_FFMPEG="${INSTALL_FFMPEG:-auto}"
 INSTALL_GO="${INSTALL_GO:-auto}"
 BACKUP_KEEP="${BACKUP_KEEP:-10}"
 
@@ -774,6 +777,26 @@ ensure_pkg curl
 ensure_pkg ca-certificates
 [ "$INSTALL_MODE" = source ] && ensure_pkg git
 ok "curl, ca-certificates$( [ "$INSTALL_MODE" = source ] && echo ", git" ) present"
+
+# ffmpeg is a run-time helper, and an optional one: SAND runs it to convert a
+# Blu-ray disc image's film to an MKV, and offers that only where it finds
+# ffmpeg. So a machine it cannot be installed on still gets everything else —
+# this warns and carries on rather than stopping the install.
+if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
+  ok "ffmpeg present"
+elif [ "$INSTALL_FFMPEG" != auto ]; then
+  warn "ffmpeg is not installed and INSTALL_FFMPEG=never: converting disc images to MKV will not be offered."
+elif [ "$APT" -eq 1 ]; then
+  log "installing ffmpeg (converts Blu-ray disc images to MKV)…"
+  if DEBIAN_FRONTEND=noninteractive apt-get update -y >/dev/null 2>&1 &&
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg >/dev/null 2>&1; then
+    ok "ffmpeg installed"
+  else
+    warn "ffmpeg could not be installed: converting disc images to MKV will not be offered. Install it later and restart SAND."
+  fi
+else
+  warn "ffmpeg is not installed and there is no apt-get to install it: converting disc images to MKV will not be offered."
+fi
 
 # Node and Go are build-time only — release mode needs neither.
 if [ "$INSTALL_MODE" = source ]; then

@@ -12,6 +12,7 @@ import ImageViewer from './ImageViewer'
 import PdfPreview from './PdfPreview'
 import ReadStatus from './ReadStatus'
 import StreamLink from './StreamLink'
+import ConvertDisc from './ConvertDisc'
 import { MachineTransfer, fileItem } from './MachineTransfer'
 import { RelocateClouds, fileScheme, schemeName, storedParts } from './CloudSelect'
 import FilmDetails, { FilmSummary, filmLabel } from './FilmDetails'
@@ -228,7 +229,24 @@ export default function PreviewModal({
      a film to whoever clicked it, and its page is the same one — less the
      in-page player, which has nothing it could play: the film inside the image
      reaches a player through a stream link, not a <video> element. */
-  const discFilm = !kind && isDiscImage(file.name) && !!record
+  const disc = isDiscImage(file.name)
+  const discFilm = !kind && disc && !!record
+
+  /* A disc image's film can also be written out as an MKV, by the server and
+     only where the server has ffmpeg — so it is asked before the button is
+     offered, rather than offering something that will be refused. */
+  const [canConvert, setCanConvert] = useState(false)
+  const [converting, setConverting] = useState(false)
+  useEffect(() => {
+    if (!disc) return undefined
+    let cancelled = false
+    api.mkvStatus()
+      // Offered while a run for this image is going too, which is how its
+      // progress is found again after the dialog has been closed.
+      .then((s) => { if (!cancelled) setCanConvert(!!s.available) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [disc])
   const filmShown = (kind === 'video' && !!record && !playing) || discFilm
 
   const parts = storedParts(file.shards)
@@ -378,6 +396,14 @@ export default function PreviewModal({
                       style={action}
                     >{mobile ? '▶ VLC' : '▶ Stream in VLC'}</Button>
                     <Button size="sm" variant="ghost" onClick={onClose} style={action}>Close</Button>
+                    {discFilm && canConvert && (
+                      <Button
+                        size="sm"
+                        onClick={() => setConverting(true)}
+                        title="Write the film on this disc image to an MKV file beside it"
+                        style={action}
+                      >{mobile ? '⇄ MKV' : '⇄ Convert to MKV'}</Button>
+                    )}
                   </>
                 )}
               />
@@ -534,6 +560,15 @@ export default function PreviewModal({
               style={mobile ? { flex: 1, justifyContent: 'center' } : null}
             >{playable ? '▶ Stream in VLC' : '⧉ Copy the address'}</Button>
           )}
+          {/* A disc image with no film page has its conversion here, where its
+              other actions are; one with a film page has it under the poster. */}
+          {disc && canConvert && !filmShown && (
+            <Button
+              onClick={() => setConverting(true)}
+              title="Write the film on this disc image to an MKV file beside it"
+              style={mobile ? { flex: 1, justifyContent: 'center' } : null}
+            >⇄ Convert to MKV</Button>
+          )}
           {/* Beside Download because it is Download aimed elsewhere. The bytes
               go clouds → SAND → machine and never through this page, which is
               what lets a phone send a film it could never hold. */}
@@ -574,6 +609,16 @@ export default function PreviewModal({
           />
         )}
   
+        {converting && (
+          <ConvertDisc
+            file={file}
+            zIndex={120}
+            onClose={() => setConverting(false)}
+            /* The new file is in the folder behind this dialog. */
+            onDone={() => onFilmChanged?.()}
+          />
+        )}
+
         {streaming && (
           <StreamLink
             file={file}

@@ -1216,6 +1216,14 @@ export const api = {
   filmScanStatus: () => request('/api/movies/scanning'),
   filmScanStop: () => request('/api/movies/scanning', { method: 'DELETE' }),
 
+  /* Converting a disc image's film to an MKV, which the server does as a job
+     of its own (internal/server/disc_mkv.go). The status says first whether
+     the machine can do it at all — it needs ffmpeg — and then where the run
+     going, or the last one, has got to. */
+  mkvStatus: () => request('/api/mkv'),
+  mkvStart: (id) => request(`/api/files/${encodeURIComponent(id)}/mkv`, { method: 'POST' }),
+  mkvStop: () => request('/api/mkv', { method: 'DELETE' }),
+
   movie: (id) => request(`/api/files/${encodeURIComponent(id)}/movie`),
   /* Look one file up now. With nothing passed it searches for whatever the
      filename suggests; `tmdbId` names a film outright, which is what choosing

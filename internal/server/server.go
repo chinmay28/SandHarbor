@@ -195,6 +195,9 @@ type Server struct {
 	// jobs above, locking the vault does not end it — it waits for the next
 	// unlock. See thumb_make_run.go.
 	thumbMakes *thumbMakeWatch
+	// mkvs is the run converting a disc image's film to a Matroska file.
+	// See disc_mkv.go.
+	mkvs *mkvWatch
 
 	// erasures is where the deletes running right now say how far they have
 	// got — the relocation watch's shape, for the same two readers: a progress
@@ -361,6 +364,9 @@ func (s *Server) Handler() (http.Handler, error) {
 	}
 	if s.thumbMakes == nil {
 		s.thumbMakes = newThumbMakeWatch()
+	}
+	if s.mkvs == nil {
+		s.mkvs = newJobWatch[mkvProgress, mkvResult]()
 	}
 	if s.checks == nil {
 		s.checks = newJobWatch[vault.CheckProgress, vault.CheckReport]()
@@ -775,6 +781,9 @@ func (s *Server) Handler() (http.Handler, error) {
 		"POST /api/files/{id}/convert":   s.handleFileConvert,
 		"GET /api/files/{id}/content":    s.handleFileContent,
 		"POST /api/files/{id}/stream":    s.handleFileStreamLink,
+		"POST /api/files/{id}/mkv":       s.handleMkvStart,
+		"GET /api/mkv":                   s.handleMkvStatus,
+		"DELETE /api/mkv":                s.handleMkvStop,
 		"DELETE /api/files/{id}/replica": s.handleReplicaDrop,
 		"GET /api/files/{id}/thumb":      s.handleFileThumb,
 		"PUT /api/files/{id}/thumb":      s.handleFileThumbSet,
@@ -1190,7 +1199,7 @@ func (s *Server) autoLockLoop() {
 		// A stray-parts scan somebody started and walked away from is use
 		// too: it says so as each cloud answers, but says nothing while it
 		// waits on the slowest one, and that wait is the whole of it.
-		if s.strayScans.running() || s.reattaches.running() || s.sweeps.running() || s.movieScans.running() || s.thumbMakes.running() ||
+		if s.strayScans.running() || s.reattaches.running() || s.sweeps.running() || s.movieScans.running() || s.thumbMakes.running() || s.mkvs.running() ||
 			s.checks.running() || s.repairs.running() || s.checksums.busy() ||
 			s.lostScans.running() || s.lostRestores.running() || s.snapshots.running() {
 			continue
@@ -1205,6 +1214,7 @@ func (s *Server) autoLockLoop() {
 		// left memory, and so was what the last stray-parts scan found.
 		s.streams.clear()
 		s.discs.clear()
+		s.mkvs.stopAll()
 		s.zips.clear()
 		s.strayScans.stopAll()
 		s.reattaches.stopAll()

@@ -224,6 +224,7 @@ func (s *Server) handleVaultLock(w http.ResponseWriter, r *http.Request) {
 	s.sessions.clear()
 	s.streams.clear()
 	s.discs.clear()
+	s.mkvs.stopAll()
 	s.zips.clear()
 	s.transfers.stopAll()
 	// A relocation is the same case with less at stake: every file already
