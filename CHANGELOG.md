@@ -10,6 +10,28 @@ Each section below is the body of the corresponding GitHub release. A heading
 must name the tag exactly — a tag whose commit builds a different version is a
 tag that shouldn't be published.
 
+## v2026.11.264
+
+**Downloads:** `sand-v2026.11.264-linux-arm64` (the server),
+**`sand-vault.apk`** (SAND Vault for Android — on the phone, open
+`https://github.com/chinmay28/SandHarbor/releases/latest/download/sand-vault.apk`;
+it installs over the previous version) and **`sand-tv.apk`** (the SAND TV app
+for Fire TV). All are in `SHA256SUMS`.
+
+### SAND TV: the screensaver no longer comes up over a playing film
+
+A Fire TV starts its screensaver after a few minutes without a press of the
+remote, and the app never asked it not to — so it came up in the middle of a
+film, and the film paused behind it. The app now keeps the screen for as long
+as a film is playing or filling its buffer.
+
+A paused film still gives way to the screensaver after the TV's usual wait, so
+a still frame is not left on the screen, and it stays paused where it was.
+
+The app alone changed: install this release's `sand-tv.apk` over the one on
+the TV. The server and SAND Vault for Android are as they were in
+v2026.11.263.
+
 ## v2026.11.263
 
 **Downloads:** `sand-v2026.11.263-linux-arm64` (the server),
