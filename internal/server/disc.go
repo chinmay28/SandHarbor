@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log"
 	"net/http"
 	"path"
 	"strings"
@@ -30,6 +32,17 @@ import (
 
 // discStreamMIME is the type a disc's film is served as.
 const discStreamMIME = "video/mp2t"
+
+// discETagSuffix tells the film's bytes from the image's in an ETag, and one
+// way of cutting the film out from another: it changes whenever the bytes
+// sent for the same image would.
+const discETagSuffix = "-ts2"
+
+// discLinkMark is added to the address of a disc's film handed to a TV. It
+// tells the TV's player that the transport stream is a Blu-ray's, whose
+// kinds of stream are numbered differently from broadcast's and are misread
+// without being told (apps/firetv: BlurayStreams). The server ignores it.
+const discLinkMark = "disc=bluray"
 
 // discProbeTimeout bounds finding the title in a disc image. It is a handful
 // of small reads, but each can be a chunk gathered from cloud accounts.
@@ -142,9 +155,26 @@ func (s *Server) discFilmOf(ctx context.Context, v *vault.Vault, entry *vault.En
 	// title's offsets are good for.
 	s.discs.put(opened.Hash, discVerdict{title: title, err: err})
 	if err != nil {
+		log.Printf("disc image %s has no film to play: %v", opened.Path(), err)
 		return nil, err
 	}
+	// Once per image, and the first thing to look at when a disc plays
+	// badly: which title was taken for the film, and how many clips it is.
+	log.Printf("disc image %s: playing %s", opened.Path(), describeTitle(title))
 	return &discFilm{title: title, hash: opened.Hash}, nil
+}
+
+// describeTitle says what was found on a disc, for the log.
+func describeTitle(t *bluray.Title) string {
+	from := "its largest clip (no usable playlist)"
+	if t.Playlist != "" {
+		from = fmt.Sprintf("playlist %s, %s", t.Playlist, t.Duration.Round(time.Second))
+	}
+	clips := fmt.Sprintf("%d clips", len(t.Clips))
+	if len(t.Clips) == 1 {
+		clips = "one clip, " + t.Clips[0]
+	}
+	return fmt.Sprintf("%s — %s, %.1f GB", from, clips, float64(t.Size())/1e9)
 }
 
 // discErrorResponse answers a request to play a disc image that has no film

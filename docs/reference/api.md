@@ -128,8 +128,11 @@ status each is sent with:
 | `NO_THUMBNAIL` | 404 | The file or folder has no picture |
 | `BAD_THUMBNAIL` | 400 | An uploaded thumbnail was refused |
 | `NO_TICKET` | 404 | The stream link has expired, was voided by a lock, or its TV code was revoked |
-| `DISC_ENCRYPTED` | 422 | A TV asked to play a Blu-ray disc image that is still encrypted |
-| `DISC_UNPLAYABLE` | 422 | A TV asked to play a disc image that is not a Blu-ray, or has no title that could be found |
+| `DISC_ENCRYPTED` | 422 | A TV asked to play, or a conversion was asked of, a Blu-ray disc image that is still encrypted |
+| `NOT_A_DISC` | 422 | A conversion to MKV was asked of a file that is not a disc image |
+| `NO_FFMPEG` | 501 | Converting a disc image needs ffmpeg, which is not installed on the server's machine |
+| `MKV_BUSY` | 409 | Another disc image is being converted |
+| `DISC_UNPLAYABLE` | 422 | A TV asked to play, or a conversion was asked of, a disc image that is not a Blu-ray or has no title that could be found |
 | `NO_BACKUP` | 404 | The account named for recovery holds no backup |
 | `NO_KIT_CODE` | 404 | The vault holds no code for that kit |
 | `NOT_A_KIT`, `KIT_DAMAGED`, `KIT_CODE_TYPO`, `KIT_CODE_LENGTH`, `KIT_SECRET_WRONG` | 400 | Recovery kit problems: not a kit, damaged, a code with a typo or wrong length, wrong secret |
@@ -306,6 +309,9 @@ unlocked vault; **quiet** is a session check that does not count as use;
 | GET · DELETE | `/api/files/{id}` | session | Metadata · delete |
 | GET | `/api/files/{id}/content` | session | The file's bytes, ranged |
 | POST | `/api/files/{id}/stream` | session | Mint a stream link |
+| POST | `/api/files/{id}/mkv` | session | Start converting a disc image's film to an MKV |
+| GET | `/api/mkv` | session | Whether this machine can convert, and the conversion running or last run |
+| DELETE | `/api/mkv` | session | Stop the conversion |
 | GET | `/stream/{token}`, `/stream/{token}/{name}` | ticket | Play a stream link |
 | GET | `/api/stream/{token}/network` | ticket | How the server is connected, for SAND TV's Stats panel |
 | GET · PUT | `/api/files/{id}/thumb` | session | Thumbnail |
@@ -953,6 +959,30 @@ ends in `.ts`, `mime` is `video/mp2t`, and the stream is the main title's
 transport stream rather than the image. `?download=1` asks for a link to the
 file itself, which is also what an `.iso` with no playable film gets. See
 [Blu-ray disc images](../guide/streaming.md#blu-ray-disc-images).
+
+#### POST /api/files/{id}/mkv
+
+Starts a server job that writes the main film of the Blu-ray disc image `{id}`
+to a Matroska file beside it, named as the image with `.mkv`. Every track is
+copied, none re-encoded; the image is not changed. It needs ffmpeg on the
+server's machine. See
+[Convert a disc image to MKV](../guide/streaming.md#convert-a-disc-image-to-mkv).
+
+→ `202` with the run's status when it started, `200` when a run for the same
+image was already going. Refused before anything starts with `501 NO_FFMPEG`,
+`422 NOT_A_DISC` (not an `.iso`), `422 DISC_ENCRYPTED` or `422 DISC_UNPLAYABLE`
+(no film to convert), `409 EXISTS` (the `.mkv` is already in the folder) or
+`409 MKV_BUSY` (another image is being converted).
+
+#### GET /api/mkv, DELETE /api/mkv
+
+→ `{available, reason?, id?, running, scope?, started_at?, finished_at?,
+progress?, result?, error?}`. `available` is whether ffmpeg was found, and
+`reason` why not. `scope` is the image's file ID. While running, `progress` is
+`{file, name, stage: "reading"|"storing", done, total}` in bytes of the stage.
+When done, `result` is `{id, name, dir, size, from, video, audio, subtitles,
+rewritten?, dropped?, warnings?}`: the new file and how many tracks it has.
+`DELETE` stops the run, which keeps nothing, and answers with the same status.
 
 #### GET /stream/{token}/{name}
 

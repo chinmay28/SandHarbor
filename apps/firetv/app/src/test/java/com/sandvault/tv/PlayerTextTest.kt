@@ -8,6 +8,22 @@ import java.util.Locale
 class PlayerTextTest {
 
     @Test
+    fun aFailureIsExplainedByWhatLiesUnderIt() {
+        val stuck = IllegalStateException("Playback stuck buffering and not loading")
+        val wrapped = RuntimeException("player error", RuntimeException("renderer", stuck))
+        assertEquals(" IllegalStateException: Playback stuck buffering and not loading", PlayerText.cause(wrapped))
+
+        // Nothing under it: the message that names the code is all there is.
+        assertEquals("", PlayerText.cause(RuntimeException("alone")))
+        // A cause that says nothing still has a kind.
+        assertEquals(" IllegalArgumentException", PlayerText.cause(RuntimeException("x", IllegalArgumentException())))
+
+        val long = PlayerText.cause(RuntimeException("x", IllegalStateException("a".repeat(500))))
+        assertTrue("a long cause was not cut: ${long.length}", long.length <= 161)
+        assertTrue(long.endsWith("…"))
+    }
+
+    @Test
     fun timesReadTheWayAPlayerShowsThem() {
         assertEquals("0:00", PlayerText.time(0))
         assertEquals("0:42", PlayerText.time(42_999))

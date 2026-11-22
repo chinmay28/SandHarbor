@@ -190,9 +190,11 @@ class PlayerActivity : Activity(), SeekBarView.Listener {
             .build()
         loadControl = load
         val dataSource = DefaultDataSource.Factory(this).setTransferListener(FilmBytes(filmUri, filmBytes))
+        // Media3's extractors, with what a Blu-ray's transport stream needs.
+        val extractors = FilmExtractors(bluray = BlurayStreams.isBlurayLink(url))
         val exo = ExoPlayer.Builder(this, renderers)
             .setLoadControl(load)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSource))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSource, extractors))
             .build()
         player = exo
         video.player = exo
@@ -820,7 +822,10 @@ class PlayerActivity : Activity(), SeekBarView.Listener {
                 "Lost the connection to SAND. Is the server still running?"
             PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS, PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ->
                 "SAND would not send this film — the code may have been revoked, or the vault locked."
-            else -> "Could not play $file (${error.errorCodeName})."
+            // Nothing above names it, so say what the player itself said: the
+            // code alone ("FAILED_RUNTIME_CHECK") is the same for a dozen
+            // different faults, and the cause is what tells them apart.
+            else -> "Could not play $file (${error.errorCodeName})." + PlayerText.cause(error)
         }
     }
 

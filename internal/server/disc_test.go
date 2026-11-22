@@ -178,8 +178,10 @@ func TestATVPlaysTheFilmInADiscImage(t *testing.T) {
 		t.Fatalf("play: %d %v", w.Code, body)
 	}
 	link := body["url"].(string)
-	if !strings.HasSuffix(link, ".ts") || body["mime"] != "video/mp2t" {
-		t.Errorf("link %q, mime %v; want a .ts the TV's player opens", link, body["mime"])
+	// Marked as a Blu-ray's stream, which the TV's player has to be told to
+	// read its sound correctly.
+	if !strings.HasSuffix(link, ".ts?disc=bluray") || body["mime"] != "video/mp2t" {
+		t.Errorf("link %q, mime %v; want a marked .ts the TV's player opens", link, body["mime"])
 	}
 	if got := c.follow(link, ""); !bytes.Equal(got.Body.Bytes(), film) {
 		t.Errorf("the TV's stream is %d bytes that are not the film's %d", got.Body.Len(), len(film))

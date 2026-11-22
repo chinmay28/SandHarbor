@@ -8,6 +8,26 @@ import java.util.Locale
  */
 object PlayerText {
 
+    /**
+     * What lies under a failure, for the end of a message that could only
+     * name its error code: the innermost cause's kind and what it said, as
+     * " IllegalStateException: Playback stuck buffering and not loading."
+     * Empty when the failure has nothing under it and says nothing itself.
+     * Kept short, because it is read off a TV from across a room.
+     */
+    fun cause(error: Throwable): String {
+        var root = error
+        // A chain that loops back on itself is possible, if unlikely; ten
+        // links is deeper than any real one.
+        for (i in 0 until 10) root = root.cause?.takeIf { it !== root } ?: break
+        if (root === error) return ""
+        val said = root.message?.trim().orEmpty()
+        val text = root.javaClass.simpleName + if (said.isEmpty()) "" else ": $said"
+        return " " + if (text.length > CAUSE_CHARS) text.take(CAUSE_CHARS - 1) + "…" else text
+    }
+
+    private const val CAUSE_CHARS = 160
+
     /** 0:42, 12:05, 1:02:03. */
     fun time(ms: Long): String {
         val total = (ms.coerceAtLeast(0) / 1000)

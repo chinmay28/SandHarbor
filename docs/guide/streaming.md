@@ -79,11 +79,50 @@ as any other film.
 | Downloading | **Download** always gives you the whole `.iso`, never the film cut out of it. |
 | In the browser | Clicking a disc image matched to a film opens the film's page, with **Stream in VLC** and **Close**. It has no **Play** of its own: a browser cannot play a disc. |
 
-Two limits come from serving the disc's clips as they are. A title that plays
-only part of a clip gets the whole clip. And a title made of many clips (some
-discs split a film into dozens) plays them end to end, which most players
-handle, though some then show the wrong running time or seek imprecisely. If a
-disc plays badly this way, remux its main title to MKV instead.
+One limit comes from serving the disc's clips as they are: a title that plays
+only part of a clip gets the whole clip. A title made of many clips (some
+discs split a film into dozens) is sent as one film: each clip keeps its own
+clock on the disc, and the server moves them onto one, so a player shows the
+right running time and seeks across the whole of it. A frame may be dropped
+where one clip meets the next.
+
+### Convert a disc image to MKV
+
+A disc's film can also be written out as an MKV file beside the image. Do this
+when a player will not take everything from the disc as it is — SAND TV does
+not play a disc's TrueHD sound or show its picture subtitles, and does both
+from an MKV — or when you would rather keep the film than the disc.
+
+Open the disc image and press **⇄ Convert to MKV**, under **Stream in VLC** and
+**Close**. A dialog says what will happen and nothing starts until you agree.
+The server then reads the main film out of the image, copies it into an MKV,
+and stores that as `Film.mkv` next to `Film.iso`.
+
+| | |
+|---|---|
+| What is copied | The picture, every soundtrack and every subtitle track, as they are. Nothing is re-encoded. |
+| Languages | Each soundtrack and subtitle track is labelled with the language the disc gives it. |
+| The one exception | A disc's uncompressed PCM sound cannot be held in an MKV the way a disc stores it. It is stored as ordinary PCM at the same depth: the same samples. |
+| Film details | The image's poster and film details are given to the new file. |
+| What is not carried over | Menus, extras and chapter marks. |
+| The disc image | Left exactly as it is. Play the MKV before you remove the image. |
+
+It is a server job: you can close the dialog, or the browser. A bar over the
+file list follows it from then on, with a **Stop**, and says what it made when
+it is done; opening the image again shows the same run. One image is
+converted at a time. Stopping, or locking the vault, ends the run and keeps
+nothing.
+
+What it needs:
+
+- **ffmpeg on the machine running SAND.** The installer installs it; elsewhere,
+  `sudo apt install ffmpeg` (or your system's equivalent) and restart SAND. To
+  use a particular build, set `SAND_FFMPEG` to the path of `ffmpeg`, with
+  `ffprobe` beside it. Without ffmpeg the button is not shown.
+- **Free disk space the size of the film**, beside the vault file, while it
+  works. The MKV is written there whole and removed once it is stored.
+- **Time.** The film is read from your accounts and the new file written back
+  to them: for a UHD disc, hours.
 
 ## Watch on a TV
 

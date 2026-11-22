@@ -10,6 +10,78 @@ Each section below is the body of the corresponding GitHub release. A heading
 must name the tag exactly — a tag whose commit builds a different version is a
 tag that shouldn't be published.
 
+## v2026.11.265
+
+**Downloads:** `sand-v2026.11.265-linux-arm64` (the server),
+**`sand-vault.apk`** (SAND Vault for Android — on the phone, open
+`https://github.com/chinmay28/SandHarbor/releases/latest/download/sand-vault.apk`;
+it installs over the previous version) and **`sand-tv.apk`** (the SAND TV app
+for Fire TV). All are in `SHA256SUMS`.
+
+**Update both the server and the SAND TV app** for Blu-ray disc images to play
+on a TV.
+
+### Convert a Blu-ray disc image to MKV
+
+A disc image's page has a new button, **⇄ Convert to MKV**, under **Stream in
+VLC** and **Close**. It writes the main film on the disc to an MKV file beside
+the image: the picture, every soundtrack and every subtitle track copied as
+they are, nothing re-encoded, each track labelled with its language. The image
+is left untouched, and the new file takes its poster and film details.
+
+The dialog says what will happen and waits for you to agree. The work is then
+the server's, so the dialog and the page can be closed: a bar over the file
+list follows it, with a **Stop**, and says what was made when it is done.
+
+- It needs **ffmpeg** on the machine running SAND. The installer now installs
+  it (re-run it to get it); elsewhere, install ffmpeg and restart SAND. The
+  button is not shown without it.
+- It needs free disk space the size of the film while it works, and for a UHD
+  disc it takes hours.
+- A disc's uncompressed PCM sound is stored as ordinary PCM at the same depth,
+  which is the same samples; everything else is bit for bit.
+- Menus, extras and chapter marks are not carried over.
+
+An MKV made this way plays on SAND TV with the sound and subtitles the TV
+cannot take from the image itself: TrueHD, and the disc's picture subtitles.
+
+### SAND TV: Blu-ray disc images with DTS sound play
+
+A film out of a Blu-ray image could stop on the TV with
+`ERROR_CODE_FAILED_RUNTIME_CHECK` before it began. A Blu-ray numbers its kinds
+of stream its own way, and the TV's player read three of them as broadcast
+television does: DTS-HD Master Audio, the main soundtrack of most discs, as
+advertising-splice data; plain DTS not at all; and PCM sound as video.
+
+The server now tells the TV when a film comes off a disc, and the player reads
+its streams as a Blu-ray means them. DTS, DTS-HD High Resolution and DTS-HD
+Master Audio (DTS:X included) play as their DTS core, 5.1. TrueHD, E-AC-3 and
+PCM tracks are left out rather than misread; choose another track from the
+Audio menu.
+
+### SAND TV: seeking and resuming in a UHD transport stream
+
+The player could not tell how long a UHD Blu-ray's stream was, so it could not
+seek in it or resume it. It now looks far enough into the stream to find out.
+
+### Blu-ray films kept in many clips play as one film
+
+Some discs keep a film in dozens of clips, each with its own clock. Sent end to
+end they were a film whose clock kept starting again: the wrong running time
+in any player, and no playing at all on the TV. The server now moves every
+clip's timestamps onto one clock as it sends them. Nothing else in the stream
+changes, and seeking costs what it did.
+
+### SAND TV: a failure says why
+
+When the player fails for a reason the app has no words for, the message now
+ends with what the player itself reported, not only an error code.
+
+### The server logs what it found on a disc
+
+The first time a disc image is played, the server log says which playlist was
+taken for the film, how long it is and how many clips it is in.
+
 ## v2026.11.264
 
 **Downloads:** `sand-v2026.11.264-linux-arm64` (the server),

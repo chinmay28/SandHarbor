@@ -316,7 +316,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		}
 		ts := disc.title.TS(image)
 		reader = io.NewSectionReader(ts, 0, ts.Size())
-		name, contentType, etag = discStreamName(entry.Name), discStreamMIME, entry.Hash+"-ts"
+		name, contentType, etag = discStreamName(entry.Name), discStreamMIME, entry.Hash+discETagSuffix
 	}
 
 	// A player has no browser session keeping the vault awake, which is the

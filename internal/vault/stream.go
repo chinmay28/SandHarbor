@@ -119,6 +119,29 @@ func (v *Vault) UploadStreamAt(ctx context.Context, scope Scope, dir, name strin
 	return v.commitUpload(ctx, scope, dir, name, size, DetectMIME(name, head[:n]), placed, opts)
 }
 
+// NewSpool makes an empty temporary file beside the vault for a caller that
+// has to write a file before it can store it — something another program
+// produces, such as a film remuxed out of a disc image — and returns it with
+// the function that removes it. Store it with UploadStreamAt, which reads it
+// in place rather than copying it into a spool of its own.
+//
+// It is the same file an upload spools into, in the same place and for the
+// same reasons: plaintext, kept under whatever protects the vault file,
+// readable by its owner alone, and held against the housekeeping scan for as
+// long as it is in use. discard must be called on every path out.
+func (v *Vault) NewSpool() (f *os.File, discard func(), err error) {
+	f, err = os.CreateTemp(filepath.Dir(v.path), ".sand-upload-*")
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating a temporary file: %w", err)
+	}
+	v.holdSpool(f.Name())
+	if err := f.Chmod(0600); err != nil {
+		v.discardSpool(f)
+		return nil, nil, fmt.Errorf("securing the temporary file: %w", err)
+	}
+	return f, func() { v.discardSpool(f) }, nil
+}
+
 // spool copies a stream to a temporary file, returning it rewound along with
 // the length and hash of what went through.
 func (v *Vault) spool(r io.Reader) (*os.File, int64, [32]byte, error) {

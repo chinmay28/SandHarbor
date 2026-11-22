@@ -605,9 +605,13 @@ func (s *Server) handleTVPlay(w http.ResponseWriter, r *http.Request, grant tvac
 		writeError(w, http.StatusInternalServerError, "could not mint a stream link", "INTERNAL_ERROR")
 		return
 	}
+	address := streamPath(token, name)
+	if ticket.disc != nil {
+		address += "?" + discLinkMark
+	}
 	resp := tvPlayResponse{
 		streamLinkResponse: streamLinkResponse{
-			URL:       streamPath(token, name),
+			URL:       address,
 			Name:      name,
 			MIME:      mimeType,
 			ExpiresAt: expiry,

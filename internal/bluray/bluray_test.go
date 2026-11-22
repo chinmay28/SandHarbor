@@ -290,3 +290,70 @@ func TestDamagedDiscsFailCleanly(t *testing.T) {
 		io.Copy(io.Discard, io.NewSectionReader(ts, 0, ts.Size()))
 	}
 }
+
+// Each clip on a disc keeps its own time, usually starting at the same ten
+// minutes as every other. End to end they are a film whose clock keeps
+// starting again, which Android's player will not play and no player can
+// tell the length of. So a title of several clips is sent on one clock: each
+// clip's times moved to where the playlist says the one before it ended.
+func TestClipsOfATitleAreSentOnOneClock(t *testing.T) {
+	const rate = bluraytest.TickRate
+	// Three clips, each starting on its own clock: two at the usual ten
+	// minutes, one somewhere else altogether.
+	a, aTS := bluraytest.TimedClip(600*rate, 40)
+	b, _ := bluraytest.TimedClip(600*rate, 25)
+	c, _ := bluraytest.TimedClip(4000*rate, 60)
+
+	img := bluraytest.Disc{
+		Clips: map[int][]byte{1: a, 2: b, 3: c},
+		Playlists: map[int][]item{1: {
+			{Clip: 1, Seconds: 100},
+			{Clip: 2, Seconds: 50},
+			{Clip: 3, Seconds: 300, In: 4000},
+		}},
+		Layout: udftest.Options{ExtentBlocks: 2},
+	}.Image()
+
+	// What a player should get: the first clip as it is, the second starting
+	// where the first is said to end, the third where the second is.
+	_, bMoved := bluraytest.TimedClip((600+100)*rate, 25)
+	_, cMoved := bluraytest.TimedClip((600+100+50)*rate, 60)
+	want := append(append(append([]byte{}, aTS...), bMoved...), cMoved...)
+
+	title := openTitle(t, img)
+	got := stream(t, title, img)
+	if !bytes.Equal(got, want) {
+		for i := 0; i < len(want); i += 188 {
+			if !bytes.Equal(got[i:i+188], want[i:i+188]) {
+				t.Fatalf("packet %d is not on the title's clock:\n got % x\nwant % x", i/188, got[i:i+40], want[i:i+40])
+			}
+		}
+	}
+
+	// And the same bytes whichever way they are asked for: a read that starts
+	// partway through a packet, or runs across the seam between two clips,
+	// has to move the same clocks a read of the whole stream does.
+	ts := title.TS(bytes.NewReader(img))
+	rng := rand.New(rand.NewSource(5))
+	for i := 0; i < 3000; i++ {
+		off := rng.Intn(len(want))
+		p := make([]byte, 1+rng.Intn(2000))
+		n, _ := ts.ReadAt(p, int64(off))
+		if !bytes.Equal(p[:n], want[off:off+n]) {
+			t.Fatalf("a read of %d bytes at %d differs from the same bytes of the whole stream", len(p), off)
+		}
+	}
+}
+
+// A title in one clip has one clock already, and is sent as it lies on the
+// disc — whatever is in its packets.
+func TestASingleClipIsSentUntouched(t *testing.T) {
+	clip, want := bluraytest.TimedClip(600*bluraytest.TickRate, 80)
+	img := bluraytest.Disc{
+		Clips:     map[int][]byte{1: clip},
+		Playlists: map[int][]item{1: {{Clip: 1, Seconds: 5000}}},
+	}.Image()
+	if got := stream(t, openTitle(t, img), img); !bytes.Equal(got, want) {
+		t.Error("a title of one clip was not sent as it is on the disc")
+	}
+}

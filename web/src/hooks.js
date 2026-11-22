@@ -88,6 +88,13 @@ export function useThumbMaking() {
   return useServerJob(api.thumbMakingStatus, api.thumbMakingStart, 'sand:thumb-making')
 }
 
+/* Converting a disc image's film to an MKV, on the server; see
+   ConvertDisc.jsx. `start` takes the image's file id. The status carries
+   `available` as well: whether the server's machine has the ffmpeg it needs. */
+export function useMkvConvert() {
+  return useServerJob(api.mkvStatus, api.mkvStart, 'sand:mkv-convert')
+}
+
 /* A job the server runs apart from any request (see jobWatch on the server):
    `ask` answers its status, `begin` starts one or joins the one going. Both
    must be stable functions. `status` is null until the first answer, then
