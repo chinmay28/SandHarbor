@@ -30,8 +30,8 @@ they are, nothing re-encoded, each track labelled with its language. The image
 is left untouched, and the new file takes its poster and film details.
 
 The dialog says what will happen and waits for you to agree. The work is then
-the server's, so the page can be closed; open the image again to see how far
-it has got, or to stop it.
+the server's, so the dialog and the page can be closed: a bar over the file
+list follows it, with a **Stop**, and says what was made when it is done.
 
 - It needs **ffmpeg** on the machine running SAND. The installer now installs
   it (re-run it to get it); elsewhere, install ffmpeg and restart SAND. The

@@ -226,8 +226,8 @@ func TestStoppingAConversionKeepsNothing(t *testing.T) {
 		t.Fatalf("stop = %d", w.Code)
 	}
 	status := c.waitForMkv()
-	if status["result"] != nil {
-		t.Errorf("a stopped run reported a result: %v", status)
+	if status["result"] != nil || status["error"] != "the conversion was stopped" {
+		t.Errorf("a stopped run ended as %v, want no result and to say it was stopped", status)
 	}
 	_, listing := c.json(http.MethodGet, "/api/files?path=/", nil)
 	if n := len(listing["files"].([]any)); n != 1 {

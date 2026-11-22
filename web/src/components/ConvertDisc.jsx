@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
+import { useMkvConvert } from '../hooks'
+import { claimRun } from '../runClaims'
 import { COLORS, FONT, formatBytes } from '../theme'
 import { Banner, Button, LoadProgress, Modal, Spinner } from './ui'
 
@@ -15,38 +17,56 @@ import { Banner, Button, LoadProgress, Modal, Spinner } from './ui'
    said what will happen and agreed to. After that the work is the server's:
    this dialog can be closed and opened again, and finds the run where it is. */
 
-const POLL_MS = 1000
-
 /* The name the server will give the new file: the image's own, as an MKV. */
 export function mkvNameFor(name) {
   return name.replace(/\.iso$/i, '') + '.mkv'
 }
 
+/* A running conversion in words, for this dialog's bar and for the strip over
+   the file list that carries it once the dialog is closed (BackgroundRuns). */
+export function describeMkv(at, elapsed) {
+  if (!at) return { label: 'Starting…', detail: elapsed, fraction: null }
+  const label = at.stage === 'storing'
+    ? `Storing ${at.name}…`
+    : 'Reading the film out of the disc image…'
+  if (!(at.total > 0)) return { label, detail: elapsed, fraction: null }
+  return {
+    label,
+    detail: `${formatBytes(at.done)} of ${formatBytes(at.total)}` + (elapsed ? ` · ${elapsed}` : ''),
+    fraction: Math.min(1, at.done / at.total),
+  }
+}
+
+/* What a finished conversion came to, in a sentence. */
+export function mkvOutcomeText(run) {
+  if (run.error) {
+    return /was stopped/i.test(run.error)
+      ? 'Converting the disc image was stopped. Nothing was kept.'
+      : `Converting the disc image did not finish: ${run.error}`
+  }
+  const r = run.result
+  if (!r) return 'Converting the disc image was stopped. Nothing was kept.'
+  return `${r.name} is in ${r.dir === '/' ? 'the top folder' : r.dir}, beside the disc image it was made from: `
+    + `${formatBytes(r.size)}, with ${r.video} video, ${r.audio} audio and ${r.subtitles} subtitle tracks.`
+}
+
 export default function ConvertDisc({ file, zIndex, onClose, onDone }) {
-  const [status, setStatus] = useState(null)
+  const { status, start: begin, refresh, error: startError } = useMkvConvert()
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   /* Whether the run this dialog is showing finish has already been reported
      to the page behind, which redraws the folder to show the new file. */
   const reported = useRef(null)
 
-  const poll = useCallback(() => api.mkvStatus()
-    .then((s) => { setStatus(s); return s })
-    .catch((err) => { setError(err.message); return null }), [])
-
-  useEffect(() => { poll() }, [poll])
-
   const mine = !!status && status.scope === file.id
   const running = !!status && status.running
   const result = mine && !running ? status.result : null
   const failed = mine && !running ? status.error : ''
 
-  // Followed for as long as something is running, whoever started it.
-  useEffect(() => {
-    if (!running) return undefined
-    const timer = window.setInterval(poll, POLL_MS)
-    return () => window.clearInterval(timer)
-  }, [running, poll])
+  /* While this dialog is open it is the one drawing the run, so the strip
+     over the file list leaves it alone; closing the dialog hands it over. */
+  const runID = status?.id
+  useEffect(() => claimRun('mkv', runID), [runID])
 
   useEffect(() => {
     if (result && reported.current !== status.id) {
@@ -58,20 +78,15 @@ export default function ConvertDisc({ file, zIndex, onClose, onDone }) {
   const start = async () => {
     setBusy(true)
     setError(null)
-    try {
-      await api.mkvStart(file.id)
-      await poll()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setBusy(false)
-    }
+    await begin(file.id)
+    setBusy(false)
   }
 
   const stop = async () => {
     setBusy(true)
     try {
-      setStatus(await api.mkvStop())
+      await api.mkvStop()
+      await refresh()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -84,7 +99,7 @@ export default function ConvertDisc({ file, zIndex, onClose, onDone }) {
   const buttons = { display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap', marginTop: '18px' }
 
   let body
-  if (!status && !error) {
+  if (!status) {
     body = <div style={{ padding: '32px', textAlign: 'center' }}><Spinner size={20} /></div>
   } else if (status && !status.available) {
     body = (
@@ -99,21 +114,16 @@ export default function ConvertDisc({ file, zIndex, onClose, onDone }) {
       </>
     )
   } else if (running && mine) {
-    const p = status.progress || {}
-    const reading = p.stage !== 'storing'
+    const at = describeMkv(status.progress, '')
     body = (
       <>
         <div style={{ display: 'flex', justifyContent: 'center', padding: '18px 0 10px' }}>
-          <LoadProgress
-            width={380}
-            label={reading ? 'Reading the film out of the disc image…' : `Storing ${name}…`}
-            fraction={p.total > 0 ? p.done / p.total : null}
-            detail={p.total > 0 ? `${formatBytes(p.done)} of ${formatBytes(p.total)}` : null}
-          />
+          <LoadProgress width={380} label={at.label} fraction={at.fraction} detail={at.detail || null} />
         </div>
         <p style={{ ...text, color: COLORS.textDim, textAlign: 'center' }}>
-          The server is doing this. You can close this and carry on; the new
-          file appears in the folder when it is done.
+          The server is doing this. You can close this and carry on: a bar
+          over the file list follows it, and the new file appears in the
+          folder when it is done.
         </p>
         <div style={buttons}>
           <Button variant="danger" disabled={busy} onClick={stop}>Stop</Button>
@@ -167,7 +177,7 @@ export default function ConvertDisc({ file, zIndex, onClose, onDone }) {
   } else {
     body = (
       <>
-        {failed && <Banner tone="error">The last try failed: {failed}</Banner>}
+        {failed && <Banner tone="error">{mkvOutcomeText({ error: failed })}</Banner>}
         <p style={text}>
           This writes the main film on this disc image to a new
           file, <code>{name}</code>, beside it. The picture, every soundtrack
@@ -192,7 +202,7 @@ export default function ConvertDisc({ file, zIndex, onClose, onDone }) {
 
   return (
     <Modal title="Convert to MKV" subtitle={file.name} onClose={onClose} width={540} zIndex={zIndex}>
-      {error && <Banner tone="error" onDismiss={() => setError(null)}>{error}</Banner>}
+      {(error || startError) && <Banner tone="error" onDismiss={() => setError(null)}>{error || startError}</Banner>}
       {body}
     </Modal>
   )

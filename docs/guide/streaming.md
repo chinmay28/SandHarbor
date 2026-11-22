@@ -107,8 +107,9 @@ and stores that as `Film.mkv` next to `Film.iso`.
 | What is not carried over | Menus, extras and chapter marks. |
 | The disc image | Left exactly as it is. Play the MKV before you remove the image. |
 
-It is a server job: you can close the dialog, or the browser, and open the
-image again later to see how far it has got or to stop it. One image is
+It is a server job: you can close the dialog, or the browser. A bar over the
+file list follows it from then on, with a **Stop**, and says what it made when
+it is done; opening the image again shows the same run. One image is
 converted at a time. Stopping, or locking the vault, ends the run and keeps
 nothing.
 

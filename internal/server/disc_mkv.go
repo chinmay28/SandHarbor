@@ -185,7 +185,15 @@ func (s *Server) handleMkvStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	job := mkvJob{s: s, v: v, tools: tools, entry: entry, scope: scope, film: film, name: name, title: title}
-	status, outcome := s.mkvs.start(entry.ID, job.run, mkvTimeout)
+	status, outcome := s.mkvs.start(entry.ID, func(ctx context.Context, onProgress func(mkvProgress)) (*mkvResult, error) {
+		result, err := job.run(ctx, onProgress)
+		// Stopped by hand is its own ending, not a failure with a
+		// programmer's name for it.
+		if err != nil && errors.Is(ctx.Err(), context.Canceled) {
+			return nil, errMkvStopped
+		}
+		return result, err
+	}, mkvTimeout)
 	switch outcome {
 	case jobStarted:
 		writeJSON(w, http.StatusAccepted, status)
@@ -208,6 +216,10 @@ type mkvJob struct {
 	name  string
 	title string
 }
+
+// errMkvStopped is how a run that was stopped ends. The page tells it from a
+// failure by these words.
+var errMkvStopped = errors.New("the conversion was stopped")
 
 // mkvProgressEvery is how often a run says where it has got to.
 const mkvProgressEvery = 500 * time.Millisecond

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { COLORS, FONT, formatBytes } from '../theme'
-import { useFilmScan, useLostRestore, useOrphanSweep, useReattach, useThumbMaking } from '../hooks'
+import { useFilmScan, useLostRestore, useMkvConvert, useOrphanSweep, useReattach, useThumbMaking } from '../hooks'
 import { api } from '../api'
 import { isRunClaimed } from '../runClaims'
 import { Banner, Button, Spinner } from './ui'
@@ -8,6 +8,7 @@ import { describeProgress, formatElapsed } from './ScanProgress'
 import { describeRestore, restoreOutcomeText } from './LostParts'
 import { describeFilmScan, filmScanOutcomeText } from './FilmDetails'
 import { describeThumbMaking, thumbOutcomeText } from './ThumbBackfill'
+import { describeMkv, mkvOutcomeText } from './ConvertDisc'
 
 /* The housekeeping that carries on after its dialog is closed, drawn above
    the file list — and what each run came to, until that is dismissed.
@@ -91,6 +92,22 @@ export default function BackgroundRuns({ mobile, onChanged }) {
         changed={(run) => run.result?.made > 0}
         action={() => (
           <Button size="sm" variant="ghost" onClick={() => { api.thumbMakingStop().catch(() => {}) }}>Stop</Button>
+        )}
+        mobile={mobile}
+        onChanged={onChanged}
+      />
+      <JobStrip
+        kind="mkv"
+        useJob={useMkvConvert}
+        title={(status) => `Converting ${status.progress?.file?.split('/').pop() || 'a disc image'} to MKV`}
+        describe={(status, elapsed) => describeMkv(status.progress, elapsed)}
+        outcome={mkvOutcomeText}
+        /* A stopped run is not a failure, and not a success either. */
+        tone={(run) => (run.result ? 'success' : /was stopped/i.test(run.error || '') || !run.error ? 'info' : 'error')}
+        /* The new file is in the listing only once the run has stored it. */
+        changed={(run) => !!run.result}
+        action={() => (
+          <Button size="sm" variant="ghost" onClick={() => { api.mkvStop().catch(() => {}) }}>Stop</Button>
         )}
         mobile={mobile}
         onChanged={onChanged}
