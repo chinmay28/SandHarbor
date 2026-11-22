@@ -79,11 +79,12 @@ as any other film.
 | Downloading | **Download** always gives you the whole `.iso`, never the film cut out of it. |
 | In the browser | Clicking a disc image matched to a film opens the film's page, with **Stream in VLC** and **Close**. It has no **Play** of its own: a browser cannot play a disc. |
 
-Two limits come from serving the disc's clips as they are. A title that plays
-only part of a clip gets the whole clip. And a title made of many clips (some
-discs split a film into dozens) plays them end to end, which most players
-handle, though some then show the wrong running time or seek imprecisely. If a
-disc plays badly this way, remux its main title to MKV instead.
+One limit comes from serving the disc's clips as they are: a title that plays
+only part of a clip gets the whole clip. A title made of many clips (some
+discs split a film into dozens) is sent as one film: each clip keeps its own
+clock on the disc, and the server moves them onto one, so a player shows the
+right running time and seeks across the whole of it. A frame may be dropped
+where one clip meets the next.
 
 ## Watch on a TV
 

@@ -16,9 +16,9 @@
 //
 // What a Title is not: the disc. There are no menus, no extras and no
 // chapters; a playlist that plays part of a clip gets the whole clip; and a
-// title assembled from many clips plays them end to end with whatever
-// timestamps each has, which most players take in their stride and some show
-// as a wrong running time.
+// title assembled from many clips plays them end to end, with their
+// timestamps moved onto one clock (see ts.go), so that a player sees one
+// film of the right length rather than a clock that keeps starting again.
 //
 // A disc image copied straight off a bought disc is encrypted, and Open says
 // so (ErrEncrypted) rather than handing out noise.
@@ -67,6 +67,8 @@ type Title struct {
 	// clip cut to a whole number of packets.
 	extents []udf.Extent
 	size    int64
+	// shifts puts the clips' separate clocks onto one line. See ts.go.
+	shifts []clockShift
 }
 
 // Size is the length in bytes of the transport stream TS returns.
@@ -75,7 +77,9 @@ func (t *Title) Size() int64 { return t.size / sourcePacket * tsPacket }
 // TS returns the title as a transport stream of 188-byte packets, read out
 // of image, which must be the image the title was found in.
 func (t *Title) TS(image io.ReaderAt) *TSReader {
-	return NewTSReader(udf.NewExtentReader(image, t.extents), t.size)
+	r := NewTSReader(udf.NewExtentReader(image, t.extents), t.size)
+	r.shifts = t.shifts
+	return r
 }
 
 // Open finds the main title of the Blu-ray disc image in r, which is size
@@ -134,9 +138,13 @@ func openVolume(vol *udf.Volume, r io.ReaderAt) (*Title, error) {
 		return nil, ErrNoTitle
 	}
 
-	title, names, err := mainPlaylist(vol, clips)
+	title, items, err := mainPlaylist(vol, clips)
 	if err != nil {
 		return nil, err
+	}
+	var names []string
+	for _, item := range items {
+		names = append(names, item.clip)
 	}
 	if title == nil {
 		// No playlist that could be read names a clip that is there. The
@@ -151,13 +159,30 @@ func openVolume(vol *udf.Volume, r io.ReaderAt) (*Title, error) {
 		names = []string{largest}
 	}
 
-	for _, name := range names {
+	// Where the title has got to, in the playlist's 45 kHz ticks, counted
+	// from where its first clip's own clock starts.
+	var elapsed uint64
+	for i, name := range names {
 		entry := clips[name]
 		extents, err := vol.Extents(entry)
 		if err != nil {
 			return nil, err
 		}
 		whole := entry.Size - entry.Size%sourcePacket
+		if len(items) > 1 {
+			// The clip's clock reads its own in time where the title's should
+			// read the first clip's in time plus everything played so far. A
+			// timestamp ticks twice for each of a playlist's.
+			item := items[i]
+			want := uint64(items[0].in) + elapsed
+			title.shifts = append(title.shifts, clockShift{
+				first: title.size / sourcePacket,
+				ticks: (want - uint64(item.in)) * 2 & tsClockMask,
+			})
+			if item.out > item.in {
+				elapsed += uint64(item.out - item.in)
+			}
+		}
 		title.extents = append(title.extents, trim(extents, whole)...)
 		title.size += whole
 		title.Clips = append(title.Clips, entry.Name)
@@ -180,7 +205,7 @@ func openVolume(vol *udf.Volume, r io.ReaderAt) (*Title, error) {
 // with the lower number: the same film in two cuts or two languages is very
 // often two playlists a second apart, and a disc has to be picked from the
 // same way every time.
-func mainPlaylist(vol *udf.Volume, clips map[string]udf.Entry) (*Title, []string, error) {
+func mainPlaylist(vol *udf.Volume, clips map[string]udf.Entry) (*Title, []playItem, error) {
 	dir, err := vol.Lookup("BDMV/PLAYLIST")
 	if errors.Is(err, udf.ErrNotExist) {
 		return nil, nil, nil
@@ -199,7 +224,7 @@ func mainPlaylist(vol *udf.Volume, clips map[string]udf.Entry) (*Title, []string
 
 	var (
 		best      *Title
-		bestClips []string
+		bestClips []playItem
 		bestBytes int64
 	)
 	for _, e := range entries {
@@ -217,7 +242,7 @@ func mainPlaylist(vol *udf.Volume, clips map[string]udf.Entry) (*Title, []string
 		}
 
 		var (
-			names    []string
+			names    []playItem
 			seen     = map[string]bool{}
 			duration time.Duration
 			bytes    int64
@@ -233,7 +258,7 @@ func mainPlaylist(vol *udf.Volume, clips map[string]udf.Entry) (*Title, []string
 				continue
 			}
 			seen[item.clip] = true
-			names = append(names, item.clip)
+			names = append(names, item)
 			duration += item.duration()
 			bytes += clip.Size
 		}
