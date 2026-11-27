@@ -53,7 +53,9 @@ cd apps/firetv && ./gradlew assembleRelease
 # app/build/outputs/apk/release/*.apk
 ```
 
-The release APK is signed with the debug key so it sideloads as it is. Update the
+Every release is signed with the same key, so a new one installs over the old.
+Releases from before that key (signed with a throwaway debug key) are the one
+exception: uninstall such a build once before installing a newer one. Update the
 server and the app together: the app relies on the server's `/api/tv` routes.
 
 ## Make sure the TV can reach the server

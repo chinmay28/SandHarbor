@@ -265,8 +265,10 @@ have no fixture.
 | `.github/workflows/firetv.yml` | PRs and pushes to `main` touching `apps/firetv/**` or `internal/tvdiscover/**` | Unit tests (`testDebugUnitTest`, printing the container matrix), `lintDebug`, `assembleRelease`, a check that `libffmpegJNI.so` is in the APK for both ABIs (an APK without it builds fine and plays DTS in silence), and the APK uploaded as the `sand-tv-apk` artifact |
 | `.github/workflows/release.yml` | Each release | Builds with `-PsandVersionName=<version>` and `-PsandVersionCode=<commit count>`, so each release installs over the last, and attaches it as `sand-tv.apk`: a fixed name, so `…/releases/latest/download/sand-tv.apk` is short enough to type into Downloader |
 
-The release build is signed with the debug key so it sideloads as it stands.
-Publishing to a store would need your own key. A local build is version `dev`,
+Releases are signed with one fixed key, read from the `ANDROID_KEYSTORE_BASE64`
+and `ANDROID_KEYSTORE_PASSWORD` repository secrets (a PKCS12 keystore, alias
+`harbor`, shared by every Harbor app), so each release installs over the last.
+A build without them, any local build included, falls back to the debug key. A local build is version `dev`,
 code 1.
 
 ## API
