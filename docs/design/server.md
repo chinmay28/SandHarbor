@@ -119,8 +119,21 @@ them over: it stores nothing and vouches for no path. The run puts each entry
 through the same `pathSegments` check a dropped folder's `rel-N` gets and
 stores it with `UploadStream`, so an entry is spooled one at a time and disk
 use is the archive plus its largest file. What it may unpack to is capped
-(`MaxExtractSize`, 32 GiB, and 20,000 entries), because the request ceiling
+(`MaxExtractSize`, 256 GiB, and 200,000 entries), because the request ceiling
 bounds what an archive weighs and not what is in it.
+
+A file over the batch budget does not go through `POST /api/files` at all. One
+request is parsed whole and capped at 2 GiB, which left a single larger file —
+a film, a photo service's exported archive — with no way in through the
+browser. It goes up a piece at a time instead (`handlers_pieces.go`): `POST
+/api/uploads` opens it and makes a spool beside the vault, each `PUT` appends a
+piece at the offset it names, and `finish` does to the whole file what the
+multipart upload would have, storing it from the spool or handing the spool
+to an extraction. `piece_uploads.go` is only the reassembly and knows nothing
+of vaults. A piece must start where the file has got to; one that does not is
+answered `409` with how much has arrived, which is how a client whose answer
+was lost resumes without writing a piece twice. Uploads left 30 minutes
+without a piece, and all of them when the vault locks, are removed.
 
 ## Error model
 

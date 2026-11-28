@@ -59,7 +59,11 @@ export default function ExtractRuns({ mobile, onChanged }) {
         : (
           <RunCard
             key={run.id}
-            title={`${run.waiting ? 'Waiting to extract' : 'Extracting'} ${run.name} into ${run.dir}`}
+            /* The name first and in full: archives exported together differ
+               only in their last few characters, and a title cut short with
+               an ellipsis makes three of them one. */
+            title={`${run.waiting ? 'Waiting to extract' : 'Extracting'} ${run.name}`}
+            wrapTitle
             label={extractProgressText(run)}
             fraction={run.waiting ? 0 : extractFraction(run)}
             action={<Button size="sm" variant="ghost" onClick={() => stop(run.id)}>Stop</Button>}

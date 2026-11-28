@@ -2,7 +2,7 @@
    Every call goes to the local server, which is the only thing that ever sees
    plaintext — the browser never touches encryption keys. */
 
-import { isArchive } from './upload.js'
+import { isArchive, sendInPieces } from './upload.js'
 
 class ApiError extends Error {
   constructor(message, code, status) {
@@ -1332,6 +1332,54 @@ export const api = {
   extractRuns: () => request('/api/extracts'),
   stopExtract: (id) => request(`/api/extracts/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
+  /* One file too large for a single request, sent a piece at a time (see
+     goesInPieces in upload.js, and handlers_pieces.go). Opened with what
+     upload() would have put in its form; then the pieces, each retried on its
+     own; then finished, which stores the file — or queues it to be extracted
+     — and answers in the shape upload() does, a result per file, so the
+     caller reads both the same way.
+
+     `onProgress` is given the fraction sent, as upload()'s is. An upload that
+     cannot be completed is given up on the server too, so half a film is not
+     left on its disk until the idle timeout finds it. */
+  async uploadInPieces({ file, path: rel }, path, {
+    overwrite = false, accounts = [], scheme = '', vault = '', extract = false, onProgress,
+  } = {}) {
+    const query = vault ? `?vault=${encodeURIComponent(vault)}` : ''
+    const opened = await request(`/api/uploads${query}`, {
+      method: 'POST',
+      body: {
+        path,
+        name: file.name,
+        rel: rel && rel !== file.name ? rel : undefined,
+        size: file.size,
+        mod: file.lastModified || undefined,
+        overwrite,
+        accounts,
+        scheme: scheme || undefined,
+        extract: (extract && isArchive(file.name)) || undefined,
+      },
+    })
+    const base = `/api/uploads/${encodeURIComponent(opened.id)}`
+    try {
+      await sendInPieces(file, opened.piece_size,
+        (offset, blob, onPart) => putPiece(`${base}?offset=${offset}`, blob, onPart),
+        { onProgress })
+    } catch (err) {
+      fetch(base, { method: 'DELETE', credentials: 'same-origin' }).catch(() => {})
+      throw err
+    }
+
+    /* Read by hand rather than through request(): a file that would not store
+       comes back as a 502 with its own reason inside, which is an answer and
+       not an error to throw away. */
+    const resp = await fetch(`${base}/finish`, { method: 'POST', credentials: 'same-origin' })
+    let payload = {}
+    try { payload = await resp.json() } catch { /* nothing readable */ }
+    if (Array.isArray(payload.results)) return payload
+    throw new ApiError(payload.error || `upload failed (${resp.status})`, payload.code, resp.status)
+  },
+
   /* Uploads go through XMLHttpRequest rather than fetch so the UI can show
      real progress while a large file is being split and scattered.
 
@@ -1409,6 +1457,43 @@ export const api = {
       xhr.send(form)
     })
   },
+}
+
+/* One piece of a file going up in pieces, as the request's own body. XHR for
+   the same reason upload() uses it: progress. Rejects the way sendInPieces
+   expects — with `received` when the server said where the upload has got to,
+   and `fatal` when trying again cannot help. */
+function putPiece(url, blob, onPart) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', url)
+    xhr.withCredentials = true
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable) onPart?.(e.loaded / e.total)
+    })
+    xhr.addEventListener('load', () => {
+      let payload = {}
+      try { payload = JSON.parse(xhr.responseText) } catch { /* not JSON: a proxy's own error page */ }
+      if (xhr.status >= 200 && xhr.status < 300 && typeof payload.received === 'number') {
+        resolve(payload)
+        return
+      }
+      const err = new ApiError(payload.error || `upload failed (${xhr.status})`, payload.code, xhr.status)
+      if (typeof payload.received === 'number') err.received = payload.received
+      // Gone, locked, or refused for what it is: the same piece again will
+      // be answered the same way.
+      err.fatal = [401, 403, 404, 413].includes(xhr.status) || payload.code === 'TOO_LONG'
+      reject(err)
+    })
+    xhr.addEventListener('error', () => reject(new ApiError('network error during upload', 'NETWORK')))
+    xhr.addEventListener('abort', () => {
+      const err = new ApiError('upload cancelled', 'ABORTED')
+      err.fatal = true
+      reject(err)
+    })
+    xhr.send(blob)
+  })
 }
 
 /* How a choice is described to the two endpoints that answer questions about

@@ -33,11 +33,11 @@ import (
 // to. A request is capped at MaxUploadSize, but what is inside an archive is
 // not what it weighs: this is the cap on the other side of the compression, so
 // a few megabytes of zeros cannot ask for a terabyte of somebody's clouds.
-const DefaultMaxExtractSize = 32 << 30 // 32 GiB
+const DefaultMaxExtractSize = 256 << 30 // 256 GiB
 
 // maxExtractEntries caps how many entries one archive may hold — the same
 // ceiling the browser puts on a dropped folder, and for the same reason.
-const maxExtractEntries = 20000
+const maxExtractEntries = 200000
 
 // maxNamedSkips is how many passed-over entries an answer names before it
 // starts counting them instead.
@@ -101,7 +101,14 @@ func (s *Server) queueExtract(v *vault.Vault, x extractor, name string, src io.R
 		discard()
 		return extractRun{}, fmt.Errorf("could not keep the archive to extract it: %w", err)
 	}
+	return s.queueExtractOf(x, name, spool, size, discard)
+}
 
+// queueExtractOf queues an archive that is already in a file of its own, and
+// takes that file over: discard is called when the run is done with it, or at
+// once if the run is refused. An archive that arrived in pieces is already
+// beside the vault, so it comes straight here.
+func (s *Server) queueExtractOf(x extractor, name string, spool io.ReaderAt, size int64, discard func()) (extractRun, error) {
 	run := extractRun{Name: name, Dir: x.root, Vault: string(x.scope), At: extractProgress{Total: size}}
 	return s.extracts.add(run, func(ctx context.Context, onProgress func(extractProgress)) (*extractReport, error) {
 		report, err := x.extract(ctx, spool, size, onProgress)

@@ -31,8 +31,11 @@ Every `sand` command takes these.
 | `--profile` | `$SAND_PROFILE`, else `machine.json` | Pin the [sizing profile](#sizing-to-the-machine): `auto`, `pi5`, `workstation` or `custom` |
 
 The server accepts at most 2 GiB per upload request. The web client sends
-uploads in batches of up to 256 MB, and only a single file larger than that
-goes up in a request of its own.
+uploads in batches of up to 256 MB. A single file larger than that goes up a
+piece at a time (16 MiB each) and is put back together on the server, so a file
+is not limited by the request ceiling: one may be up to 128 GiB, and needs that
+much free disk beside the vault while it arrives. A reverse proxy in front of
+SAND only has to allow a 64 MB request body for this.
 
 ## Environment variables
 

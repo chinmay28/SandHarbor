@@ -99,6 +99,7 @@ func (s *Server) handleSubVaultLock(w http.ResponseWriter, r *http.Request) {
 	s.discs.clear()
 	s.mkvs.stopAll()
 	s.extracts.stopVault(r.PathValue("id"))
+	s.pieces.abortWhere(func(p piecePlan) bool { return string(p.scope) == r.PathValue("id") })
 	writeJSON(w, http.StatusOK, map[string]any{"id": r.PathValue("id"), "unlocked": false})
 }
 
@@ -220,6 +221,7 @@ func (s *Server) handleSubVaultDelete(w http.ResponseWriter, r *http.Request) {
 	s.discs.clear()
 	s.mkvs.stopAll()
 	s.extracts.stopVault(r.PathValue("id"))
+	s.pieces.abortWhere(func(p piecePlan) bool { return string(p.scope) == r.PathValue("id") })
 	writeJSON(w, http.StatusOK, map[string]any{"status": "deleted", "warnings": warnings})
 }
 
