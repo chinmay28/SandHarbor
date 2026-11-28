@@ -117,6 +117,43 @@ export function describePicks({ files, dirs }) {
   return `${folder} and ${loose.length} file${loose.length === 1 ? '' : 's'}`
 }
 
+/* The archives the server can unpack into a folder instead of storing as they
+   are — the same endings, read the same way, as internal/unpack on the other
+   side. Longest first, so "a.tar.gz" loses all of ".tar.gz" and not just the
+   ".gz". */
+const ARCHIVE_ENDINGS = ['.tar.gz', '.tgz', '.zip']
+
+function archiveEnding(name) {
+  const lower = String(name || '').toLowerCase()
+  return ARCHIVE_ENDINGS.find((end) => lower.endsWith(end) && lower.length > end.length) || ''
+}
+
+export function isArchive(name) {
+  return archiveEnding(name) !== ''
+}
+
+/* The folder an archive unpacks into: its name without the ending. */
+export function archiveFolder(name) {
+  const end = archiveEnding(name)
+  return end ? name.slice(0, name.length - end.length) : name
+}
+
+/* The files of a choice that could be unpacked. */
+export function archivePicks({ files }) {
+  return files.filter(({ file }) => isArchive(file.name))
+}
+
+/* What the box that offers to unpack them says. One archive is named, with
+   the folder it would become, because that is the whole of what ticking it
+   changes; several are counted. */
+export function describeExtract(archives) {
+  if (archives.length === 1) {
+    const { name } = archives[0].file
+    return `Extract ${name} into a folder named ${archiveFolder(name)}, instead of storing the archive`
+  }
+  return `Extract the ${archives.length} archives, each into a folder named after it, instead of storing them`
+}
+
 /* How to say what was not sent because the destination already had it. Each
    skipped file matters to whoever chose it, but four hundred of them are a
    wall of text, not a notice — so a few are named and the rest are counted.

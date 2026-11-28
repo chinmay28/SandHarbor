@@ -2,6 +2,8 @@
    Every call goes to the local server, which is the only thing that ever sees
    plaintext — the browser never touches encryption keys. */
 
+import { isArchive } from './upload.js'
+
 class ApiError extends Error {
   constructor(message, code, status) {
     super(message)
@@ -1331,9 +1333,13 @@ export const api = {
      had inside the folder it came from, which is what lets a directory arrive
      as a directory rather than as its files in a heap; `dirs` names the folders
      of that directory that hold no file of their own. A file picked on its own
-     has a path that is just its name and needs neither. */
+     has a path that is just its name and needs neither.
+
+     `extract` asks for the archives among them to be unpacked on the server,
+     each into a folder named after it, rather than stored as they are. */
   upload(picks, path, {
-    overwrite = false, accounts = [], scheme = '', thumbs = [], dirs = [], vault = '', onProgress,
+    overwrite = false, accounts = [], scheme = '', thumbs = [], dirs = [], vault = '', extract = false,
+    onProgress,
   } = {}) {
     return new Promise((resolve, reject) => {
       const form = new FormData()
@@ -1351,6 +1357,7 @@ export const api = {
            numbered like the rest. */
         if (file.lastModified) form.append(`mod-${i}`, String(file.lastModified))
         if (thumbs[i]) form.append(`thumb-${i}`, thumbs[i], 'thumb.jpg')
+        if (extract && isArchive(file.name)) form.append(`extract-${i}`, '1')
       })
       // The corners of the tree no file would make on the way past.
       for (const dir of dirs) form.append('dirs', dir)

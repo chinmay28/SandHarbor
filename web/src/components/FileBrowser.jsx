@@ -456,7 +456,7 @@ export default function FileBrowser({
      is reported per file and the rest carry on — there is no sense in throwing
      away the ninety files that would have worked because the tenth would
      not. */
-  const uploadFiles = useCallback(async (picks, accounts, scheme = '') => {
+  const uploadFiles = useCallback(async (picks, accounts, scheme = '', extract = false) => {
     const batches = batchPicks(picks.files)
     if (!batches.length) return
 
@@ -522,6 +522,7 @@ export default function FileBrowser({
             vault,
             accounts,
             scheme,
+            extract,
             thumbs: thumbnails,
             dirs: folders,
             onProgress: (fraction) => track({
@@ -971,7 +972,7 @@ export default function FileBrowser({
           vaultLabel={vaultLabel}
           onClose={() => setPending(null)}
           onChanged={onRefresh}
-          onUpload={(accounts, scheme) => { setPending(null); uploadFiles(pending, accounts, scheme) }}
+          onUpload={(accounts, scheme, extract) => { setPending(null); uploadFiles(pending, accounts, scheme, extract) }}
         />
       )}
 

@@ -99,7 +99,7 @@ them.
 | Search | Finds a file or folder anywhere in the vault, each hit shown with its folder. Searching inside a folder looks there first and offers to widen to the whole vault. |
 | `+ Folder` | New folder here |
 | `⇅ Machine` | Bring files in from a machine you have an SSH login on, or send files to one |
-| `↑ Upload` | Upload files, or a whole folder (from the picker or by dropping it). Everything under a folder goes up keeping its shape, in batches, so files appear as they land and a file that fails takes down only its own batch. |
+| `↑ Upload` | Upload files, or a whole folder (from the picker or by dropping it). Everything under a folder goes up keeping its shape, in batches, so files appear as they land and a file that fails takes down only its own batch. When the choice includes a `.zip`, `.tar.gz` or `.tgz`, the upload dialog offers to extract it into a folder named after it instead of storing the archive. |
 
 **List or grid.** The grid is built round each file's stored thumbnail, for the
 folder of photographs whose names say nothing. Tiles are square, or two-by-three

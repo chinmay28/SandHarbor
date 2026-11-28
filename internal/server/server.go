@@ -63,6 +63,10 @@ type Server struct {
 	// MaxUploadSize caps a single multipart upload request.
 	MaxUploadSize int64
 
+	// MaxExtractSize caps what one uploaded archive may unpack to. Zero means
+	// DefaultMaxExtractSize.
+	MaxExtractSize int64
+
 	// WebDAV mounts the vault as a WebDAV share at WebDAVPrefix.
 	//
 	// Off by default because it is a second way in, authenticated by the vault

@@ -3,7 +3,7 @@ import { COLORS, FONT, KIND_ICONS, accountColor, formatBytes } from '../theme'
 import { api } from '../api'
 import { Banner, Button, Modal, Spinner } from './ui'
 import { SPACE_QUOTA, spaceLabel, spaceOf, spaceTitle, tightClouds } from '../space'
-import { describePicks, totalBytes } from '../upload'
+import { archivePicks, describeExtract, describePicks, totalBytes } from '../upload'
 
 /* Choosing where a file's shards go, and how it is cut.
 
@@ -547,6 +547,10 @@ export function UploadDestination({
   // changes nothing is cut the way the settings say.
   const [threshold, setThreshold] = useState(() => parseScheme(defaultScheme)?.data ?? null)
   const [remember, setRemember] = useState(false)
+  /* Whether the archives in the choice are unpacked on the way in. Off unless
+     asked: an archive somebody picked is, first of all, a file they picked. */
+  const [extract, setExtract] = useState(false)
+  const archives = useMemo(() => archivePicks(picks), [picks])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -585,7 +589,7 @@ export function UploadDestination({
         await saveDefaults(vault, selected, named ? schemeName(scheme) : '')
         onChanged?.()
       }
-      onUpload(selected, named ? schemeName(scheme) : '')
+      onUpload(selected, named ? schemeName(scheme) : '', extract && archives.length > 0)
     } catch (err) {
       setError(err.message)
       setBusy(false)
@@ -632,6 +636,29 @@ export function UploadDestination({
       </div>
 
       <SpaceNote providers={providers} selected={selected} scheme={scheme} bytes={total} />
+
+      {archives.length > 0 && (
+        <label style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '8px',
+          margin: '10px 0 0',
+          fontFamily: FONT.mono,
+          fontSize: '11px',
+          lineHeight: 1.5,
+          color: COLORS.textDim,
+          cursor: 'pointer',
+          overflowWrap: 'anywhere',
+        }}>
+          <input
+            type="checkbox"
+            checked={extract}
+            onChange={(e) => setExtract(e.target.checked)}
+            style={{ accentColor: COLORS.accent, width: '15px', height: '15px', minHeight: 0, flexShrink: 0, marginTop: '1px' }}
+          />
+          {describeExtract(archives)}
+        </label>
+      )}
 
       <label style={{
         display: 'flex',
