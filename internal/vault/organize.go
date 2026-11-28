@@ -23,8 +23,9 @@ import (
 // one item at a time, from the browser, so a run that stalls halfway has moved
 // exactly what it says it moved and the rest is still where it was. That is the
 // same bargain the bulk actions make (see web/src/components/BulkActions.jsx),
-// and it is why there is no "flatten" endpoint here to half-succeed with no way
-// to say which half.
+// and it is why no endpoint here carries a flatten out, to half-succeed with no
+// way to say which half. The flatten's plan is the server's (see flatten.go);
+// running it is still the browser's.
 //
 // Nothing is contacted, nothing is decrypted beyond what is already open: the
 // index is in memory, and this is a walk of it. It carries no shard placements

@@ -21,7 +21,8 @@ import { MakeThumbnails } from './ThumbBackfill'
 
    Six of them tidy the tree as it stands:
 
-     · Flatten     — bring every file under this folder up into it.
+     · Flatten     — bring every file under this folder up into it, or keep
+                     some levels of folders, counted from either end.
      · By date     — file them the other way instead: 2026/January, from each
                      file's own modified date. The counterpart to flattening,
                      and the answer to the folder flattening leaves behind.
@@ -73,9 +74,9 @@ import { MakeThumbnails } from './ThumbBackfill'
    They live together because they answer the same question — "what can I do to
    this folder?" — and splitting them across three buttons on a phone toolbar
    only meant three places to look. Each of the six is planned from one read —
-   api.survey for four of them, and the duplicate and date questions' own walks
-   for the other two, since hashes and calendars are the whole of what those
-   need and none of the four wants either per file — and then run over endpoints
+   api.survey for three of them, and the duplicate, date and flatten questions'
+   own walks for the other three, since hashes, calendars and where a folder
+   lands are the whole of what those need — and then run over endpoints
    that already existed: create a folder, move a file, delete a file, remove a
    folder, one item at a time, from here. That is the same bargain the bulk
    actions make: a run that stalls on the fortieth of two hundred has moved
@@ -145,7 +146,7 @@ export function OrganizerMenu({ path, automation, repoCount = 0, onClose, onPick
           key: 'flatten',
           glyph: '⇤',
           label: 'Flatten into this folder',
-          hint: 'Bring every file below up to here, then drop the folders they came from',
+          hint: 'Bring every file below up to here — or keep some levels of folders — then drop the ones left empty',
           onSelect: () => onPick('flatten'),
         },
         {
@@ -266,8 +267,8 @@ function describeStanding(automation) {
 
 /* Whatever was chosen, over one reading of the folder.
 
-   The survey is taken here rather than in each of the four tools that plan from
-   it, so that all four are the same request and the same failure, and so that
+   The survey is taken here rather than in each of the three tools that plan from
+   it, so that all three are the same request and the same failure, and so that
    opening one is a spinner in a dialog rather than a dialog that appears
    already wrong. The duplicate finder is handed over whole: it reads a
    different question and draws its own spinner over it. */
@@ -287,13 +288,14 @@ export function OrganizerTool({ tool, path, vault, providers = [], onClose, onDo
      refresh of the listing behind. */
   const dupes = tool === 'dupes'
   const bydate = tool === 'bydate'
+  const flatten = tool === 'flatten'
   const sums = tool === 'sums-verify' || tool === 'sums-compute'
   const snaps = tool === 'snap-take' || tool === 'snap-restore'
   const thumbs = tool === 'thumbs'
   const standing = tool === 'automate' || tool === 'repos' || tool === 'check' || sums || snaps || thumbs
 
   useEffect(() => {
-    if (dupes || bydate || standing) return undefined
+    if (dupes || bydate || flatten || standing) return undefined
     let live = true
     setSurvey(null)
     setError(null)
@@ -301,7 +303,7 @@ export function OrganizerTool({ tool, path, vault, providers = [], onClose, onDo
       .then((resp) => { if (live) setSurvey(resp) })
       .catch((err) => { if (live) setError(err.message) })
     return () => { live = false }
-  }, [path, vault, tool, dupes, bydate, standing])
+  }, [path, vault, tool, dupes, bydate, flatten, standing])
 
   /* A sweep can rebuild files and a refresh writes a new bundle into this
      folder, so in both cases what is on screen is out of date the moment the
@@ -371,6 +373,12 @@ export function OrganizerTool({ tool, path, vault, providers = [], onClose, onDo
     return <ByDate path={path} vault={vault} onClose={onClose} onDone={onDone} />
   }
 
+  /* And so does the flatten, for the same reason: which folders survive, where
+     same-named ones land and what that leaves empty is the server's answer. */
+  if (flatten) {
+    return <Flatten path={path} vault={vault} onClose={onClose} onDone={onDone} />
+  }
+
   if (dupes) {
     return (
       <DuplicatesTool
@@ -394,7 +402,6 @@ export function OrganizerTool({ tool, path, vault, providers = [], onClose, onDo
   }
 
   const shared = { survey, vault, onClose, onDone }
-  if (tool === 'flatten') return <Flatten {...shared} />
   if (tool === 'prune') return <PruneEmpty {...shared} />
   if (tool === 'purge') return <ByType {...shared} mode="remove" />
   return <ByType {...shared} mode="select" onSelect={onSelect} />
@@ -410,7 +417,7 @@ const TITLES = {
 
 /* --- Flatten ---------------------------------------------------------- */
 
-/* Everything below, brought up to here.
+/* Everything below, brought up to here — or only part of the way.
 
    Two files with the same name is not an edge case in this one, it is the
    normal case: a folder per camera, a folder per season, a folder per disc, and
@@ -418,187 +425,301 @@ const TITLES = {
    moves — either numbered the way a desktop file manager numbers a collision,
    or written out with the folders they came from, which is the difference
    between three files called IMG_0001.jpg and one called
-   "2023 - Corfu - IMG_0001.jpg". The plan is built against the names already
-   here as well as against each other, so a moved file never lands on one that
-   was in this folder all along.
+   "2023 - Corfu - IMG_0001.jpg".
 
-   The emptied folders go afterwards, in the same run, deepest first — they are
-   only empty because the moves in front of them worked, and one that is not
-   empty refuses to be removed rather than taking anything with it. */
-function Flatten({ survey, vault, onClose, onDone }) {
+   A tree that is only too deep does not want flattening all the way, so the
+   dialog asks how many levels of folders to keep and which end they are counted
+   from. Nearest this folder, the top of the tree stays and everything deeper
+   collapses up into it. Nearest the files, each file keeps the folders it sits
+   in and those are brought up to here — the only case where two folders of the
+   same name can meet, and so the only one that asks whether to merge them.
+
+   The plan is the server's answer (api.flattenPlan, vault.Flatten) rather than
+   a reading of the survey, as the date sort's is and for the same reason: where
+   a folder lands once same-named ones are merged or kept apart, and which
+   folders that leaves empty, are worth being able to test. It is asked again
+   whenever a choice changes, and the last answer stays on screen until the next
+   arrives so the controls do not jump about under the pointer.
+
+   The run is the date sort's three passes: make the folders, move the files,
+   remove what was emptied, deepest first — and one that is not empty refuses to
+   be removed rather than taking anything with it. */
+function Flatten({ path, vault, onClose, onDone }) {
+  const [keep, setKeep] = useState(0)
+  const [from, setFrom] = useState('top')
+  const [merge, setMerge] = useState(false)
   const [prefix, setPrefix] = useState(false)
   const [prune, setPrune] = useState(true)
   /* Whether the plan is on screen. Off to begin with, because the answer is
      usually a number and occasionally two hundred rows — but one click away,
      because the number is a promise and the rows are the thing itself. */
   const [showing, setShowing] = useState(false)
+  const [plan, setPlan] = useState(null)
+  const [stale, setStale] = useState(false)
+  const [error, setError] = useState(null)
   const [started, setStarted] = useState(null)
 
-  const base = survey.path
-  const moves = useMemo(() => planMoves(survey, prefix), [survey, prefix])
-  const bytes = moves.reduce((sum, m) => sum + m.size, 0)
-  const renamed = moves.filter((m) => m.to !== m.file).length
-  // The folders the files are actually coming out of, which is not the same as
-  // the folders under here — some of those are already empty.
-  const from = new Set(moves.map((m) => m.from)).size
+  useEffect(() => {
+    let live = true
+    setStale(true)
+    setError(null)
+    api.flattenPlan(path, { keep, from, merge, prefix, vault })
+      .then((resp) => { if (live) { setPlan(resp); setStale(false) } })
+      .catch((err) => { if (live) setError(err.message) })
+    return () => { live = false }
+  }, [path, vault, keep, from, merge, prefix])
 
-  const items = useMemo(() => ([
-    ...moves,
-    ...(prune ? deepestFirst(survey.folders).map((f) => ({
-      kind: 'folder',
-      path: f.path,
-      name: relative(f.path, base),
-    })) : []),
-  ]), [moves, prune, survey.folders, base])
+  const moves = plan?.moves || []
+  const emptied = plan?.emptied || []
+  const items = useMemo(() => {
+    if (!plan) return []
+    return [
+      ...plan.folders.filter((f) => !f.exists).map((f) => ({
+        kind: 'mkdir', path: f.path, name: f.label,
+      })),
+      ...plan.moves.map((m) => ({
+        kind: 'file', id: m.id, dir: m.to, to: m.as,
+        name: relative(`${m.dir}/${m.name}`, plan.path),
+      })),
+      ...(prune ? plan.emptied.map((folder) => ({
+        kind: 'folder', path: folder, name: relative(folder, plan.path),
+      })) : []),
+    ]
+  }, [plan, prune])
 
   if (started) {
     return (
       <Run
         title="Flatten this folder"
-        subtitle={base}
+        subtitle={path}
         items={started}
         verb="Moving"
         done="tidied"
         vault={vault}
-        base={base}
+        base={path}
         onClose={onClose}
         onDone={onDone}
       />
     )
   }
 
+  const here = path === '/' ? 'The root of the vault' : path
+  if (error || !plan) {
+    return (
+      <Modal title={TITLES.flatten} subtitle={here} onClose={onClose} width={480}>
+        {error
+          ? <Banner tone="error">{error}</Banner>
+          : <div style={{ padding: '28px', textAlign: 'center' }}><Spinner size={18} /></div>}
+        <Buttons onClose={onClose} />
+      </Modal>
+    )
+  }
+
+  const landing = (m) => (m.to === plan.path ? m.as : `${relative(m.to, plan.path)}/${m.as}`)
+  const renamed = moves.filter((m) => m.as !== m.name).length
+  // The folders the files are actually coming out of, which is not the same as
+  // the folders under here — some of those are already empty.
+  const out = new Set(moves.map((m) => m.dir)).size
+  const leaf = keep > 0 && from === 'leaf'
+  // What only the folders left holding nothing would be, with no file to move:
+  // still worth offering, since it is what a flatten leaves a tree looking like.
+  const only = moves.length === 0 && emptied.length > 0
+
   return (
-    <Modal
-      title="Flatten this folder"
-      subtitle={base === '/' ? 'The root of the vault' : base}
-      onClose={onClose}
-      width={480}
-    >
-      {moves.length === 0 ? (
+    <Modal title={TITLES.flatten} subtitle={here} onClose={onClose} width={480}>
+      {plan.depth === 0 && emptied.length === 0 ? (
         <>
-          <Banner tone="info">
-            {survey.folders.length === 0
-              ? 'There are no folders under this one — it is already flat.'
-              : 'Every file under this folder is already in it. The folders below hold nothing.'}
-          </Banner>
+          <Banner tone="info">Every file under this folder is already in it — it is already flat.</Banner>
           <Buttons onClose={onClose} />
         </>
       ) : (
-        <>
-          <Count
-            lines={[
-              [`${moves.length} file${moves.length === 1 ? '' : 's'}`, `come up from ${from} folder${from === 1 ? '' : 's'}`],
-              [formatBytes(bytes), 'none of which travels — a file records the folder it is in, and its parts stay where they are'],
-            ]}
-          />
+        <div style={{ opacity: stale ? 0.6 : 1 }}>
+          <Levels keep={keep} max={plan.depth} onChange={setKeep} />
+          {keep > 0 && <End from={from} onChange={setFrom} />}
 
-          <Choice
-            checked={prefix}
-            onChange={setPrefix}
-            label="Name each file after the folders it came from"
-            hint={prefix
-              ? `Like “${sample(moves)}” — nothing is numbered unless two files still collide`
-              : `${renamed} name${renamed === 1 ? '' : 's'} would be numbered to avoid a collision`}
-          />
-          <Choice
-            checked={prune}
-            onChange={setPrune}
-            label="Remove the folders left behind"
-            hint="Emptied by the moves above, so nothing is in them to lose. One that still holds something is refused rather than taken."
-          />
+          {moves.length === 0 ? (
+            <Banner tone="info">
+              {plan.depth === 0
+                ? 'Every file under this folder is already in it.'
+                : `No file sits more than ${keep} folder${keep === 1 ? '' : 's'} down, so keeping ${keep} level${keep === 1 ? '' : 's'} moves nothing.`}
+            </Banner>
+          ) : (
+            <Count
+              lines={[
+                [`${moves.length} file${moves.length === 1 ? '' : 's'}`,
+                  `come up from ${out} folder${out === 1 ? '' : 's'}${plan.folders.length > 0
+                    ? `, into ${plan.folders.length} folder${plan.folders.length === 1 ? '' : 's'}` : ''}`],
+                [formatBytes(plan.bytes), 'none of which travels — a file records the folder it is in, and its parts stay where they are'],
+                ...(plan.kept > 0 ? [[`${plan.kept} left`, 'already no deeper than the levels kept']] : []),
+              ]}
+            />
+          )}
 
-          {/* Under the naming rather than over it: the plan is what the two
-              choices above produce, so it is worth reading after they have been
-              made — and it redraws under the tick, which is the clearest thing
-              either choice could say about itself. */}
-          <div style={{ marginBottom: showing ? '10px' : '16px' }}>
-            <Button size="sm" variant="ghost" onClick={() => setShowing(!showing)}>
-              {showing ? '▾ Hide the moves' : `▸ Show all ${moves.length} move${moves.length === 1 ? '' : 's'}`}
-            </Button>
-          </div>
+          {leaf && (
+            <Choice
+              checked={merge}
+              onChange={setMerge}
+              label="Merge folders that have the same name"
+              hint={describeClashes(plan.clashes, merge)}
+            />
+          )}
+          {moves.length > 0 && (
+            <Choice
+              checked={prefix}
+              onChange={setPrefix}
+              label="Name each file after the folders it came from"
+              hint={prefix
+                ? `Like “${sample(moves)}” — nothing is numbered unless two files still collide`
+                : `${renamed} name${renamed === 1 ? '' : 's'} would be numbered to avoid a collision`}
+            />
+          )}
+          {emptied.length > 0 && (
+            <Choice
+              checked={prune}
+              onChange={setPrune}
+              label={`Remove the ${emptied.length} folder${emptied.length === 1 ? '' : 's'} left holding nothing`}
+              hint="Emptied by the moves above, or empty already, so nothing is in them to lose. One that still holds something is refused rather than taken."
+            />
+          )}
 
-          {showing && (
+          {moves.length > 0 && (
+            <div style={{ marginBottom: showing ? '10px' : '16px' }}>
+              <Button size="sm" variant="ghost" onClick={() => setShowing(!showing)}>
+                {showing ? '▾ Hide the moves' : `▸ Show all ${moves.length} move${moves.length === 1 ? '' : 's'}`}
+              </Button>
+            </div>
+          )}
+
+          {/* Under the choices rather than over them: the plan is what they
+              produce, and it redraws under the tick, which is the clearest
+              thing any of them could say about itself. */}
+          {showing && moves.length > 0 && (
             <Moves
-              rows={moves.map((m) => ({ key: m.id, from: m.name, to: m.to, lit: m.to !== m.file }))}
+              rows={moves.map((m) => ({
+                key: m.id,
+                from: relative(`${m.dir}/${m.name}`, plan.path),
+                to: landing(m),
+                lit: m.as !== m.name,
+              }))}
               note={(
                 <>
                   Every name is against the folder as it will be, so nothing here lands on anything
                   else here. A lit name is one the flatten had to change.
-                  {prune && survey.folders.length > 0
-                    && ` Then ${survey.folders.length} folder${survey.folders.length === 1 ? '' : 's'} go, deepest first.`}
+                  {prune && emptied.length > 0
+                    && ` Then ${emptied.length} folder${emptied.length === 1 ? '' : 's'} go, deepest first.`}
                 </>
               )}
             />
           )}
 
           <Actions>
-            <Button variant="primary" onClick={() => setStarted(items)}>
-              Flatten {moves.length} file{moves.length === 1 ? '' : 's'}
-            </Button>
-            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            {(moves.length > 0 || (only && prune)) && (
+              <Button variant="primary" disabled={stale} onClick={() => setStarted(items)}>
+                {moves.length > 0
+                  ? `Flatten ${moves.length} file${moves.length === 1 ? '' : 's'}`
+                  : `Remove ${emptied.length} folder${emptied.length === 1 ? '' : 's'}`}
+              </Button>
+            )}
+            <Button variant="ghost" onClick={onClose}>{moves.length > 0 ? 'Cancel' : 'Close'}</Button>
           </Actions>
-        </>
+        </div>
       )}
     </Modal>
   )
 }
 
-/* Where each file would land, worked out before a single one moves.
-
-   Shallowest first, which is the order the survey comes in, so the file that
-   was already nearest the top keeps its name and the deeper duplicate is the
-   one that gets a number. */
-function planMoves(survey, prefix) {
-  const base = survey.path
-  // Every name this folder already holds, so a file arriving from below can
-  // never land on one that has been sitting here all along.
-  const taken = new Set(survey.files.filter((f) => f.depth === 0).map((f) => f.name.toLowerCase()))
-  const moves = []
-
-  for (const file of survey.files) {
-    if (file.depth === 0) continue
-    /* A prefix is joined with a separator rather than with the slash it had:
-       a name is a leaf, and the server keeps only the leaf of anything with a
-       slash in it — which would silently undo the naming. */
-    const wanted = prefix
-      ? `${relative(file.dir, base).split('/').join(' - ')} - ${file.name}`
-      : file.name
-    const to = unique(wanted, taken)
-    taken.add(to.toLowerCase())
-    moves.push({
-      kind: 'file',
-      id: file.id,
-      from: file.dir,
-      file: file.name,
-      // What the progress line reads: where it is coming from, which is the
-      // only thing that tells two files of the same name apart.
-      name: relative(`${file.dir}/${file.name}`, base),
-      to,
-      size: file.size,
-    })
-  }
-  return moves
+/* What merging would do, or what not merging would, in the one figure that
+   says whether the tick matters at all. */
+function describeClashes(clashes, merge) {
+  if (clashes === 0) return 'No two folders coming up share a name, so this changes nothing here.'
+  const some = `${clashes} folder${clashes === 1 ? '' : 's'}`
+  return merge
+    ? `${some} ${clashes === 1 ? 'joins' : 'join'} another of the same name. Files that then collide are numbered, never overwritten.`
+    : `${some} would be numbered to stay apart from another of the same name, like “cd1 (2)”.`
 }
 
-/* A name nothing else has claimed, numbered the way a desktop file manager
-   numbers one. Compared without case, which is stricter than the index is — a
-   vault that can hold both a.jpg and A.jpg is not a folder anybody wants to
-   look at. */
-function unique(name, taken) {
-  if (!taken.has(name.toLowerCase())) return name
+/* How many levels of folders survive. A stepper rather than a field: the
+   answer is a small number with a known ceiling — the deepest file — and past
+   that ceiling there is nothing left to flatten. */
+function Levels({ keep, max, onChange }) {
+  const step = (label, to, off, name) => (
+    <button
+      type="button"
+      aria-label={name}
+      disabled={off}
+      onClick={() => onChange(to)}
+      style={{
+        width: '38px', minHeight: '38px', flexShrink: 0,
+        background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: '6px',
+        color: off ? COLORS.textMuted : COLORS.text, opacity: off ? 0.5 : 1,
+        fontFamily: FONT.mono, fontSize: '14px', cursor: off ? 'default' : 'pointer',
+      }}
+    >{label}</button>
+  )
 
-  const dot = name.lastIndexOf('.')
-  const stem = dot > 0 ? name.slice(0, dot) : name
-  const ext = dot > 0 ? name.slice(dot) : ''
-  for (let i = 2; i < 1000; i++) {
-    const candidate = `${stem} (${i})${ext}`
-    if (!taken.has(candidate.toLowerCase())) return candidate
-  }
-  return `${stem} (${Date.now()})${ext}`
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontFamily: FONT.sans, fontSize: '12.5px', color: COLORS.text }}>
+          Levels of folders to keep
+        </span>
+        <span style={{
+          display: 'block', marginTop: '3px', fontFamily: FONT.sans,
+          fontSize: '11px', lineHeight: 1.5, color: COLORS.textMuted,
+        }}>
+          {keep === 0
+            ? 'None — every file comes up into this folder'
+            : `The deepest file is ${max} down`}
+        </span>
+      </span>
+      {step('−', keep - 1, keep <= 0, 'Keep one level fewer')}
+      <span
+        aria-live="polite"
+        aria-label={`${keep} level${keep === 1 ? '' : 's'} kept`}
+        style={{
+          width: '26px', textAlign: 'center', fontFamily: FONT.mono,
+          fontSize: '13px', fontWeight: 700, color: COLORS.accentBright,
+        }}
+      >{keep}</span>
+      {step('+', keep + 1, keep >= max, 'Keep one level more')}
+    </div>
+  )
+}
+
+/* Which end the kept levels are counted from. Two buttons, as the scope and
+   the grain are: it is the question the whole answer below is drawn against. */
+function End({ from, onChange }) {
+  const option = (on, label, title) => (
+    <button
+      type="button"
+      onClick={() => onChange(on)}
+      aria-pressed={from === on}
+      title={title}
+      style={{
+        flex: 1,
+        minHeight: '38px',
+        padding: '6px 10px',
+        background: from === on ? COLORS.surfaceRaised : COLORS.bg,
+        border: `1px solid ${from === on ? COLORS.accent : COLORS.border}`,
+        borderRadius: '6px',
+        color: from === on ? COLORS.text : COLORS.textDim,
+        fontFamily: FONT.mono,
+        fontSize: '11.5px',
+        cursor: 'pointer',
+      }}
+    >{label}</button>
+  )
+
+  return (
+    <div style={{ display: 'flex', gap: '6px', marginBottom: '14px' }}>
+      {option('top', 'Nearest this folder', 'The top of the tree stays, and everything deeper collapses up into it')}
+      {option('leaf', 'Nearest the files', 'Each file keeps the folders it sits in, and those are brought up to here')}
+    </div>
+  )
 }
 
 function sample(moves) {
-  const shown = moves[0]?.to || ''
+  const shown = (moves.find((m) => m.as !== m.name) || moves[0])?.as || ''
   return shown.length > 46 ? `${shown.slice(0, 45)}…` : shown
 }
 

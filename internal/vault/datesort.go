@@ -27,8 +27,8 @@ import (
 // it says it moved. There is no "sort by date" endpoint to half-succeed with no
 // way to say which half.
 //
-// It is planned here rather than in the browser, which is where flattening is
-// planned, because the answer is not a rearrangement of the survey: it needs
+// It is planned here rather than in the browser because the answer is not a
+// rearrangement of the survey: it needs
 // each file's own modified time, a calendar, and a simulation of what the tree
 // looks like afterwards to say which folders the sort would leave empty. All
 // three are worth being able to test, and none of them is worth a second
@@ -347,33 +347,11 @@ func freeName(name string, taken map[string]bool) string {
 }
 
 // emptiedBy is every folder under the sorted one left holding nothing at all
-// once the moves are made, deepest first.
-//
-// Deepest first is not presentation: each folder is removed on its own and
-// non-recursively, so a parent can only go after its children have, and a
-// folder whose only contents were empty folders is empty too.
+// once the moves are made, deepest first. See leftEmpty.
 func emptiedBy(m *Manifest, dir string, under []*Entry, lands map[string]string) []string {
-	holds := map[string]bool{}
-	for _, e := range under {
-		for at := lands[e.ID]; below(at, dir); at = CleanDir(path.Dir(at)) {
-			holds[at] = true
-		}
+	at := make([]string, len(under))
+	for i, e := range under {
+		at[i] = lands[e.ID]
 	}
-
-	var out []string
-	for _, f := range m.AllFolders() {
-		if below(f, dir) && !holds[f] {
-			out = append(out, f)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if a, b := depthUnder(out[i], dir), depthUnder(out[j], dir); a != b {
-			return a > b
-		}
-		return out[i] < out[j]
-	})
-	if out == nil {
-		return []string{}
-	}
-	return out
+	return leftEmpty(m.AllFolders(), dir, at)
 }

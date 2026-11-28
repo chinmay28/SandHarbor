@@ -1896,6 +1896,44 @@ func (s *Server) handleFolderDateSort(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, plan)
 }
 
+// handleFolderFlatten answers where every file under a folder would go if the
+// folder were flattened: all the way, or keeping `keep` levels of folders
+// counted from the top (`from=top`, the default) or from each file
+// (`from=leaf`). `merge=1` lets same-named folders brought side by side become
+// one, and `prefix=1` names each moved file after the folders it loses.
+//
+// Read-only, like the date sort above and for the same reason: the browser
+// runs the plan over the endpoints that already existed. See vault.Flatten.
+func (s *Server) handleFolderFlatten(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	dir := q.Get("path")
+	if dir == "" {
+		dir = "/"
+	}
+
+	opts := vault.FlattenOptions{
+		From:   vault.FlattenEnd(q.Get("from")),
+		Merge:  q.Get("merge") == "1",
+		Prefix: q.Get("prefix") == "1",
+	}
+	if raw := q.Get("keep"); raw != "" {
+		keep, err := strconv.Atoi(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "levels to keep must be a whole number", "BAD_REQUEST")
+			return
+		}
+		opts.Keep = keep
+	}
+
+	v, _ := s.Vault()
+	plan, err := v.Flatten(requestScope(r), dir, opts)
+	if err != nil {
+		vaultErrorResponse(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, plan)
+}
+
 // handleFolderStats answers what one folder is holding: how much is under it,
 // in how many files and folders, what those files weigh once split, and which
 // accounts their parts went to.

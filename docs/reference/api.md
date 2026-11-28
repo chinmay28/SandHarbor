@@ -335,7 +335,7 @@ unlocked vault; **quiet** is a session check that does not count as use;
 | GET · DELETE | `/api/folders/erasing` | session | Folder delete progress · stop |
 | POST | `/api/folders/move` | session | Move a folder |
 | GET · POST | `/api/folders/art` | session | Folder picture |
-| GET | `/api/folders/survey` · `/date-sort` · `/stats` · `/duplicates` | session | Read-only folder analyses |
+| GET | `/api/folders/survey` · `/flatten` · `/date-sort` · `/stats` · `/duplicates` | session | Read-only folder analyses |
 | POST | `/api/folders/zip` | session | Mint a folder zip link |
 | GET | `/zip/{token}/{name}` | ticket | Download the zip |
 | POST | `/api/relocate` | session | Move onto other accounts |
@@ -1098,12 +1098,13 @@ it is gone.
 | `GET /api/folders/art` | `?path=&vault=` | `{path, candidates: […], truncated, art?: {id?, film?}}` |
 | `POST /api/folders/art` | `{path, id, vault?}` (`id: ""` clears) | same as GET |
 | `GET /api/folders/survey` | `?path=&vault=` | `{path, files: [{id, name, dir, size, ext, depth}], folders: [{path, name, depth, files, total, bytes}]}` |
+| `GET /api/folders/flatten` | `?path=&keep=<levels>&from=top\|leaf&merge=1&prefix=1&vault=` | `{path, keep, from, merge, prefix, depth, moves: [{id, name, dir, size, to, as}], folders: [{path, label, files, bytes, exists}], bytes, kept, clashes, emptied}` |
 | `GET /api/folders/date-sort` | `?path=&grain=month\|year&deep=1&offset=<minutes east of UTC>&vault=` | `{path, grain, deep, offset, folders: [{path, label, year, month, files, bytes, exists}], moves: [{id, name, dir, size, to, as, modified}], bytes, settled, undated, emptied}` |
 | `GET /api/folders/stats` | `?path=&vault=` | `{path, files, bytes, folders, stored_bytes, clouds, degraded, newest?}` |
 | `GET /api/folders/duplicates` | `?path=&vault=` | `{path, scanned, videos, content, size, name, film}`; each set `{groups: [{key, files, bytes, waste, certain, title?}], files, extra, waste, partial, crowded}` |
 | `POST /api/folders/zip` | `{path, vault?}` | `201 {url: "/zip/<token>/<name>.zip", name, files, folders, bytes, expires_at, expires_in}`; `409 NEEDS_CONVERSION` if anything under it is in the old format |
 
-The survey, date-sort and duplicates endpoints are read-only planners: the
+The survey, flatten, date-sort and duplicates endpoints are read-only planners: the
 browser carries out their plans one item at a time over the move, delete and
 folder endpoints.
 

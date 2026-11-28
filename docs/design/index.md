@@ -185,9 +185,9 @@ Two invariants make that composition safe without the server knowing an
 organizer exists:
 
 - **Names are planned before anything moves.** A folder per camera means
-  `IMG_0001.jpg` in each, so the browser builds the whole target-name set first,
-  against the destination and against each other, and numbers or prefixes the
-  collisions. It joins prefixes with ` - `, because `SanitizeName` keeps only the
+  `IMG_0001.jpg` in each, so the whole target-name set is built first, against
+  the destination and against each other, and collisions are numbered or
+  prefixed. Prefixes are joined with ` - `, because `SanitizeName` keeps only the
   leaf of anything containing a slash. The plan can be shown before it runs
   (`source path → new name`, redrawn per naming choice); past a few hundred rows
   it shows the first and counts the rest.
@@ -203,9 +203,31 @@ converting, re-encrypting and relocating do not; a date sort that restamped what
 it moved would destroy the dates it had just read. Every delete-shaped tool ends
 in the ordinary delete confirmation.
 
+### Flattening
+
+`Vault.Flatten` (`flatten.go`, `GET /api/folders/flatten`) returns the finished
+plan, as the date sort does: folders to make, which file goes where under what
+name, and which folders are left empty. The plan itself is `planFlatten`, a pure
+function over a list of files and a list of folders.
+
+- **`keep` levels of folders survive**, counted from the top (the folders nearest
+  the flattened one stay; deeper files move up to their ancestor at that depth)
+  or from the leaf (each file keeps the last `keep` folders of its path, rebuilt
+  directly under the flattened folder). A file no deeper than `keep` never moves,
+  and every moved file ends no deeper than `keep`, so the tool is idempotent.
+- **Only leaf counting can make two folders meet.** A brought-up folder is
+  identified by the path it came from. With `merge`, every folder wanting a path
+  gets it. Without, the path belongs to the first to take it and later ones are
+  numbered (`cd1 (2)`), while one source folder always gets the same answer, so
+  its files are never split. Folders that keep a file where it is claim their own
+  paths first; a folder the flatten empties does not hold its name against the
+  folders arriving.
+- **Names are never freed by the moves that vacate them**, so the plan holds in
+  any order, including the order a stalled run left behind.
+
 ### Filing by date
 
-The one tool whose plan is not a rearrangement of the survey:
+A plan that is not a rearrangement of the survey either:
 `Vault.DateSort` (`datesort.go`, `GET /api/folders/date-sort`) needs each file's
 modified time, a calendar and a simulation of the tree afterwards, and returns the
 finished plan: folders to make, which file goes where under what name, and which

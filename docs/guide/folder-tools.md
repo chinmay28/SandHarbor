@@ -29,12 +29,40 @@ none of them acts on rows you picked one by one.
 
 | Entry | What it does |
 |---|---|
-| **Flatten into this folder** | Every file below comes up to here. Name collisions are planned before anything moves: numbered the way a desktop file manager numbers them, or, with **Name each file after the folders it came from**, `2023/corfu/IMG_0001.jpg` becomes `2023 - corfu - IMG_0001.jpg`. **Show all N moves** lists every `old → new` with the renamed ones highlighted. **Remove the folders left behind** (on by default) drops the emptied folders afterwards. |
+| **Flatten into this folder** | Every file below comes up to here, or only part of the way: see [Flattening part of the way](#flattening-part-of-the-way). Name collisions are planned before anything moves: numbered the way a desktop file manager numbers them, or, with **Name each file after the folders it came from**, `2023/corfu/IMG_0001.jpg` becomes `2023 - corfu - IMG_0001.jpg`. **Show all N moves** lists every `old → new` with the renamed ones highlighted. **Remove the folders left behind** (on by default) drops the emptied folders afterwards. |
 | **File into folders by date** | The reverse of a flatten, for a camera roll or ten years of statements: files go into `2026/January` (or just `2026`) by the date each was last modified, read in your local time. **This folder** files only what is loose here; **Everything under it** takes the lot and then offers to remove what the moves emptied. |
 | **Remove empty folders** | Every folder under here that holds no file at any depth, deepest first. Each is removed on its own, never recursively, so a folder that turns out to hold something is refused rather than emptied. |
 | **Remove files by type** | Pick the kinds (`.nfo`, `.txt`…, each with a count and size) and erase them, through the same confirmation the delete button uses. |
 | **Select files by type** | Pick kinds and select them instead. Files deeper down join the selection as *"N from folders below"*, and every selection button acts on them. Selecting every `.srt` under a films folder and moving it to `/Subtitles` is two clicks and a folder pick. |
 | **Find duplicates** | See [below](#finding-duplicates). |
+
+### Flattening part of the way
+
+A tree that is only too deep does not want flattening completely. **Levels of
+folders to keep** says how many survive (0 is the plain flatten), and two buttons
+say which end they are counted from. Keeping one level under `Movies`:
+
+| | `Action/Matrix (1999)/Matrix.mkv` | `Action/Matrix (1999)/Subs/en.srt` |
+|---|---|---|
+| **Nearest this folder** | `Action/Matrix.mkv` | `Action/en.srt` |
+| **Nearest the files** | `Matrix (1999)/Matrix.mkv` | `Subs/en.srt` |
+
+Nearest this folder, the top of the tree stays and everything deeper collapses
+up into it. Nearest the files, each file keeps the folders it sits in and those
+are brought up to here. A file already no deeper than the levels kept is left
+where it is, so pressing it twice does nothing the second time.
+
+Only *Nearest the files* can bring two folders of the same name side by side:
+`abba/cd1` and `queen/cd1` both want to be `cd1`. **Merge folders that have the
+same name** decides what happens:
+
+- **Off** (the default): they stay apart, the later one numbered: `cd1` and
+  `cd1 (2)`. A folder that was already here keeps its name.
+- **On**: they become one `cd1`. Names are compared without case. Two files that
+  then collide are numbered (`one (2).flac`) or, with the naming option, called
+  after the folders they lost (`queen - one.flac`). Nothing is overwritten.
+
+The dialog says how many folders meet another of the same name before you choose.
 
 **Filing by date is safe to press twice.** A file already in the folder its date
 names is left where it is, so a second press has nothing to do, and a run that
@@ -47,8 +75,9 @@ after the file, not its folder, so flattening four hundred films is an index
 rewrite and as fast as a rename.
 
 **A run that stalls tells you where.** Each tool reads the folder once
-(`GET /api/folders/survey`, or `GET /api/folders/date-sort` for dates; both walk
-the index and contact nothing). The browser then runs the moves one at a time
+(`GET /api/folders/survey`, or `GET /api/folders/flatten` and
+`GET /api/folders/date-sort` for those two; all walk the index and contact
+nothing). The browser then runs the moves one at a time
 through the ordinary endpoints. A run that fails on the fortieth of two hundred
 has moved thirty-nine and names the one that refused, and running the tool again
 picks up exactly what is left.

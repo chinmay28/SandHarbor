@@ -855,6 +855,10 @@ func (s *Server) Handler() (http.Handler, error) {
 		// makes the folders and moves the files over the endpoints above, one
 		// at a time.
 		"GET /api/folders/date-sort": s.handleFolderDateSort,
+		// Where everything under a folder would go if it were flattened, all
+		// the way or keeping some levels of folders. Read-only, and run by the
+		// browser the same way.
+		"GET /api/folders/flatten": s.handleFolderFlatten,
 		// What a folder is holding, in the few figures its menu shows before
 		// anything is done to it: the size of everything under it, how many
 		// files and folders that is, and which accounts hold the parts. The
