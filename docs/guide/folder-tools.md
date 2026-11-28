@@ -1,14 +1,14 @@
 # Folder tools
 
 `🗂` in the toolbar (**Organize and automate**) acts on the folder you are
-standing in and everything under it. This page covers its entries: six that tidy
+standing in and everything under it. This page covers its entries: seven that tidy
 the tree, three that check whether files still come back right, one that makes
 missing thumbnails, and two for snapshots. It also covers the figures a folder's own menu shows. The two
 standing instructions at the bottom of the menu have pages of their own:
 
 | Entry | Covered in |
 |---|---|
-| Flatten into this folder, File into folders by date, Remove empty folders, Remove files by type, Select files by type, Find duplicates | [Tidying a folder](#tidying-a-folder), [Finding duplicates](#finding-duplicates) |
+| Flatten into this folder, File into folders by date, Fix timestamps, Remove empty folders, Remove files by type, Select files by type, Find duplicates | [Tidying a folder](#tidying-a-folder), [Fixing timestamps](#fixing-timestamps), [Finding duplicates](#finding-duplicates) |
 | Find and fix corrupt files | [Finding corrupt files](#finding-corrupt-files-and-fixing-them) |
 | Check files against their checksums, Calculate missing checksums | [Checksums](#checksums-and-the-ledger) |
 | Make missing thumbnails | [Thumbnails](#making-missing-thumbnails) |
@@ -31,6 +31,7 @@ none of them acts on rows you picked one by one.
 |---|---|
 | **Flatten into this folder** | Every file below comes up to here, or only part of the way: see [Flattening part of the way](#flattening-part-of-the-way). Name collisions are planned before anything moves: numbered the way a desktop file manager numbers them, or, with **Name each file after the folders it came from**, `2023/corfu/IMG_0001.jpg` becomes `2023 - corfu - IMG_0001.jpg`. **Show all N moves** lists every `old → new` with the renamed ones highlighted. **Remove the folders left behind** (on by default) drops the emptied folders afterwards. |
 | **File into folders by date** | The reverse of a flatten, for a camera roll or ten years of statements: files go into `2026/January` (or just `2026`) by the date each was last modified, read in your local time. **This folder** files only what is loose here; **Everything under it** takes the lot and then offers to remove what the moves emptied. |
+| **Fix timestamps** | Gives each file back the date it was made: the one in its name, or the one a camera wrote inside a photo or video. See [below](#fixing-timestamps). |
 | **Remove empty folders** | Every folder under here that holds no file at any depth, deepest first. Each is removed on its own, never recursively, so a folder that turns out to hold something is refused rather than emptied. |
 | **Remove files by type** | Pick the kinds (`.nfo`, `.txt`…, each with a count and size) and erase them, through the same confirmation the delete button uses. |
 | **Select files by type** | Pick kinds and select them instead. Files deeper down join the selection as *"N from folders below"*, and every selection button acts on them. Selecting every `.srt` under a films folder and moving it to `/Subtitles` is two clicks and a folder pick. |
@@ -70,17 +71,75 @@ stopped partway is finished by pressing it again. Files with no modified date ar
 counted and left alone. Destination names are planned first, so nothing lands on
 an existing file.
 
-**Nothing here touches a cloud account except deleting.** A file's parts are named
-after the file, not its folder, so flattening four hundred films is an index
-rewrite and as fast as a rename.
+**Nothing here touches a cloud account except deleting**, and reading the date
+inside a photo, which only reads. A file's parts are named after the file, not
+its folder, so flattening four hundred films is an index rewrite and as fast as a
+rename.
 
 **A run that stalls tells you where.** Each tool reads the folder once
 (`GET /api/folders/survey`, or `GET /api/folders/flatten` and
-`GET /api/folders/date-sort` for those two; all walk the index and contact
-nothing). The browser then runs the moves one at a time
+`GET /api/folders/date-sort` for those two, and `GET /api/folders/timestamps`
+for the timestamps; all walk the index and contact nothing). The browser then runs the moves one at a time
 through the ordinary endpoints. A run that fails on the fortieth of two hundred
 has moved thirty-nine and names the one that refused, and running the tool again
 picks up exactly what is left.
+
+## Fixing timestamps
+
+A file's date in a listing is its modified date, and it is only as good as
+whatever brought the file in. A photo that came through a chat app, a zip or a
+cloud's web page, or was uploaded before SAND Vault kept dates, is dated the day
+it arrived. Ten years of pictures then read as one afternoon, and **File into
+folders by date** files them all into one month.
+
+**Fix timestamps** puts back the date each file was made. It reads it from two
+places:
+
+| Source | What is read | Cost |
+|---|---|---|
+| **The name** | `IMG_20230514_101502.jpg`, `PXL_20230514_101502123.jpg`, `Screenshot 2023-05-14 at 10.15.02.png`, `IMG-20230514-WA0007.jpg`, `2023-05-14 statement.pdf` and the like: year, month, day, with or without a time | None. It is read off the index, and every correction is listed before you agree to it. |
+| **Inside the file** | The date taken in a photo's EXIF (`.jpg`, `.heic`, `.heif`, `.avif`), and the recording date in a video's header (`.mp4`, `.mov`, `.m4v`, `.3gp`) | The start of each file is read back from its clouds, about a second a file. Only files with no date in their name are opened. |
+
+The dialog counts both: how many files have a name that disagrees with their
+date, and how many photos and videos would have to be opened. **Read the date
+taken from inside the photos and videos** is ticked to begin with; untick it to
+fix only what the names say, which contacts no account. **This folder** looks at
+what is loose here, **Everything under it** at the lot.
+
+- **A file is changed only when its date is more than a day out.** A name with
+  no time zone, a camera in another country and a long recording are all a few
+  hours apart at most. A file dated the day it was uploaded is out by months.
+- **Only the modified date changes.** The file stays where it is, with the same
+  parts on the same clouds. The date it was added to the vault is kept as well.
+- **A name that gives only a day** is set to noon of that day.
+- **Dates with no zone are read in your browser's time**, as the listing shows
+  them. A photo that records its zone, and a Pixel's `PXL_` name, which is
+  written in UTC, are read as they are.
+- **Nothing is guessed.** A name that leads with the day or the month
+  (`14-05-2023`), a date in the future, a camera whose clock was never set and a
+  file with no date inside are all left alone and counted.
+- **It is safe to press twice.** A file put right agrees with itself, so a second
+  press finds nothing to do, and a run that stopped is finished by pressing it
+  again.
+
+Fix the timestamps first, then file by date.
+
+### Setting a date yourself
+
+What a file says about itself can be wrong, and sometimes it says nothing: a
+scan of a letter, a camera whose clock was never set, a folder you know is all
+one wedding. Then you can type the date and time in:
+
+- **One file:** its `⋯` menu, **Set date and time**. The field opens on the date
+  the file carries now.
+- **A whole folder:** **Set a date myself…** at the foot of the Fix timestamps
+  dialog, or **Set a date for every file** in a folder's own `⋯` menu. Choose
+  **This folder** or **Everything under it**, each showing how many files that
+  is, and every one of them is given the one date.
+
+The date is read in your browser's time zone. As with the rest of this tool,
+only the modified date changes and no account is contacted. There is no undo:
+the dates the files carried before are replaced.
 
 ## What a folder is holding
 

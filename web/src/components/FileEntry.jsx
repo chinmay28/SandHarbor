@@ -21,6 +21,7 @@ import { KeepHereDialog } from './KeepHere'
 import MoveToFolder from './MoveToFolder'
 import FolderArtPicker from './FolderArt'
 import RenameDialog from './Rename'
+import SetDateDialog from './SetDate'
 
 /* One file or one folder, drawn as a row or as a tile.
 
@@ -73,6 +74,7 @@ export function useFileActions({
   const [rebuilding, setRebuilding] = useState(false)
   const [moving, setMoving] = useState(false)
   const [renaming, setRenaming] = useState(false)
+  const [dating, setDating] = useState(false)
   const [assigning, setAssigning] = useState(false)
   const [sending, setSending] = useState(false)
   const [keeping, setKeeping] = useState(false)
@@ -285,6 +287,13 @@ export function useFileActions({
               onSelect: () => setRenaming(true),
             },
             {
+              key: 'date',
+              glyph: '🕓',
+              label: 'Set date and time',
+              hint: 'Give it the date it should carry, when the one it has is wrong',
+              onSelect: () => setDating(true),
+            },
+            {
               key: 'move',
               glyph: '→',
               label: 'Move to another folder',
@@ -429,6 +438,10 @@ export function useFileActions({
           onClose={() => setRenaming(false)}
           onDone={onRefresh}
         />
+      )}
+
+      {dating && (
+        <SetDateDialog kind="file" file={file} onClose={() => setDating(false)} onDone={onRefresh} />
       )}
 
       {sending && (
@@ -1015,6 +1028,7 @@ function useFolderActions({
   const [relocating, setRelocating] = useState(false)
   const [moving, setMoving] = useState(false)
   const [renaming, setRenaming] = useState(false)
+  const [dating, setDating] = useState(false)
   const [picturing, setPicturing] = useState(false)
   const [assigning, setAssigning] = useState(false)
   const [zipping, setZipping] = useState(false)
@@ -1145,6 +1159,13 @@ function useFolderActions({
               label: 'Rename',
               hint: 'Everything inside it comes along, and nothing is transferred',
               onSelect: () => setRenaming(true),
+            },
+            {
+              key: 'date',
+              glyph: '🕓',
+              label: 'Set a date for every file',
+              hint: 'One date and time for the files in it, or for everything under it',
+              onSelect: () => setDating(true),
             },
             {
               key: 'move',
@@ -1310,6 +1331,16 @@ function useFolderActions({
           path={path}
           vault={vault}
           onClose={() => setRenaming(false)}
+          onDone={onRefresh}
+        />
+      )}
+
+      {dating && (
+        <SetDateDialog
+          kind="folder"
+          path={path}
+          vault={vault}
+          onClose={() => setDating(false)}
           onDone={onRefresh}
         />
       )}

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { COLORS, FONT, formatBytes } from '../theme'
+import { COLORS, FONT, formatBytes, formatDate, formatDay } from '../theme'
 import { api } from '../api'
 import { useIsMobile } from '../hooks'
 import { ActionSheet, Banner, Button, IconButton, Modal, Spinner } from './ui'
@@ -11,6 +11,7 @@ import CheckFiles from './CheckFiles'
 import Checksums from './Checksums'
 import Snapshots from './Snapshots'
 import { MakeThumbnails } from './ThumbBackfill'
+import SetDateDialog from './SetDate'
 
 /* Everything you do to a folder rather than to a row in it.
 
@@ -19,13 +20,16 @@ import { MakeThumbnails } from './ThumbBackfill'
    folder — the jobs nobody does one row at a time because doing them one row at
    a time is the reason they never get done.
 
-   Six of them tidy the tree as it stands:
+   Seven of them tidy the tree as it stands:
 
      · Flatten     — bring every file under this folder up into it, or keep
                      some levels of folders, counted from either end.
      · By date     — file them the other way instead: 2026/January, from each
                      file's own modified date. The counterpart to flattening,
                      and the answer to the folder flattening leaves behind.
+     · Fix timestamps — give each file back the date it was made: the one in
+                     its name, or the one a camera wrote inside a photo or a
+                     video. What filing by date needs to be true first.
      · Empty folders — remove the ones holding nothing, however deep.
      · Remove by type — erase every .txt, or every .nfo, under this folder.
      · Select by type — pick them all instead, and use the selection bar.
@@ -62,7 +66,7 @@ import { MakeThumbnails } from './ThumbBackfill'
                      this folder. See Snapshots.jsx.
 
    Two are standing instructions rather than one-off jobs, and that is the whole
-   difference between the halves: the six above happen when you press them, and
+   difference between the halves: the seven above happen when you press them, and
    these two keep happening afterwards.
 
      · Look after it — check the parts of every file on a schedule, or the
@@ -73,10 +77,11 @@ import { MakeThumbnails } from './ThumbBackfill'
 
    They live together because they answer the same question — "what can I do to
    this folder?" — and splitting them across three buttons on a phone toolbar
-   only meant three places to look. Each of the six is planned from one read —
-   api.survey for three of them, and the duplicate, date and flatten questions'
-   own walks for the other three, since hashes, calendars and where a folder
-   lands are the whole of what those need — and then run over endpoints
+   only meant three places to look. Each of the seven is planned from one read —
+   api.survey for three of them, and the duplicate, date, timestamp and flatten
+   questions' own walks for the other four, since hashes, calendars, the dates
+   in names and where a folder lands are the whole of what those need — and
+   then run over endpoints
    that already existed: create a folder, move a file, delete a file, remove a
    folder, one item at a time, from here. That is the same bargain the bulk
    actions make: a run that stalls on the fortieth of two hundred has moved
@@ -85,12 +90,13 @@ import { MakeThumbnails } from './ThumbBackfill'
    these dialogs shows what it is about to do, counted, before there is a button
    to do it with.
 
-   Nothing here touches a cloud account. Moving a file between folders and
+   Nothing here touches a cloud account, with two exceptions. Moving a file between folders and
    removing an empty folder are both rewrites of the encrypted index, so a
    flatten of four hundred films is as fast as a rename. Deleting is the
-   exception and always was: erasing a file erases its parts from every account
-   holding them, which is why the three tools that delete hand over to the same
-   confirmation the delete button uses. */
+   first exception and always was: erasing a file erases its parts from every
+   account holding them, which is why the three tools that delete hand over to
+   the same confirmation the delete button uses. Reading the date inside a photo
+   is the second, and it only reads. */
 
 /* The button, beside the film one, because both are things done to the folder
    rather than to anything in it.
@@ -116,7 +122,7 @@ export function OrganizerButton({ automation, mobile, onOpen }) {
     <IconButton
       glyph="🗂"
       label="Organize and automate this folder"
-      title={`Flatten it, file it by date, clear out the empty folders, find the duplicates, act on every file of a kind — or have it looked after on a schedule (${summary})`}
+      title={`Flatten it, file it by date, fix its timestamps, clear out the empty folders, find the duplicates, act on every file of a kind — or have it looked after on a schedule (${summary})`}
       size={mobile ? 44 : 32}
       onClick={onOpen}
       style={{ fontSize: mobile ? '15px' : '13px', color: tint }}
@@ -129,7 +135,7 @@ export function OrganizerButton({ automation, mobile, onOpen }) {
    everything else in the toolbar asks a question.
 
    The two standing rows go last and carry their own state in the hint, because
-   that is the difference worth drawing: the six above are things you are about
+   that is the difference worth drawing: the rows above are things you are about
    to do, and these two are things already happening — or not, which is equally
    worth being told at the moment you are looking for them. */
 export function OrganizerMenu({ path, automation, repoCount = 0, onClose, onPick }) {
@@ -139,7 +145,7 @@ export function OrganizerMenu({ path, automation, repoCount = 0, onClose, onPick
   return (
     <ActionSheet
       title="Organize and automate"
-      subtitle={`Six ways to tidy ${here} and everything under it, each counting what it would do before it does any of it — three ways to ask whether the files there still come back right — thumbnails for the pictures that have none — a snapshot of it all to take or to restore — and two standing instructions that keep going afterwards.`}
+      subtitle={`Seven ways to tidy ${here} and everything under it, each counting what it would do before it does any of it — three ways to ask whether the files there still come back right — thumbnails for the pictures that have none — a snapshot of it all to take or to restore — and two standing instructions that keep going afterwards.`}
       onClose={onClose}
       items={[
         {
@@ -155,6 +161,13 @@ export function OrganizerMenu({ path, automation, repoCount = 0, onClose, onPick
           label: 'File into folders by date',
           hint: 'Ten thousand loose files become 2026/January, from the date each was last changed',
           onSelect: () => onPick('bydate'),
+        },
+        {
+          key: 'times',
+          glyph: '🕓',
+          label: 'Fix timestamps',
+          hint: 'Give photos, videos and dated files back the date they were made — from the name, or from what the camera wrote inside',
+          onSelect: () => onPick('times'),
         },
         {
           key: 'prune',
@@ -289,13 +302,14 @@ export function OrganizerTool({ tool, path, vault, providers = [], onClose, onDo
   const dupes = tool === 'dupes'
   const bydate = tool === 'bydate'
   const flatten = tool === 'flatten'
+  const times = tool === 'times'
   const sums = tool === 'sums-verify' || tool === 'sums-compute'
   const snaps = tool === 'snap-take' || tool === 'snap-restore'
   const thumbs = tool === 'thumbs'
   const standing = tool === 'automate' || tool === 'repos' || tool === 'check' || sums || snaps || thumbs
 
   useEffect(() => {
-    if (dupes || bydate || flatten || standing) return undefined
+    if (dupes || bydate || flatten || times || standing) return undefined
     let live = true
     setSurvey(null)
     setError(null)
@@ -303,7 +317,7 @@ export function OrganizerTool({ tool, path, vault, providers = [], onClose, onDo
       .then((resp) => { if (live) setSurvey(resp) })
       .catch((err) => { if (live) setError(err.message) })
     return () => { live = false }
-  }, [path, vault, tool, dupes, bydate, flatten, standing])
+  }, [path, vault, tool, dupes, bydate, flatten, times, standing])
 
   /* A sweep can rebuild files and a refresh writes a new bundle into this
      folder, so in both cases what is on screen is out of date the moment the
@@ -379,6 +393,12 @@ export function OrganizerTool({ tool, path, vault, providers = [], onClose, onDo
     return <Flatten path={path} vault={vault} onClose={onClose} onDone={onDone} />
   }
 
+  /* And the timestamps: which names state a date, and which files would have
+     to be opened to find one, is a reading no survey carries. */
+  if (times) {
+    return <FixTimes path={path} vault={vault} onClose={onClose} onDone={onDone} />
+  }
+
   if (dupes) {
     return (
       <DuplicatesTool
@@ -410,6 +430,7 @@ export function OrganizerTool({ tool, path, vault, providers = [], onClose, onDo
 const TITLES = {
   flatten: 'Flatten this folder',
   bydate: 'File into folders by date',
+  times: 'Fix timestamps',
   prune: 'Remove empty folders',
   purge: 'Remove files by type',
   pick: 'Select files by type',
@@ -1081,6 +1102,298 @@ function Calendar({ folders }) {
         </div>
       ))}
     </div>
+  )
+}
+
+/* --- Timestamps -------------------------------------------------------- */
+
+/* The date each file was made, put back.
+
+   A file has one date of its own here, its modified date, and it is only as
+   good as whatever brought the file in. A photo that came through a chat app, a
+   zip, a cloud's web page — or an upload from before the vault kept dates — is
+   dated the day it arrived, and ten years of pictures read as one afternoon.
+   The date it was taken is usually still there twice: in a name like
+   IMG_20230514_101502.jpg, and inside the file, where the camera wrote it.
+
+   So the plan comes in two halves, and they cost differently. The names are
+   read off the index, and the dialog shows every one of those corrections
+   before there is a button: what the file says now, and what its name says.
+   The photos and videos whose names say nothing have to be opened, which is
+   the one thing under this menu besides deleting that contacts an account — it
+   reads the start of each file from its clouds — and what is inside cannot be
+   shown beforehand, only counted afterwards. It is a tick of its own for that
+   reason, and on to begin with because it is what somebody with a camera roll
+   came for.
+
+   Either way a file is only touched when its date is more than a day from the
+   one it states. Anything closer is a time zone or a long recording, not a
+   wrong date, and the fault this exists for is out by months. That is also
+   what makes it safe to press twice: a file put right agrees with itself, so
+   the second press finds it settled.
+
+   The run is batches over one endpoint: a few hundred names to a request, a
+   handful of files to open to a request, each answering with what it did. */
+function FixTimes({ path, vault, onClose, onDone }) {
+  const [deep, setDeep] = useState(false)
+  const [inside, setInside] = useState(true)
+  const [showing, setShowing] = useState(false)
+  const [plan, setPlan] = useState(null)
+  const [error, setError] = useState(null)
+  const [started, setStarted] = useState(null)
+  /* The way out when what can be read is wrong, or there is nothing to read:
+     one date, typed in, for every file. See SetDate.jsx. */
+  const [typing, setTyping] = useState(false)
+
+  useEffect(() => {
+    let live = true
+    setPlan(null)
+    setError(null)
+    api.timePlan(path, { deep, vault })
+      .then((resp) => { if (live) setPlan(resp) })
+      .catch((err) => { if (live) setError(err.message) })
+    return () => { live = false }
+  }, [path, vault, deep])
+
+  if (typing) {
+    return <SetDateDialog kind="folder" path={path} vault={vault} onClose={onClose} onDone={onDone} />
+  }
+
+  if (started) {
+    return (
+      <TimeRun title={TITLES.times} subtitle={path} steps={started} onClose={onClose} onDone={onDone} />
+    )
+  }
+
+  const here = path === '/' ? 'The root of the vault' : path
+  if (error || !plan) {
+    return (
+      <Modal title={TITLES.times} subtitle={here} onClose={onClose} width={480}>
+        {error
+          ? <Banner tone="error">{error}</Banner>
+          : <div style={{ padding: '28px', textAlign: 'center' }}><Spinner size={18} /></div>}
+        <Buttons onClose={onClose} />
+      </Modal>
+    )
+  }
+
+  const named = plan.fixes.length
+  const openable = plan.readable.length
+  const reading = inside && openable > 0
+  const total = named + (reading ? openable : 0)
+  const files = (n) => `${n} file${n === 1 ? '' : 's'}`
+  const shots = openable === 1 ? '1 photo or video' : `${openable} photos and videos`
+
+  return (
+    <Modal title={TITLES.times} subtitle={here} onClose={onClose} width={480}>
+      <Scope deep={deep} onChange={setDeep} />
+
+      {named + openable === 0 ? (
+        <Banner tone="info">{nothingToFix(plan)}</Banner>
+      ) : (
+        <>
+          <Count
+            lines={[
+              ...(named > 0 ? [[files(named),
+                `${named === 1 ? 'has' : 'have'} a date in ${named === 1 ? 'its' : 'their'} name that ${named === 1 ? 'its' : 'their'} modified date is more than a day from`]] : []),
+              ...(openable > 0 ? [[shots,
+                `${openable === 1 ? 'has' : 'have'} no date in ${openable === 1 ? 'its' : 'their'} name — the date ${openable === 1 ? 'it was' : 'each was'} taken is inside the file`]] : []),
+              ...(plan.settled + plan.unknown > 0 ? [[`${plan.settled + plan.unknown} left`, describeUntimed(plan)]] : []),
+            ]}
+          />
+
+          {openable > 0 && (
+            <Choice
+              checked={inside}
+              onChange={setInside}
+              label={`Read the date taken from inside the ${shots}`}
+              hint="Opens the start of each one from its clouds, which takes about a second a file — the only step here that contacts an account, and it only reads. A file is corrected when its date is more than a day from the one inside it, and left alone when it carries none."
+            />
+          )}
+
+          {named > 0 && (
+            <div style={{ marginBottom: showing ? '10px' : '16px' }}>
+              <Button size="sm" variant="ghost" onClick={() => setShowing(!showing)}>
+                {showing ? '▾ Hide the dates' : `▸ Show all ${named} date${named === 1 ? '' : 's'} read from names`}
+              </Button>
+            </div>
+          )}
+
+          {showing && named > 0 && (
+            <Moves
+              rows={plan.fixes.map((fix) => ({
+                key: fix.id,
+                from: relative(`${fix.dir}/${fix.name}`, plan.path),
+                to: `${fix.day_only ? formatDay(fix.to) : formatDate(fix.to)} (${fix.undated ? 'had no date' : `was ${formatDay(fix.was)}`})`,
+                lit: true,
+              }))}
+              note="Each file, the date its name states, and the date it carries now. A name that gives only a day is set to noon of it. Nothing but the modified date changes: the file stays where it is, as it is."
+            />
+          )}
+
+          <Actions>
+            <Button
+              variant="primary"
+              disabled={total === 0}
+              onClick={() => setStarted(timeSteps(plan, reading))}
+            >
+              {reading ? `Check and fix ${files(total)}` : `Fix ${files(total)}`}
+            </Button>
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          </Actions>
+        </>
+      )}
+
+      {named + openable === 0 && <Buttons onClose={onClose} />}
+
+      <div style={{
+        marginTop: '16px', paddingTop: '12px', borderTop: `1px solid ${COLORS.border}`,
+        display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+      }}>
+        <span style={{
+          flex: 1, minWidth: '180px', fontFamily: FONT.sans, fontSize: '11px',
+          lineHeight: 1.5, color: COLORS.textMuted,
+        }}>
+          Know the date better than the files do? Set one for all of them, or
+          for a single file from its ⋯ menu.
+        </span>
+        <Button size="sm" variant="ghost" onClick={() => setTyping(true)}>Set a date myself…</Button>
+      </div>
+    </Modal>
+  )
+}
+
+/* Why there is nothing to do, which is only sometimes an empty folder. */
+function nothingToFix(plan) {
+  const where = plan.deep ? 'under this folder' : 'in this folder'
+  if (plan.settled > 0 && plan.unknown === 0) {
+    return `Every file ${where} with a date in its name already carries it.`
+  }
+  if (plan.settled + plan.unknown > 0) {
+    return `Nothing ${where} needs fixing: ${describeUntimed(plan)}.`
+  }
+  return `There are no files ${where}.`
+}
+
+/* What is not being touched, and which of the two reasons applies. */
+function describeUntimed(plan) {
+  const parts = []
+  if (plan.settled > 0) {
+    parts.push(`${plan.settled} already dated as ${plan.settled === 1 ? 'its name says' : 'their names say'}`)
+  }
+  if (plan.unknown > 0) {
+    parts.push(`${plan.unknown} with no date in the name and none to read inside`)
+  }
+  return parts.join(', and ')
+}
+
+/* How many names go in one request, and how many files are opened in one. The
+   first is an index write whatever its size. The second is a fetch per file,
+   so a batch is small enough that the bar keeps moving and a stall costs
+   little. */
+const TIMES_PER_REQUEST = 200
+const READS_PER_REQUEST = 8
+
+/* The plan in the pieces it is sent in: the names first, since they are
+   certain and instant, then the files to open. */
+function timeSteps(plan, reading) {
+  const steps = []
+  for (let i = 0; i < plan.fixes.length; i += TIMES_PER_REQUEST) {
+    const rows = plan.fixes.slice(i, i + TIMES_PER_REQUEST)
+    steps.push({
+      set: rows.map((fix) => ({ id: fix.id, modified: fix.to })),
+      read: [],
+      span: rows.length,
+      label: rows[0].name,
+      name: rows.length > 1 ? `${rows.length} files` : rows[0].name,
+    })
+  }
+  const opened = reading ? plan.readable : []
+  for (let i = 0; i < opened.length; i += READS_PER_REQUEST) {
+    const rows = opened.slice(i, i + READS_PER_REQUEST)
+    steps.push({
+      set: [],
+      read: rows.map((file) => file.id),
+      span: rows.length,
+      label: rows[0].name,
+      name: rows.length > 1 ? `${rows.length} files` : rows[0].name,
+    })
+  }
+  return steps
+}
+
+/* The run, and what it came to. Counted from the answers rather than from the
+   steps, because a batch that lands can still hold a file that could not be
+   read, and a file opened and found right is not a file fixed. */
+function TimeRun({ title, subtitle, steps, onClose, onDone }) {
+  const tally = useRef({ fixed: 0, settled: 0, undated: 0, failed: [] })
+  const total = useMemo(() => steps.reduce((sum, step) => sum + step.span, 0), [steps])
+
+  const run = useRun(steps, async (step) => {
+    const resp = await api.fixTimes({ set: step.set, read: step.read })
+    const t = tally.current
+    t.fixed += resp?.fixed || 0
+    t.settled += resp?.settled || 0
+    t.undated += resp?.undated || 0
+    t.failed.push(...(resp?.failed || []))
+    const gone = (resp?.missing || []).length
+    if (gone > 0) t.failed.push(`${gone} file${gone === 1 ? ' is' : 's are'} no longer in the vault`)
+    return null
+  }, onDone)
+
+  const began = useRef(false)
+  useEffect(() => {
+    if (began.current) return
+    began.current = true
+    run.start()
+    // Taken once when the dialog mounts, as the other runs are.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const reached = steps.slice(0, Math.max(0, run.at)).reduce((sum, step) => sum + step.span, 0)
+  const step = steps[Math.max(0, run.at)]
+  const t = tally.current
+  const lines = run.done ? [...run.done.failures, ...t.failed] : []
+
+  return (
+    <Modal title={title} subtitle={subtitle} onClose={run.done ? onClose : undefined} width={480}>
+      {run.done ? (
+        <>
+          <Banner tone={lines.length > 0 ? 'warn' : 'success'}>
+            {t.fixed === 0
+              ? 'No timestamp needed changing.'
+              : `${t.fixed} timestamp${t.fixed === 1 ? '' : 's'} fixed.`}
+            {t.settled > 0 && ` ${t.settled} already agreed with the date inside.`}
+            {t.undated > 0 && ` ${t.undated} carr${t.undated === 1 ? 'ies' : 'y'} no date inside and ${t.undated === 1 ? 'was' : 'were'} left alone.`}
+            {lines.length > 0 && ' The rest are untouched — fixing again picks up exactly what is left.'}
+          </Banner>
+          {lines.length > 0 && (
+            <div style={{ maxHeight: '180px', overflowY: 'auto', marginBottom: '4px' }}>
+              <Banner tone="error">{lines.map((line, i) => <div key={i}>{line}</div>)}</Banner>
+            </div>
+          )}
+          <Actions>
+            <Button variant="primary" onClick={onClose}>Done</Button>
+          </Actions>
+        </>
+      ) : (
+        <>
+          <Meter
+            count={Math.min(total, reached + 1)}
+            total={total}
+            verb={step?.read.length ? 'Reading' : 'Fixing'}
+            label={step?.label}
+          />
+          <p style={{
+            margin: 0, fontFamily: FONT.sans, fontSize: '11.5px',
+            color: COLORS.textMuted, lineHeight: 1.6,
+          }}>
+            Only each file's modified date changes. Each batch is whole once
+            it answers, so nothing is left half done.
+          </p>
+        </>
+      )}
+    </Modal>
   )
 }
 

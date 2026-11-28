@@ -335,7 +335,8 @@ unlocked vault; **quiet** is a session check that does not count as use;
 | GET · DELETE | `/api/folders/erasing` | session | Folder delete progress · stop |
 | POST | `/api/folders/move` | session | Move a folder |
 | GET · POST | `/api/folders/art` | session | Folder picture |
-| GET | `/api/folders/survey` · `/flatten` · `/date-sort` · `/stats` · `/duplicates` | session | Read-only folder analyses |
+| GET | `/api/folders/survey` · `/flatten` · `/date-sort` · `/timestamps` · `/stats` · `/duplicates` | session | Read-only folder analyses |
+| POST | `/api/folders/timestamps` | session | Set modified times, or read them from inside photos and videos |
 | POST | `/api/folders/zip` | session | Mint a folder zip link |
 | GET | `/zip/{token}/{name}` | ticket | Download the zip |
 | POST | `/api/relocate` | session | Move onto other accounts |
@@ -1100,13 +1101,27 @@ it is gone.
 | `GET /api/folders/survey` | `?path=&vault=` | `{path, files: [{id, name, dir, size, ext, depth}], folders: [{path, name, depth, files, total, bytes}]}` |
 | `GET /api/folders/flatten` | `?path=&keep=<levels>&from=top\|leaf&merge=1&prefix=1&vault=` | `{path, keep, from, merge, prefix, depth, moves: [{id, name, dir, size, to, as}], folders: [{path, label, files, bytes, exists}], bytes, kept, clashes, emptied}` |
 | `GET /api/folders/date-sort` | `?path=&grain=month\|year&deep=1&offset=<minutes east of UTC>&vault=` | `{path, grain, deep, offset, folders: [{path, label, year, month, files, bytes, exists}], moves: [{id, name, dir, size, to, as, modified}], bytes, settled, undated, emptied}` |
+| `GET /api/folders/timestamps` | `?path=&deep=1&offset=<minutes east of UTC>&vault=` | `{path, deep, offset, fixes: [{id, name, dir, size, was, to, undated?, day_only?}], readable: [{id, name, dir, size}], settled, unknown}` |
+| `POST /api/folders/timestamps` | `{set?: [{id, modified}], read?: [id], offset?}`; at most 5000 to set and 32 to read | `{fixed, settled, undated, missing: [id], failed: ["path: reason"]}` |
 | `GET /api/folders/stats` | `?path=&vault=` | `{path, files, bytes, folders, stored_bytes, clouds, degraded, newest?}` |
 | `GET /api/folders/duplicates` | `?path=&vault=` | `{path, scanned, videos, content, size, name, film}`; each set `{groups: [{key, files, bytes, waste, certain, title?}], files, extra, waste, partial, crowded}` |
 | `POST /api/folders/zip` | `{path, vault?}` | `201 {url: "/zip/<token>/<name>.zip", name, files, folders, bytes, expires_at, expires_in}`; `409 NEEDS_CONVERSION` if anything under it is in the old format |
 
-The survey, flatten, date-sort and duplicates endpoints are read-only planners: the
-browser carries out their plans one item at a time over the move, delete and
-folder endpoints.
+The survey, flatten, date-sort, timestamps (`GET`) and duplicates endpoints are
+read-only planners: the browser carries out their plans one item at a time over
+the move, delete and folder endpoints.
+
+`GET /api/folders/timestamps` lists, from the index alone, the files whose name
+states a date more than a day from their modified time (`fixes`, each with the
+time `to` give it) and the photos and videos with no date in their name
+(`readable`). `POST` carries out a batch: `set` records the given modified times
+in one index write, and `read` opens each file, reads the date in its EXIF or
+movie header, and corrects it if the stored time is more than a day out. In the
+answer, `fixed` counts entries changed, `settled` files read and found right,
+and `undated` files read that carry no date. Only `modified_at` ever changes.
+`offset` is the zone a date with none of its own is read in. `set` takes any
+time, so it is also how a date typed in by hand is applied, to one file or to
+every file in a folder.
 
 #### GET /zip/{token}/{name}
 

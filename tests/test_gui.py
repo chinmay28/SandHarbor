@@ -13,6 +13,7 @@ browser on the machine.
 import datetime
 import os
 import re
+import struct
 import time
 
 import pytest
@@ -2438,6 +2439,153 @@ class TestFileIntoFoldersByDate:
         )).to_be_visible(timeout=20000)
         expect(dialog.get_by_role("button", name=re.compile(r"^File \d"))).to_have_count(0)
         dialog.get_by_text("Close", exact=True).click()
+
+
+class TestFixTimestamps:
+    """Organize and automate → Fix timestamps: a file dated the day it arrived
+    is given back the date it was made.
+
+    Two files, one for each place the date is read from: a name that states it,
+    and a photograph that carries it inside. Both are uploaded dated 2021, which
+    is what a download or a chat app does to a picture taken in 2019.
+    """
+
+    @staticmethod
+    def _photo_taken(when):
+        """The start of a JPEG whose EXIF says when it was taken."""
+        text = when.strftime("%Y:%m:%d %H:%M:%S").encode() + b"\x00"
+        # A TIFF header, a first directory pointing at the EXIF one, and the
+        # EXIF directory holding DateTimeOriginal.
+        tiff = b"II*\x00" + struct.pack("<I", 8)
+        tiff += struct.pack("<H", 1) + struct.pack("<HHII", 0x8769, 4, 1, 26) + struct.pack("<I", 0)
+        tiff += struct.pack("<H", 1) + struct.pack("<HHII", 0x9003, 2, len(text), 44) + struct.pack("<I", 0)
+        tiff += text
+        body = b"Exif\x00\x00" + tiff
+        return (b"\xff\xd8\xff\xe1" + struct.pack(">H", len(body) + 2) + body
+                + b"\xff\xda\x00\x02" + b"\x55" * 512)
+
+    def _upload_arrived(self, app, tmp_path, name, data):
+        source = tmp_path / name
+        source.write_bytes(data)
+        stamp = time.mktime(datetime.datetime(2021, 3, 2, 9, 0).timetuple())
+        os.utime(source, (stamp, stamp))
+        upload_and_settle(app, source)
+
+    def _open_tool(self, app):
+        app.locator('button[aria-label="Organize and automate this folder"]').click()
+        app.get_by_role("button", name=re.compile("Fix timestamps")).click()
+        dialog = app.get_by_role("dialog", name="Fix timestamps")
+        dialog.wait_for(timeout=20000)
+        return dialog
+
+    def test_dates_come_back_from_the_name_and_from_inside_the_photo(self, app, tmp_path, server):
+        make_folder(app, "arrived")
+        app.get_by_text("arrived").first.click()
+        app.wait_for_load_state("networkidle")
+
+        self._upload_arrived(app, tmp_path, "IMG_20190704_101502.txt", b"named")
+        self._upload_arrived(app, tmp_path, "IMG_0042.jpg",
+                             self._photo_taken(datetime.datetime(2019, 1, 14, 9, 30, 0)))
+        self._upload_arrived(app, tmp_path, "notes.txt", b"nothing to go on")
+
+        dialog = self._open_tool(app)
+
+        # The plan: one name that disagrees, one photo to open, one file with
+        # nothing to go on.
+        expect(dialog.get_by_text("1 file", exact=True)).to_be_visible(timeout=20000)
+        expect(dialog.get_by_text("1 photo or video", exact=True)).to_be_visible()
+        expect(dialog.get_by_text("1 left", exact=True)).to_be_visible()
+
+        # The name's correction is on show before anything is pressed.
+        dialog.get_by_role("button", name=re.compile("Show all 1 date")).click()
+        expect(dialog.get_by_text(re.compile(r"IMG_20190704_101502\.txt"))).to_be_visible()
+
+        dialog.get_by_role("button", name="Check and fix 2 files").click()
+        app.wait_for_selector("text=2 timestamps fixed.", timeout=60000)
+        app.get_by_role("dialog").get_by_role("button", name="Done").click()
+
+        # The index says what the files said: 2019, both of them, and the one
+        # with no date still the day it arrived.
+        files = requests.get(f"{server}/api/files", params={"path": "/arrived"},
+                             cookies={c["name"]: c["value"] for c in app.context.cookies()},
+                             timeout=20).json()["files"]
+        years = {f["name"]: f["modified_at"][:4] for f in files}
+        assert years == {
+            "IMG_20190704_101502.txt": "2019",
+            "IMG_0042.jpg": "2019",
+            "notes.txt": "2021",
+        }
+
+        # Pressed again, the name is settled and the photo agrees with itself.
+        app.wait_for_timeout(500)
+        dialog = self._open_tool(app)
+        expect(dialog.get_by_text("1 file", exact=True)).to_have_count(0, timeout=20000)
+        dialog.get_by_role("button", name="Check and fix 1 file").click()
+        app.wait_for_selector("text=No timestamp needed changing.", timeout=60000)
+        expect(app.get_by_text("1 already agreed with the date inside.", exact=False)).to_be_visible()
+        app.get_by_role("dialog").get_by_role("button", name="Done").click()
+
+    def test_names_alone_contact_nothing_and_say_so(self, app, tmp_path):
+        make_folder(app, "named-only")
+        app.get_by_text("named-only").first.click()
+        app.wait_for_load_state("networkidle")
+        self._upload_arrived(app, tmp_path, "2019-07-04 statement.txt", b"statement")
+
+        dialog = self._open_tool(app)
+        # No photo to open, so no tick to offer and a plain button.
+        expect(dialog.get_by_role("checkbox")).to_have_count(0)
+        dialog.get_by_role("button", name="Fix 1 file").click()
+        app.wait_for_selector("text=1 timestamp fixed.", timeout=60000)
+        app.get_by_role("dialog").get_by_role("button", name="Done").click()
+
+        app.wait_for_timeout(500)
+        dialog = self._open_tool(app)
+        expect(dialog.get_by_text(
+            "Every file in this folder with a date in its name already carries it."
+        )).to_be_visible(timeout=20000)
+        dialog.get_by_text("Close", exact=True).click()
+
+
+    def _years(self, app, server, folder):
+        files = requests.get(f"{server}/api/files", params={"path": folder},
+                             cookies={c["name"]: c["value"] for c in app.context.cookies()},
+                             timeout=20).json()["files"]
+        return {f["name"]: f["modified_at"][:4] for f in files}
+
+    def test_a_date_can_be_typed_in_for_one_file(self, app, tmp_path, server):
+        """What is read can be wrong, and then the person is the only source."""
+        make_folder(app, "typed-one")
+        app.get_by_text("typed-one").first.click()
+        app.wait_for_load_state("networkidle")
+        self._upload_arrived(app, tmp_path, "letter.txt", b"a scan")
+        self._upload_arrived(app, tmp_path, "other.txt", b"left alone")
+
+        app.locator('button[aria-label="Actions for letter.txt"]').click()
+        app.get_by_text("Set date and time", exact=True).click()
+        dialog = app.get_by_role("dialog", name="Set date and time")
+        dialog.get_by_label("Date and time").fill("1998-06-12T14:30")
+        dialog.get_by_role("button", name="Set date").click()
+        dialog.wait_for(state="detached", timeout=20000)
+
+        assert self._years(app, server, "/typed-one") == {"letter.txt": "1998", "other.txt": "2021"}
+
+    def test_a_date_can_be_typed_in_for_the_whole_folder(self, app, tmp_path, server):
+        make_folder(app, "typed-all")
+        app.get_by_text("typed-all").first.click()
+        app.wait_for_load_state("networkidle")
+        self._upload_arrived(app, tmp_path, "one.txt", b"one")
+        self._upload_arrived(app, tmp_path, "two.txt", b"two")
+
+        dialog = self._open_tool(app)
+        dialog.get_by_role("button", name="Set a date myself…").click()
+        dialog = app.get_by_role("dialog", name="Set a date for every file")
+        expect(dialog.get_by_role("button", name="This folder · 2")).to_be_visible(timeout=20000)
+        dialog.get_by_label("Date and time").fill("2005-09-17T16:00")
+        dialog.get_by_role("button", name="Set the date of 2 files").click()
+        expect(dialog.get_by_text(re.compile("2 files now dated"))).to_be_visible(timeout=20000)
+        dialog.get_by_role("button", name="Done").click()
+
+        assert self._years(app, server, "/typed-all") == {"one.txt": "2005", "two.txt": "2005"}
 
 
 class TestSearch:

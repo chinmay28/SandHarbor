@@ -790,6 +790,24 @@ export const api = {
       + `&grain=${encodeURIComponent(grain)}${deep ? '&deep=1' : ''}`
       + `&offset=${offset}${vaultParam(vault)}`),
 
+  /* Which files under a folder are dated the day they arrived rather than the
+     day they were made. `fixes` are the ones whose name states a date their
+     modified time is more than a day from, each with the time it would be
+     given; `readable` are the pictures and videos with no date in their name,
+     whose date is inside the file. Read-only, a walk of the index. `offset` is
+     this browser's distance from UTC, since a name's clock is a wall clock. */
+  timePlan: (path, { deep = false, offset = -new Date().getTimezoneOffset(), vault = '' } = {}) =>
+    request(`/api/folders/timestamps?path=${encodeURIComponent(path)}`
+      + `${deep ? '&deep=1' : ''}&offset=${offset}${vaultParam(vault)}`),
+
+  /* One batch of that plan. `set` is rows of `fixes` as {id, modified}; `read`
+     is IDs from `readable`, which the server opens — the first part of each,
+     from its clouds — and corrects where the date inside is more than a day
+     from the one stored. Resolves {fixed, settled, undated, missing, failed}.
+     Only a file's modified time changes. */
+  fixTimes: ({ set = [], read = [], offset = -new Date().getTimezoneOffset() } = {}) =>
+    request('/api/folders/timestamps', { method: 'POST', body: { set, read, offset } }),
+
   /* Where everything under a folder would go if it were flattened. `keep` is
      how many levels of folders survive — none is every file into the folder
      itself — counted `from` the 'top' (nearest the folder) or the 'leaf'

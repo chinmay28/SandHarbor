@@ -150,6 +150,7 @@ Verified against each package's doc comment.
 | `internal/assistant` | Sandy: a chat model in front of read-only tools over the index, speaking the OpenAI-compatible chat-completions protocol to a model server the user configures. See [Sandy](guide/sandy.md) |
 | `internal/thumb` | Normalises browser-made preview images into re-encoded JPEGs of a known size |
 | `internal/checksums` | The `checksums.gz` ledger format: one `path, sha256` line per file |
+| `internal/filedate` | Reads the date a file states about itself: in its name, in a photo's EXIF, in a video's header. For the organizer's Fix timestamps |
 | `internal/filecheck` | Structural checks that a file is a well-formed JPEG, PDF, MP4 and so on, for the deep check. See [cryptography](design/cryptography.md) |
 | `internal/snapshot` | A folder packed into one sealed, split archive under its own password, readable without the vault. See [cryptography](design/cryptography.md) |
 | `internal/tuning` | Sizes chunk, window and cache knobs to the machine (Raspberry Pi to workstation), with operator overrides. See [data pipeline](design/data-pipeline.md) |
