@@ -138,10 +138,10 @@ type uploadResult struct {
 	FailedParts []vault.ShardFailure `json:"failed_parts,omitempty"`
 	Advice      string               `json:"advice,omitempty"`
 
-	// Extracted is set on the result of an archive that was sent to be
-	// unpacked rather than stored: how many files came out of it and were
-	// stored. See handlers_extract.go.
-	Extracted *int `json:"extracted,omitempty"`
+	// Run is set on the result of an archive that was sent to be unpacked
+	// rather than stored: the run now unpacking it, which is followed at
+	// GET /api/extracts and outlives this request. See handlers_extract.go.
+	Run string `json:"run,omitempty"`
 }
 
 // uploadParts is the count of a scatter that fell short: how many distinct
@@ -255,9 +255,9 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 	v, _ := s.Vault()
 	results := make([]uploadResult, 0, len(uploads)+len(folders))
 	stored := 0
-	// An archive read to its end is a request that worked, even when there
-	// turned out to be no file in it to count.
-	unpacked := false
+	// An archive taken to be unpacked is a request that worked, though
+	// nothing of it is stored yet.
+	queued := false
 	// The previews that came with the files, by the ID each file was stored
 	// as, and which result each belongs to — see below the loop.
 	pictures := map[string][]byte{}
@@ -280,18 +280,6 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		made[folder] = true
-	}
-	ensure := func(folder string) error {
-		if made[folder] {
-			return nil
-		}
-		if !v.FolderExists(scope, folder) {
-			if err := v.Mkdir(scope, folder); err != nil {
-				return err
-			}
-		}
-		made[folder] = true
-		return nil
 	}
 
 	for i, fh := range uploads {
@@ -316,17 +304,30 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// An archive sent to be unpacked is not stored: what is inside it is,
-		// under a folder named after it. See handlers_extract.go.
+		// under a folder named after it, by a run that carries on after this
+		// request has been answered. See handlers_extract.go.
 		if formExtract(r, i) {
 			x := extractor{
-				v: v, scope: scope, ensure: ensure, limits: s.extractLimits(),
+				v: v, scope: scope, limits: s.extractLimits(),
 				opts: vault.UploadOptions{Overwrite: overwrite, Accounts: accounts, Scheme: scheme},
 			}
-			out, n := x.extract(ctx, place, f, fh.Size)
+			var err error
+			if x.format, x.root, x.stem, err = planExtract(place); err != nil {
+				f.Close()
+				result.fail(err, vault.UploadPlacing)
+				results = append(results, result)
+				continue
+			}
+			run, err := s.queueExtract(v, x, place.Label, f, fh.Size)
 			f.Close()
-			unpacked = unpacked || out[0].OK
-			results = append(results, out...)
-			stored += n
+			if err != nil {
+				result.fail(err, vault.UploadReading)
+				results = append(results, result)
+				continue
+			}
+			result.OK, result.Run = true, run.ID
+			results = append(results, result)
+			queued = true
 			continue
 		}
 
@@ -387,7 +388,7 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := http.StatusCreated
-	if stored == 0 && !unpacked {
+	if stored == 0 && !queued {
 		status = http.StatusBadGateway
 	}
 	writeJSON(w, status, map[string]any{"results": results, "stored": stored})

@@ -209,6 +209,10 @@ type Server struct {
 	// erase_runs.go.
 	erasures *eraseRuns
 
+	// extracts is the uploaded archives waiting to be unpacked, being
+	// unpacked, and lately finished. See extract_runs.go.
+	extracts *extractRuns
+
 	// readWatches is the window onto files being opened right now: which
 	// account each is waiting on, and how much of it has been sent. Read by
 	// the browser beside the content request it is waiting for. See
@@ -392,6 +396,9 @@ func (s *Server) Handler() (http.Handler, error) {
 	}
 	if s.erasures == nil {
 		s.erasures = newEraseRuns()
+	}
+	if s.extracts == nil {
+		s.extracts = newExtractRuns()
 	}
 	if s.readWatches == nil {
 		s.readWatches = newReadWatch()
@@ -741,6 +748,8 @@ func (s *Server) Handler() (http.Handler, error) {
 		"POST /api/delete":              s.handleErase,
 		"GET /api/delete/runs":          s.handleEraseRuns,
 		"DELETE /api/delete/runs/{run}": s.handleEraseStop,
+		"GET /api/extracts":             s.handleExtractRuns,
+		"DELETE /api/extracts/{run}":    s.handleExtractStop,
 		"POST /api/files/{id}/move":     s.handleFileMove,
 		// And a batch of them in one index write, for a plan of thousands.
 		"POST /api/files/move":       s.handleFilesMove,
@@ -1197,7 +1206,7 @@ func (s *Server) autoLockLoop() {
 		if err != nil || !v.Unlocked() {
 			continue
 		}
-		if s.sessions.sweep() > 0 || s.externalActive() || s.transfers.running() > 0 || s.relocations.running() > 0 || s.erasures.running() > 0 {
+		if s.sessions.sweep() > 0 || s.externalActive() || s.transfers.running() > 0 || s.relocations.running() > 0 || s.erasures.running() > 0 || s.extracts.running() > 0 {
 			continue
 		}
 		// A stray-parts scan somebody started and walked away from is use
@@ -1219,6 +1228,7 @@ func (s *Server) autoLockLoop() {
 		s.streams.clear()
 		s.discs.clear()
 		s.mkvs.stopAll()
+		s.extracts.stopAll()
 		s.zips.clear()
 		s.strayScans.stopAll()
 		s.reattaches.stopAll()

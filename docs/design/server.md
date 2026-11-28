@@ -105,12 +105,20 @@ server reads the multipart temp file in place (`UploadStreamAt`) rather than
 spooling it a second time.
 
 An upload can ask for an archive to be unpacked rather than stored
-(`extract-N`, `handlers_extract.go`). Reading the archive is `internal/unpack`,
-which only walks entries and hands them over: it stores nothing and vouches for
-no path. The handler puts each entry through the same `pathSegments` check a
-dropped folder's `rel-N` gets and stores it with `UploadStream`, so an entry is
-spooled one at a time and disk use is bounded by the largest file in the
-archive, not by the archive. What it may unpack to is capped
+(`extract-N`, `handlers_extract.go`). The request only delivers it: the archive
+is copied to a spool beside the vault, queued, and the request answered with
+the run's ID. Unpacking is then a run on a context of its own
+(`extract_runs.go`), one archive at a time, which carries on with the page
+closed, holds off the idle lock, and is listed, stopped and dismissed at
+`/api/extracts` the way a detached delete is at `/api/delete/runs`. Locking the
+vault stops and forgets every run; a restart loses them, leaving what was
+stored and a spool the leftovers scan offers to remove.
+
+Reading the archive is `internal/unpack`, which only walks entries and hands
+them over: it stores nothing and vouches for no path. The run puts each entry
+through the same `pathSegments` check a dropped folder's `rel-N` gets and
+stores it with `UploadStream`, so an entry is spooled one at a time and disk
+use is the archive plus its largest file. What it may unpack to is capped
 (`MaxExtractSize`, 32 GiB, and 20,000 entries), because the request ceiling
 bounds what an archive weighs and not what is in it.
 

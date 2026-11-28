@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -19,6 +20,9 @@ import (
 // The archive never lands: a folder named after it does, holding what it
 // held. The paths inside it are its author's word and get the same distrust a
 // dropped folder's do.
+//
+// The upload only hands the archive over. Unpacking it is a run the server
+// carries out afterwards, so these tests upload and then wait for the run.
 
 func zipOf(t *testing.T, files map[string]string) []byte {
 	t.Helper()
@@ -91,6 +95,46 @@ func (c *testClient) uploadExtract(name, dir string, content []byte) (int, []map
 	return w.Code, resp.Results
 }
 
+// extracted waits for the run an upload result names to be over, and returns
+// it as GET /api/extracts lists it.
+func (c *testClient) extracted(result map[string]any) map[string]any {
+	c.t.Helper()
+	id, _ := result["run"].(string)
+	if ok, _ := result["ok"].(bool); !ok || id == "" {
+		c.t.Fatalf("result = %v, want the archive taken and a run named", result)
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		_, body := c.json(http.MethodGet, "/api/extracts", nil)
+		runs, _ := body["runs"].([]any)
+		for _, raw := range runs {
+			run := raw.(map[string]any)
+			if done, _ := run["done"].(bool); done && run["id"] == id {
+				return run
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	c.t.Fatalf("run %s never finished", id)
+	return nil
+}
+
+// extract uploads one archive to be unpacked and waits for it to have been.
+func (c *testClient) extract(name, dir string, content []byte) map[string]any {
+	c.t.Helper()
+	code, results := c.uploadExtract(name, dir, content)
+	if code != http.StatusCreated || len(results) != 1 {
+		c.t.Fatalf("upload %s: %d %v", name, code, results)
+	}
+	return c.extracted(results[0])
+}
+
+// reportOf is a finished run's report.
+func reportOf(run map[string]any) map[string]any {
+	report, _ := run["report"].(map[string]any)
+	return report
+}
+
 // names lists a folder's files, sorted.
 func (c *testClient) names(path string) string {
 	c.t.Helper()
@@ -111,19 +155,16 @@ func TestExtractUnpacksAnArchiveIntoAFolderNamedAfterIt(t *testing.T) {
 			c.setup("pw", 3)
 			c.mkdir("/inbox")
 
-			code, results := c.uploadExtract(name, "/inbox", build(t, map[string]string{
+			run := c.extract(name, "/inbox", build(t, map[string]string{
 				"readme.txt":         "hello",
 				"day1/hike.txt":      "a ridge",
 				"day1/night/sky.txt": "stars",
 			}))
-			if code != http.StatusCreated {
-				t.Fatalf("status = %d, results = %v", code, results)
+			if run["name"] != name || run["dir"] != "/inbox/trip" || run["error"] != nil {
+				t.Errorf("run = %v, want %s unpacked into /inbox/trip", run, name)
 			}
-			if len(results) != 1 {
-				t.Fatalf("results = %v, want the archive's own line and nothing else", results)
-			}
-			if ok, _ := results[0]["ok"].(bool); !ok || results[0]["extracted"] != float64(3) || results[0]["name"] != name {
-				t.Errorf("result = %v, want %s ok with 3 extracted", results[0], name)
+			if got := reportOf(run)["extracted"]; got != float64(3) {
+				t.Errorf("extracted = %v, want 3", got)
 			}
 
 			got := strings.Join(c.folderPaths(), " ")
@@ -154,7 +195,7 @@ func TestExtractKeepsTheTimesTheArchiveRecorded(t *testing.T) {
 	c := newTestClient(t)
 	c.setup("pw", 3)
 
-	c.uploadExtract("old.zip", "/", zipOf(t, map[string]string{"photo.txt": "x"}))
+	c.extract("old.zip", "/", zipOf(t, map[string]string{"photo.txt": "x"}))
 	if got := c.modified("/old", "photo.txt"); got.Year() != 2019 {
 		t.Errorf("modified = %v, want the 2019 the archive recorded", got)
 	}
@@ -166,15 +207,12 @@ func TestExtractDoesNotNestAFolderNamedForTheArchive(t *testing.T) {
 	c := newTestClient(t)
 	c.setup("pw", 3)
 
-	code, _ := c.uploadExtract("project-1.0.tar.gz", "/", tarGzOf(t, map[string]string{
+	c.extract("project-1.0.tar.gz", "/", tarGzOf(t, map[string]string{
 		"project-1.0/":            "",
 		"project-1.0/main.go":     "package main",
 		"project-1.0/docs/":       "",
 		"project-1.0/docs/use.md": "use it",
 	}))
-	if code != http.StatusCreated {
-		t.Fatalf("status = %d", code)
-	}
 	got := strings.Join(c.folderPaths(), " ")
 	if want := "/ /project-1.0 /project-1.0/docs"; got != want {
 		t.Errorf("folders = %q, want %q", got, want)
@@ -188,9 +226,9 @@ func TestExtractKeepsAnEmptyFolder(t *testing.T) {
 	c := newTestClient(t)
 	c.setup("pw", 3)
 
-	code, results := c.uploadExtract("shell.tgz", "/", tarGzOf(t, map[string]string{"drafts/old/": ""}))
-	if code != http.StatusCreated {
-		t.Fatalf("status = %d, results = %v — an archive of folders is still an archive that unpacked", code, results)
+	run := c.extract("shell.tgz", "/", tarGzOf(t, map[string]string{"drafts/old/": ""}))
+	if run["error"] != nil {
+		t.Fatalf("run = %v — an archive of folders is still an archive that unpacked", run)
 	}
 	if got := strings.Join(c.folderPaths(), " "); got != "/ /shell /shell/drafts /shell/drafts/old" {
 		t.Errorf("folders = %q", got)
@@ -202,29 +240,24 @@ func TestExtractRefusesAPathThatClimbsOut(t *testing.T) {
 	c.setup("pw", 3)
 	c.mkdir("/inbox")
 
-	code, results := c.uploadExtract("evil.zip", "/inbox", zipOf(t, map[string]string{
+	run := c.extract("evil.zip", "/inbox", zipOf(t, map[string]string{
 		"../escaped.txt":        "out",
 		"/etc/escaped.txt":      "root",
 		"a/../../../escape.txt": "far",
 		"fine.txt":              "in",
 	}))
-	if code != http.StatusCreated {
-		t.Fatalf("status = %d", code)
-	}
 
-	// The archive's line, then one for each entry that was turned away.
-	if len(results) != 4 {
-		t.Fatalf("results = %v, want the archive and three refusals", results)
+	report := reportOf(run)
+	if report["extracted"] != float64(1) || report["failed"] != float64(3) {
+		t.Errorf("report = %v, want fine.txt stored and the three others refused", report)
 	}
-	if results[0]["extracted"] != float64(1) {
-		t.Errorf("extracted = %v, want only fine.txt", results[0]["extracted"])
+	failures, _ := report["failures"].([]any)
+	if len(failures) != 3 {
+		t.Fatalf("failures = %v, want each refusal named", failures)
 	}
-	for _, r := range results[1:] {
-		if ok, _ := r["ok"].(bool); ok || r["stage"] != "placing" {
-			t.Errorf("%v was not refused before anything was sent", r)
-		}
-		if !strings.HasPrefix(r["name"].(string), "evil/") {
-			t.Errorf("name = %v, want the entry's path under the folder it was bound for", r["name"])
+	for _, line := range failures {
+		if !strings.Contains(line.(string), "escape") {
+			t.Errorf("failure %q does not name the entry", line)
 		}
 	}
 
@@ -249,13 +282,13 @@ func TestExtractLeavesOutLinksAndSaysSo(t *testing.T) {
 	tw.Close()
 	gz.Close()
 
-	_, results := c.uploadExtract("mixed.tar.gz", "/", buf.Bytes())
+	report := reportOf(c.extract("mixed.tar.gz", "/", buf.Bytes()))
 	if got := c.names("/mixed"); got != "real.txt" {
 		t.Errorf("/mixed holds %q", got)
 	}
-	warnings, _ := results[0]["warnings"].([]any)
-	if len(warnings) != 1 || !strings.Contains(warnings[0].(string), "shadow (a symbolic link)") {
-		t.Errorf("warnings = %v, want the link named", warnings)
+	skips, _ := report["skips"].([]any)
+	if report["skipped"] != float64(1) || len(skips) != 1 || skips[0] != "shadow (a symbolic link)" {
+		t.Errorf("report = %v, want the link named", report)
 	}
 }
 
@@ -263,18 +296,22 @@ func TestExtractRefusesWhatIsNotAnArchive(t *testing.T) {
 	c := newTestClient(t)
 	c.setup("pw", 3)
 
-	// By name: nothing says what a .txt would unpack as.
+	// By name: nothing says what a .txt would unpack as, and the upload
+	// itself is told so.
 	code, results := c.uploadExtract("notes.txt", "/", []byte("plain"))
-	if code != http.StatusBadGateway || results[0]["stage"] != "placing" {
+	if code != http.StatusBadGateway || results[0]["stage"] != "placing" || results[0]["run"] != nil {
 		t.Errorf("notes.txt: %d %v", code, results)
 	}
-	// By contents: named like one, but not one.
-	code, results = c.uploadExtract("fake.zip", "/", []byte("plain"))
-	if code != http.StatusBadGateway || results[0]["stage"] != "reading" {
-		t.Errorf("fake.zip: %d %v", code, results)
+	// By contents: named like one, but not one — which only reading it finds.
+	run := c.extract("fake.zip", "/", []byte("plain"))
+	if msg, _ := run["error"].(string); !strings.Contains(msg, "not a readable zip") {
+		t.Errorf("fake.zip: %v", run)
 	}
 	if got := c.names("/"); got != "" {
 		t.Errorf("%q was stored — asked to extract, it is not stored as it is instead", got)
+	}
+	if got := strings.Join(c.folderPaths(), " "); got != "/" {
+		t.Errorf("folders = %q — nothing unpacked, so nothing made", got)
 	}
 }
 
@@ -284,13 +321,10 @@ func TestExtractRefusesAnArchiveThatUnpacksToTooMuch(t *testing.T) {
 	c.server.MaxExtractSize = 1000
 
 	// A few hundred bytes on the wire, well over the limit once out.
-	code, results := c.uploadExtract("bomb.zip", "/", zipOf(t, map[string]string{
+	run := c.extract("bomb.zip", "/", zipOf(t, map[string]string{
 		"zeros.bin": strings.Repeat("0", 100_000),
 	}))
-	if code != http.StatusBadGateway {
-		t.Fatalf("status = %d", code)
-	}
-	if msg, _ := results[0]["error"].(string); !strings.Contains(msg, "unpacks to more than") {
+	if msg, _ := run["error"].(string); !strings.Contains(msg, "unpacks to more than") {
 		t.Errorf("error = %q", msg)
 	}
 	if got := strings.Join(c.folderPaths(), " "); got != "/" {
@@ -318,17 +352,108 @@ func TestExtractIsPerFile(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d %s", w.Code, w.Body.String())
 	}
+	var resp struct {
+		Stored  int              `json:"stored"`
+		Results []map[string]any `json:"results"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Stored != 1 || resp.Results[0]["run"] != nil {
+		t.Errorf("response = %+v, want the first archive stored as it is", resp)
+	}
+	c.extracted(resp.Results[1])
+
 	if got := c.names("/"); got != "keep.zip" {
 		t.Errorf("/ holds %q, want only the archive that was not opened", got)
 	}
 	if got := c.names("/open"); got != "inside.txt" {
 		t.Errorf("/open holds %q", got)
 	}
-	var resp struct {
-		Stored int `json:"stored"`
+}
+
+// The point of the run: the request that brought the archive is long over, and
+// the page that made it may be gone, while the unpacking is still going.
+func TestExtractCarriesOnAfterTheUploadHasBeenAnswered(t *testing.T) {
+	c := newTestClient(t)
+	c.setup("pw", 3)
+
+	// Something already has the turn, so the archive uploaded next can only
+	// be waiting when its upload is answered.
+	hold := newGate()
+	c.server.extracts.add(extractRun{Name: "ahead.zip"}, hold.work, func() {})
+	<-hold.started
+
+	code, results := c.uploadExtract("later.zip", "/", zipOf(t, map[string]string{"a.txt": "x"}))
+	if code != http.StatusCreated || results[0]["run"] == nil {
+		t.Fatalf("upload: %d %v — the archive is taken whether or not its turn has come", code, results)
 	}
-	json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp.Stored != 2 {
-		t.Errorf("stored = %d, want the archive kept and the one file unpacked", resp.Stored)
+	if got := strings.Join(c.folderPaths(), " "); got != "/" {
+		t.Errorf("folders = %q — nothing is unpacked before its turn", got)
+	}
+	_, body := c.json(http.MethodGet, "/api/extracts", nil)
+	listed := body["runs"].([]any)
+	if last := listed[len(listed)-1].(map[string]any); last["waiting"] != true || last["name"] != "later.zip" {
+		t.Errorf("run = %v, want it listed as waiting", last)
+	}
+
+	close(hold.finish)
+	c.extracted(results[0])
+	if got := c.names("/later"); got != "a.txt" {
+		t.Errorf("/later holds %q", got)
+	}
+}
+
+func TestExtractCanBeStoppedAndDismissed(t *testing.T) {
+	c := newTestClient(t)
+	c.setup("pw", 3)
+
+	hold := newGate()
+	c.server.extracts.add(extractRun{Name: "ahead.zip"}, hold.work, func() {})
+	<-hold.started
+	_, results := c.uploadExtract("never.zip", "/", zipOf(t, map[string]string{"a.txt": "x"}))
+	id := results[0]["run"].(string)
+
+	if w, _ := c.json(http.MethodDelete, "/api/extracts/"+id, nil); w.Code != http.StatusOK {
+		t.Fatalf("stop: %d", w.Code)
+	}
+	run := c.extracted(results[0])
+	if run["cancelled"] != true {
+		t.Errorf("run = %v, want it cancelled", run)
+	}
+	close(hold.finish)
+
+	// The same request again dismisses the result; a third finds nothing.
+	if w, _ := c.json(http.MethodDelete, "/api/extracts/"+id, nil); w.Code != http.StatusOK {
+		t.Errorf("dismiss: %d", w.Code)
+	}
+	if w, _ := c.json(http.MethodDelete, "/api/extracts/"+id, nil); w.Code != http.StatusNotFound {
+		t.Errorf("gone: %d, want 404", w.Code)
+	}
+	if got := strings.Join(c.folderPaths(), " "); got != "/" {
+		t.Errorf("folders = %q — a run stopped while waiting touched nothing", got)
+	}
+}
+
+// The archive is kept beside the vault only until it has been unpacked.
+func TestExtractLeavesNoSpoolBehind(t *testing.T) {
+	c := newTestClient(t)
+	c.setup("pw", 3)
+
+	c.extract("tidy.zip", "/", zipOf(t, map[string]string{"a.txt": "x"}))
+	left, _ := filepath.Glob(filepath.Join(filepath.Dir(c.server.VaultPath), ".sand-upload-*"))
+	if len(left) != 0 {
+		t.Errorf("left behind: %v", left)
+	}
+}
+
+func TestLockingTheVaultForgetsItsExtractions(t *testing.T) {
+	c := newTestClient(t)
+	c.setup("pw", 3)
+	c.extract("seen.zip", "/", zipOf(t, map[string]string{"a.txt": "x"}))
+
+	if w, _ := c.json(http.MethodPost, "/api/vault/lock", nil); w.Code != http.StatusOK {
+		t.Fatalf("lock: %d", w.Code)
+	}
+	if runs := c.server.extracts.all(); len(runs) != 0 {
+		t.Errorf("runs = %+v — a result names files, and the vault is shut", runs)
 	}
 }

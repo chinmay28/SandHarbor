@@ -12,6 +12,7 @@ import PreviewModal, { ShardInspector } from './components/PreviewModal'
 import RecoverVault from './components/RecoverVault'
 import CleanOrphans from './components/CleanOrphans'
 import EraseRuns from './components/EraseRuns'
+import ExtractRuns from './components/ExtractRuns'
 import BackgroundRuns from './components/BackgroundRuns'
 import ReattachShards from './components/ReattachShards'
 import LostParts, { lostNotice } from './components/LostParts'
@@ -570,6 +571,11 @@ export default function App() {
             closed — while the parts go; the listing refreshes as each one
             finishes. See erase.js. */}
         <EraseRuns mobile={mobile} onChanged={refreshAll} />
+
+        {/* Every archive uploaded to be extracted, while the machine unpacks
+            it and once it has. The upload ends when the archive has arrived;
+            the unpacking carries on without the page. See extract.js. */}
+        <ExtractRuns mobile={mobile} onChanged={refreshAll} />
 
         {/* Putting mislaid parts back, erasing abandoned ones, looking films
             up and making thumbnails, once their dialog is closed: all run on

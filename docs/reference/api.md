@@ -860,13 +860,36 @@ An archive sent with `extract-N` is not stored. Its files are, under a folder
 named after it beside where it would have landed (`photos.zip` → `photos/`); a
 top folder inside the archive with that same name is not nested a second time.
 Entry paths are checked like `rel-N`, symbolic links and other non-files are
-left out, and an archive may unpack to at most 32 GiB and 20,000 entries. The
-archive answers with one result of its own — `ok` if it was read to its end,
-`extracted` the number of files stored from it, `warnings` naming what was left
-out — followed by a failed result for each entry that did not store, named by
-its path under the folder. Files that stored are counted in `extracted` and
-`stored`, not listed. An archive that unpacked answers `201` even if it held no
-file.
+left out, and an archive may unpack to at most 32 GiB and 20,000 entries.
+
+The request only delivers the archive. Its result is `ok` with `run`, the ID of
+a run that unpacks it on the server after the request has been answered and
+whether or not the client is still there; an archive taken this way answers
+`201` though nothing of it is stored yet. A name that is not an archive is
+refused in the request itself (`stage: placing`).
+
+#### GET /api/extracts · DELETE /api/extracts/{run}
+
+The archives waiting, being unpacked and lately finished, oldest first. One is
+unpacked at a time; up to 16 wait.
+
+```json
+{ "runs": [ {
+  "id": "…", "name": "photos.zip", "dir": "/inbox/photos", "vault": "",
+  "waiting": false, "started_at": "…",
+  "at": { "files": 212, "done": 73400320, "total": 104857600, "current": "2024/hike.jpg" },
+  "done": true, "finished_at": "…", "cancelled": false, "error": "",
+  "report": { "extracted": 412, "failed": 1, "failures": ["a/b.jpg: …"],
+              "skipped": 1, "skips": ["link (a symbolic link)"], "warnings": [] }
+} ] }
+```
+
+`at.done`/`at.total` are bytes of the archive read. `report` keeps the first
+ten lines of each kind and counts the rest; it is present beside `error` too,
+as what was stored before the archive failed. `DELETE` stops a waiting or
+running run (what it stored stays) or dismisses a finished one, and answers
+with the list. Results are kept for 30 minutes, held in memory only, and
+dropped when the vault locks.
 
 #### POST /api/files/precheck
 

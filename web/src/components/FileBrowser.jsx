@@ -10,6 +10,7 @@ import {
   batchBytes, batchPicks, describeFailure, describePicks, describeRetimes, describeSkips, emptyDirs,
   picksFromDrop, picksFromInput, totalBytes,
 } from '../upload'
+import { noteExtractStarted } from '../extract'
 import {
   COLUMNS, FILM_COLUMNS, TILE_POSTER, TILE_SQUARE,
   FileRow, FileTile, FolderRow, FolderTile, SelectBox,
@@ -533,6 +534,9 @@ export default function FileBrowser({
           folders = []
 
           const results = resp.results || []
+          // An archive taken to be extracted is followed from here on by
+          // the strip over the listing, not by this card.
+          if (results.some((r) => r.run)) noteExtractStarted()
           for (const r of results) {
             if (r.ok) stored += 1
             else failures.push(describeFailure(r))
