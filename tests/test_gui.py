@@ -2281,6 +2281,62 @@ class TestDuplicates:
         expect(rows).to_have_count(1, timeout=20000)
 
 
+class TestFlattenKeepingLevels:
+    """A tree that is only too deep, flattened part of the way.
+
+    The plain flatten is covered where its plan is made (vault.Flatten and the
+    API tests over it). What only the page can show is that the three choices
+    reach the plan and the plan reaches the tree: a level kept, counted from
+    the files, with the two folders called cd1 made one.
+    """
+
+    def test_one_level_is_kept_nearest_the_files_and_same_named_folders_merge(self, app, tmp_path):
+        root = tmp_path / "gui-discs"
+        for disc, name in (("abba/cd1", "one"), ("abba/cd2", "one"), ("queen/cd1", "one"), ("queen/cd1", "two")):
+            (root / disc).mkdir(parents=True, exist_ok=True)
+            (root / disc / f"{name}.txt").write_text(f"{disc}/{name}")
+
+        app.set_input_files(FOLDER_INPUT, str(root))
+        confirm = app.get_by_role("button", name=re.compile(r"Upload to \d+ cloud"))
+        confirm.wait_for(timeout=20000)
+        confirm.click()
+        app.wait_for_selector('button[title="Open folder"]:has-text("gui-discs")', timeout=90000)
+        app.wait_for_load_state("networkidle")
+        app.get_by_text("gui-discs", exact=True).first.click()
+        app.wait_for_load_state("networkidle")
+
+        app.locator('button[aria-label="Organize and automate this folder"]').click()
+        app.get_by_role("button", name=re.compile("Flatten into this folder")).click()
+        dialog = app.get_by_role("dialog", name="Flatten this folder")
+        dialog.wait_for(timeout=20000)
+
+        # All the way, to begin with: four files, and which end is not asked.
+        expect(dialog.get_by_role("button", name="Flatten 4 files")).to_be_visible(timeout=20000)
+        expect(dialog.get_by_role("button", name="Nearest the files")).to_have_count(0)
+
+        dialog.get_by_role("button", name="Keep one level more").click()
+        dialog.get_by_role("button", name="Nearest the files").click()
+        expect(dialog.get_by_text(re.compile(r"^1 folder would be numbered"))).to_be_visible(timeout=20000)
+
+        dialog.get_by_label("Merge folders that have the same name").check()
+        expect(dialog.get_by_text(re.compile(r"^1 folder joins another"))).to_be_visible(timeout=20000)
+
+        # Two folders made, four files moved, five folders left empty.
+        dialog.get_by_role("button", name="Flatten 4 files").click()
+        app.wait_for_selector("text=11 tidied", timeout=60000)
+        app.get_by_role("dialog").get_by_role("button", name="Done").click()
+
+        app.wait_for_timeout(500)
+        expect(app.locator('button[title="Open folder"]', has_text="cd1")).to_have_count(1, timeout=20000)
+        expect(app.locator('button[title="Open folder"]', has_text="cd2")).to_have_count(1)
+        expect(app.locator('button[title="Open folder"]', has_text="abba")).to_have_count(0)
+
+        # Three files in the one cd1, the second one.txt numbered, not lost.
+        app.get_by_text("cd1", exact=True).first.click()
+        app.wait_for_selector("text=one (2).txt", timeout=20000)
+        assert listed_files(app) == ["one (2).txt", "one.txt", "two.txt"]
+
+
 class TestFileIntoFoldersByDate:
     """A flat folder given a shape: 2026/January, from each file's own date.
 

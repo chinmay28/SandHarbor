@@ -187,8 +187,8 @@ list.
 → [design/vault.md](design/vault.md)
 
 ### Organizing is planned once, then run as ordinary per-item calls
-**Decision:** flatten, date sort, purge and duplicates read one survey from the
-server, then the browser runs the existing move, mkdir and delete endpoints one
+**Decision:** flatten, date sort, purge and duplicates read one plan or survey
+from the server, then the browser runs the existing move, mkdir and delete endpoints one
 item at a time. **Why:** a run that stalls at item 40 of 200 has done 39 and
 can name the one that refused, and folder removal stays non-recursive, so a
 tidy can never take a file with it. **Rejected:** server-side bulk endpoints

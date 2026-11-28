@@ -790,6 +790,17 @@ export const api = {
       + `&grain=${encodeURIComponent(grain)}${deep ? '&deep=1' : ''}`
       + `&offset=${offset}${vaultParam(vault)}`),
 
+  /* Where everything under a folder would go if it were flattened. `keep` is
+     how many levels of folders survive — none is every file into the folder
+     itself — counted `from` the 'top' (nearest the folder) or the 'leaf'
+     (nearest each file). `merge` lets same-named folders brought side by side
+     become one, and `prefix` names each moved file after the folders it loses.
+     Read-only, and run as the date plan is. */
+  flattenPlan: (path, { keep = 0, from = 'top', merge = false, prefix = false, vault = '' } = {}) =>
+    request(`/api/folders/flatten?path=${encodeURIComponent(path)}`
+      + `&keep=${keep}&from=${encodeURIComponent(from)}`
+      + `${merge ? '&merge=1' : ''}${prefix ? '&prefix=1' : ''}${vaultParam(vault)}`),
+
   /* What a folder is holding, in the few figures its menu can show: the size
      of everything at or below it, how many files and folders that is, what the
      parts of those files weigh across the accounts, and which accounts they
