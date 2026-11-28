@@ -249,6 +249,35 @@ Month folders use English names (`2026/January`) so they mean the same folder on
 machine set to another language. A file with no modified time is counted and left
 where it is.
 
+### Fixing timestamps
+
+`internal/filedate` reads the date a file states about itself and knows nothing
+of the vault: `FromName` reads a name, `FromContent` reads EXIF (JPEG, HEIF) or a
+movie header (MP4, MOV) through an `io.ReaderAt`, and `Off` says whether a stored
+time disagrees. `timefix.go` is the vault's half:
+
+- **`Vault.TimeFixes`** (`GET /api/folders/timestamps`) plans from the index. A
+  file whose name states a date goes in `fixes` or is settled; a photo or video
+  whose name states none goes in `readable`. `planTimeFixes` is a pure function
+  of the files, a zone and the present.
+- **`Vault.SetTimes`** applies rows by ID in one index write, with `Retime`'s
+  rollback if the write fails.
+- **`Vault.FixTimesFromContent`** opens a batch of files a few at a time through
+  `OpenReaderAt`, so a photo costs its first chunk, and writes the index once.
+  A file in the pre-chunking format is fetched whole.
+
+Three decisions:
+
+- **Disagreement is more than a day.** A name has no zone, one fixed offset is
+  not a time zone, and a recording's name is its start while its modified time
+  is its end. All of those are hours; an upload-dated file is out by months.
+  Anything finer would be correcting zones it can only guess.
+- **Only `ModifiedAt` changes.** `CreatedAt` is when the file landed here, which
+  the import's re-fetch guard reads.
+- **The date inside cannot be previewed**, since reading it is the cost. So the
+  name half is a plan the browser shows row by row, and the content half is a
+  batch whose answer says what it found.
+
 ### Duplicates
 
 `Vault.Duplicates` (`duplicates.go`, `GET /api/folders/duplicates`) is a separate

@@ -859,6 +859,13 @@ func (s *Server) Handler() (http.Handler, error) {
 		// the way or keeping some levels of folders. Read-only, and run by the
 		// browser the same way.
 		"GET /api/folders/flatten": s.handleFolderFlatten,
+		// The files under a folder dated the day they arrived rather than the
+		// day they were made, by the date in their name or the one inside
+		// them. The GET plans from the index; the POST sets a batch of times
+		// and opens a batch of pictures and videos to read theirs. See
+		// handlers_timestamps.go.
+		"GET /api/folders/timestamps":  s.handleFolderTimestamps,
+		"POST /api/folders/timestamps": s.handleFolderTimestampsFix,
 		// What a folder is holding, in the few figures its menu shows before
 		// anything is done to it: the size of everything under it, how many
 		// files and folders that is, and which accounts hold the parts. The

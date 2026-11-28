@@ -283,6 +283,7 @@ SandHarbor/
 │   ├── crypto/               Argon2id, AES-256-GCM, HKDF chunk and purpose keys
 │   ├── davfs/                an unlocked vault as a WebDAV filesystem (/dav, /sub/<name>/)
 │   ├── filecheck/            is a file's content a well-formed file of its claimed kind
+│   ├── filedate/             the date a file states about itself: its name, EXIF, a movie header
 │   ├── git/                  the small part of git SAND Vault needs: ls-remote, mirror, bundle
 │   ├── movie/                file name → film guess, and the film database client
 │   ├── provider/             the object-store interface and every backend, OAuth sign-in,
