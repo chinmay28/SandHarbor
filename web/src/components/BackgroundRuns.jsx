@@ -262,7 +262,7 @@ function JobStrip({ kind, useJob, title, describe, outcome, changed, tone, actio
    waited on — under the bar, since on a phone there is no room beside the
    title. A null fraction is a bar that only says "still going". `action`, if
    given, sits at the right — a Stop, for a run this page can stop. */
-export function RunCard({ title, label, detail, fraction, action }) {
+export function RunCard({ title, label, detail, fraction, action, wrapTitle = false }) {
   const determinate = typeof fraction === 'number'
   return (
     <div
@@ -282,7 +282,9 @@ export function RunCard({ title, label, detail, fraction, action }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           marginBottom: '6px', fontFamily: FONT.mono, fontSize: '11px', color: COLORS.textDim,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          ...(wrapTitle
+            ? { overflowWrap: 'anywhere', lineHeight: 1.45 }
+            : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }),
         }}>
           {title}
         </div>

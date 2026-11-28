@@ -292,6 +292,60 @@ export function batchPicks(files, { bytes = BATCH_BYTES, count = BATCH_FILES } =
   return batches
 }
 
+/* Whether a file is too big to ride in a batch and goes up a piece at a time
+   instead (POST /api/uploads). A batch is one request, and one request has a
+   ceiling on the server — two gigabytes — besides everything between here and
+   there that can fail it whole. So anything over the batch budget, which
+   would have been a batch of its own anyway, is cut into pieces: no single
+   request is large, a piece that fails is sent again alone, and how big the
+   file is stops mattering. */
+export function goesInPieces(file) {
+  return (file?.size || 0) > BATCH_BYTES
+}
+
+const PIECE_RETRIES = 4
+const pause = (attempt) => new Promise((resolve) => setTimeout(resolve, Math.min(8000, 500 * 2 ** attempt)))
+
+/* Sends a file a piece at a time, in order, and resolves once all of it has
+   been taken.
+
+   `send(offset, blob, onPart)` sends one piece and resolves `{ received }`,
+   how much of the file the server now has. It rejects with an error carrying
+   `received` when the server said where the upload had got to instead — a
+   piece whose answer was lost and so was sent twice, or one cut short part
+   way — and with `fatal` set when no amount of trying again will help.
+
+   The server's word on where it has got to is always taken over our own, so a
+   piece is never skipped and never sent twice into the file. A piece that
+   fails is tried again a few times, further apart each time, which is what
+   rides out a phone changing networks; the count starts over whenever a piece
+   lands. */
+export async function sendInPieces(file, pieceSize, send, { retries = PIECE_RETRIES, wait = pause, onProgress } = {}) {
+  const size = file.size
+  let offset = 0
+  let failures = 0
+
+  while (offset < size) {
+    const end = Math.min(offset + pieceSize, size)
+    const start = offset
+    try {
+      const { received } = await send(start, file.slice(start, end),
+        (fraction) => onProgress?.((start + fraction * (end - start)) / size))
+      if (!(received > start)) throw new Error('the server took the piece but did not keep it')
+      offset = received
+      failures = 0
+    } catch (err) {
+      if (err.fatal) throw err
+      if (typeof err.received === 'number') offset = err.received
+      // Being told the piece had in fact landed is progress, not a failure.
+      if (offset > start) failures = 0
+      else if (++failures > retries) throw err
+      else await wait(failures)
+    }
+    onProgress?.(Math.min(1, offset / size))
+  }
+}
+
 /* What a batch weighs, for working out how far along a run of them is. */
 export function batchBytes(batch) {
   return batch.reduce((sum, { file }) => sum + (file?.size || 0), 0)

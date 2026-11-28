@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   archiveFolder, archivePicks, describeExtract, extractFraction, extractNotes, extractOutcomeText,
-  extractProgressText, isArchive,
+  extractProgressText, goesInPieces, isArchive, sendInPieces, BATCH_BYTES,
 } from './upload.js'
 
 const pick = (name) => ({ file: { name }, path: name })
@@ -70,4 +70,76 @@ test('the notes name the first few and count the rest', () => {
     'Left out, not being files: l (a symbolic link) and 2 more.', 'w',
   ])
   assert.deepEqual(extractNotes(run({ report: { extracted: 5 } })), [])
+})
+
+/* A stand-in for a File: bytes are their own offsets, so what the "server"
+   was given can be checked against where it was put. */
+const fakeFile = (size) => ({
+  size,
+  slice: (start, end) => ({ start, end, size: end - start }),
+})
+
+/* A server that keeps what it is sent, in order, and can be told to
+   misbehave on a given call. */
+function fakeServer(misbehave = {}) {
+  const state = { received: 0, calls: 0, pieces: [] }
+  const send = async (offset, blob) => {
+    const call = state.calls++
+    const act = misbehave[call]
+    if (act === 'drop') throw new Error('network error')
+    if (offset !== state.received) {
+      throw Object.assign(new Error('offset'), { received: state.received })
+    }
+    state.received = blob.end
+    state.pieces.push([blob.start, blob.end])
+    // Landed, but the answer never made it back.
+    if (act === 'lose-answer') throw new Error('network error')
+    return { received: state.received }
+  }
+  return { state, send }
+}
+
+const noWait = () => Promise.resolve()
+
+test('only a file over the batch budget goes in pieces', () => {
+  assert.equal(goesInPieces({ size: BATCH_BYTES }), false)
+  assert.equal(goesInPieces({ size: BATCH_BYTES + 1 }), true)
+  assert.equal(goesInPieces({}), false)
+})
+
+test('a file is sent in order, the last piece short', async () => {
+  const { state, send } = fakeServer()
+  const seen = []
+  await sendInPieces(fakeFile(25), 10, send, { wait: noWait, onProgress: (f) => seen.push(f) })
+  assert.deepEqual(state.pieces, [[0, 10], [10, 20], [20, 25]])
+  assert.equal(seen.at(-1), 1)
+})
+
+test('a piece that fails is sent again, alone', async () => {
+  const { state, send } = fakeServer({ 1: 'drop', 2: 'drop' })
+  await sendInPieces(fakeFile(30), 10, send, { wait: noWait })
+  assert.deepEqual(state.pieces, [[0, 10], [10, 20], [20, 30]])
+  assert.equal(state.calls, 5)
+})
+
+test('a piece whose answer was lost is not written twice', async () => {
+  const { state, send } = fakeServer({ 0: 'lose-answer' })
+  await sendInPieces(fakeFile(20), 10, send, { wait: noWait })
+  assert.deepEqual(state.pieces, [[0, 10], [10, 20]])
+})
+
+test('a piece that keeps failing ends the upload', async () => {
+  const send = async () => { throw new Error('network error') }
+  let waits = 0
+  await assert.rejects(
+    sendInPieces(fakeFile(20), 10, send, { retries: 3, wait: async () => { waits++ } }),
+    /network error/)
+  assert.equal(waits, 3)
+})
+
+test('what cannot be helped by trying again is not tried again', async () => {
+  let calls = 0
+  const send = async () => { calls++; throw Object.assign(new Error('gone'), { fatal: true }) }
+  await assert.rejects(sendInPieces(fakeFile(20), 10, send, { wait: noWait }), /gone/)
+  assert.equal(calls, 1)
 })

@@ -29,16 +29,6 @@ import (
 // is still open, so the request is answered as soon as the archive is safely
 // on this machine's disk and the run has a place in the queue.
 
-// DefaultMaxExtractSize is the ceiling on what one uploaded archive may unpack
-// to. A request is capped at MaxUploadSize, but what is inside an archive is
-// not what it weighs: this is the cap on the other side of the compression, so
-// a few megabytes of zeros cannot ask for a terabyte of somebody's clouds.
-const DefaultMaxExtractSize = 32 << 30 // 32 GiB
-
-// maxExtractEntries caps how many entries one archive may hold — the same
-// ceiling the browser puts on a dropped folder, and for the same reason.
-const maxExtractEntries = 20000
-
 // maxNamedSkips is how many passed-over entries an answer names before it
 // starts counting them instead.
 const maxNamedSkips = 10
@@ -51,13 +41,19 @@ func formExtract(r *http.Request, index int) bool {
 	return len(values) > 0 && (values[0] == "1" || values[0] == "true")
 }
 
-// extractLimits is how much one archive may unpack to on this server.
-func (s *Server) extractLimits() unpack.Limits {
-	limit := s.MaxExtractSize
-	if limit <= 0 {
-		limit = DefaultMaxExtractSize
+// extractLimits is how much one archive may unpack to on this server: what
+// the machine's settings say (internal/tuning — a Pi and a workstation are
+// not given the same), unless the Server was built with a ceiling of its own.
+// The cap is on the other side of the compression, so a few megabytes of
+// zeros cannot ask for a terabyte of somebody's clouds; the entry count is a
+// cap on memory, since a zip's directory is read whole before its first file.
+func (s *Server) extractLimits(v *vault.Vault) unpack.Limits {
+	t := v.Tuning()
+	limits := unpack.Limits{MaxEntries: t.ExtractEntries, MaxBytes: t.ExtractLimit}
+	if s.MaxExtractSize > 0 {
+		limits.MaxBytes = s.MaxExtractSize
 	}
-	return unpack.Limits{MaxEntries: maxExtractEntries, MaxBytes: limit}
+	return limits
 }
 
 // extractor unpacks one archive into the vault.
@@ -101,7 +97,14 @@ func (s *Server) queueExtract(v *vault.Vault, x extractor, name string, src io.R
 		discard()
 		return extractRun{}, fmt.Errorf("could not keep the archive to extract it: %w", err)
 	}
+	return s.queueExtractOf(x, name, spool, size, discard)
+}
 
+// queueExtractOf queues an archive that is already in a file of its own, and
+// takes that file over: discard is called when the run is done with it, or at
+// once if the run is refused. An archive that arrived in pieces is already
+// beside the vault, so it comes straight here.
+func (s *Server) queueExtractOf(x extractor, name string, spool io.ReaderAt, size int64, discard func()) (extractRun, error) {
 	run := extractRun{Name: name, Dir: x.root, Vault: string(x.scope), At: extractProgress{Total: size}}
 	return s.extracts.add(run, func(ctx context.Context, onProgress func(extractProgress)) (*extractReport, error) {
 		report, err := x.extract(ctx, spool, size, onProgress)
@@ -224,10 +227,10 @@ func (x extractor) extract(ctx context.Context, src io.ReaderAt, size int64, onP
 
 	switch {
 	case errors.Is(err, unpack.ErrTooLarge):
-		err = fmt.Errorf("it unpacks to more than the %s one archive may — extract it yourself and upload the folder",
+		err = fmt.Errorf("it unpacks to more than the %s this machine is set to extract from one archive — raise \"Largest extraction\" in the machine settings, or extract it yourself and upload the folder",
 			formatBytes(x.limits.MaxBytes))
 	case errors.Is(err, unpack.ErrTooManyEntries):
-		err = fmt.Errorf("it holds more than the %d entries one archive may — extract it yourself and upload the folder a part at a time",
+		err = fmt.Errorf("it holds more than the %d entries this machine is set to take from one archive — raise \"Entries per archive\" in the machine settings, or extract it yourself and upload the folder a part at a time",
 			x.limits.MaxEntries)
 	}
 	return report, err

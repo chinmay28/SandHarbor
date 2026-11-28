@@ -308,7 +308,7 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 		// request has been answered. See handlers_extract.go.
 		if formExtract(r, i) {
 			x := extractor{
-				v: v, scope: scope, limits: s.extractLimits(),
+				v: v, scope: scope, limits: s.extractLimits(v),
 				opts: vault.UploadOptions{Overwrite: overwrite, Accounts: accounts, Scheme: scheme},
 			}
 			var err error

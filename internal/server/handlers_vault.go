@@ -239,6 +239,9 @@ func (s *Server) handleVaultLock(w http.ResponseWriter, r *http.Request) {
 	// And an archive being unpacked: what it had stored is stored, and the
 	// rest would find no key to be stored with.
 	s.extracts.stopAll()
+	// And a file part-way through arriving in pieces: what is here of it is
+	// plaintext on the disk, with nothing left to store it with.
+	s.pieces.stopAll()
 	// And the stray-parts scan: what it found names file paths and was read
 	// with the keys that are leaving, and one still running would finish
 	// for nobody.

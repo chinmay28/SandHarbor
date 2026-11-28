@@ -31,8 +31,13 @@ Every `sand` command takes these.
 | `--profile` | `$SAND_PROFILE`, else `machine.json` | Pin the [sizing profile](#sizing-to-the-machine): `auto`, `pi5`, `workstation` or `custom` |
 
 The server accepts at most 2 GiB per upload request. The web client sends
-uploads in batches of up to 256 MB, and only a single file larger than that
-goes up in a request of its own.
+uploads in batches of up to 256 MB. A single file larger than that goes up a
+piece at a time (16 MiB each) and is put back together on the server, so a file
+is not limited by the request ceiling. How large one may be is a
+[machine setting](#sizing-to-the-machine), **Largest upload** — 32 GiB on a Pi,
+128 GiB on a workstation — and the file needs that much free disk beside the
+vault while it arrives. A reverse proxy in front of
+SAND only has to allow a 64 MB request body for this.
 
 ## Environment variables
 
@@ -171,6 +176,9 @@ What the presets come to:
 | Connections per cloud (`conns_per_host`), kept idle | 2–256 | 12 | 32 |
 | Unattended rebuild limit (`rebuild_limit`) | 64 MiB–1 TiB | 4 GiB | 16 GiB |
 | Unattended bundle limit (`bundle_limit`), git bundles | 64 MiB–1 TiB | 4 GiB | 16 GiB |
+| Largest upload (`upload_limit`), one file from the browser | 1 GiB–1 TiB | 32 GiB | 128 GiB |
+| Largest extraction (`extract_limit`), what one archive may unpack to | 1 GiB–4 TiB | 64 GiB | 256 GiB |
+| Entries per archive (`extract_entries`) | 1,000–2,000,000 | 100,000 | 400,000 |
 
 How Automatic scales them:
 
@@ -178,7 +186,13 @@ How Automatic scales them:
 - the windows follow the CPU count, capped where consumer clouds start
   rate-limiting;
 - the cache is a sixteenth of memory;
-- the unattended limits are a quarter of memory.
+- the unattended limits are a quarter of memory;
+- the largest upload is twice memory and the largest extraction four times it.
+  Neither is held in memory — an upload waits on disk, an extraction goes to
+  the clouds — but memory is what tells a Pi from a workstation, and their
+  disks differ the same way. Set them to suit the disk you have;
+- the entries per archive are 6,250 per GiB of memory, since an archive's list
+  of contents is held in memory while it is unpacked.
 
 A machine smaller than a Pi gets the Pi's floors, then shrinks the cache,
 then the read-ahead, then the upload window until they fit.

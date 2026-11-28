@@ -67,6 +67,23 @@ type Tuning struct {
 	// BundleLimit is the largest stored git bundle an unattended refresh
 	// will re-fetch unless the folder's policy says otherwise.
 	BundleLimit int64 `json:"bundle_limit"`
+
+	// UploadLimit is the largest single file the browser may send. A file
+	// too big for one request arrives a piece at a time and sits whole on
+	// this machine's disk, beside the vault, before any of it is stored —
+	// so this is a bound on that disk, which a Pi's card and a
+	// workstation's drive do not have the same amount of.
+	UploadLimit int64 `json:"upload_limit"`
+
+	// ExtractLimit is the most one uploaded archive may unpack to. What is
+	// inside an archive is not what it weighs, and this is the cap on the
+	// other side of the compression.
+	ExtractLimit int64 `json:"extract_limit"`
+
+	// ExtractEntries is the most entries one uploaded archive may hold. A
+	// zip's whole directory is read into memory before the first file comes
+	// out, so this one is a bound on memory.
+	ExtractEntries int `json:"extract_entries"`
 }
 
 // Unit says how a knob's value is read and shown.
@@ -125,6 +142,12 @@ var knobs = []Knob{
 		Hint: "The largest file a scheduled repair will rebuild on its own; larger ones are named for you to repair by hand"},
 	{Name: "bundle_limit", Label: "Unattended bundle limit", Unit: UnitBytes, Min: 64 * mib, Max: 1 << 40, Step: 64 * mib,
 		Hint: "The largest git bundle a scheduled refresh will re-fetch on its own"},
+	{Name: "upload_limit", Label: "Largest upload", Unit: UnitBytes, Min: 1 * gib, Max: 1 << 40, Step: 1 * gib,
+		Hint: "The largest single file the browser may send. It is kept whole on this machine's disk, beside the vault, until it has been stored"},
+	{Name: "extract_limit", Label: "Largest extraction", Unit: UnitBytes, Min: 1 * gib, Max: 1 << 42, Step: 1 * gib,
+		Hint: "The most one uploaded archive may unpack to"},
+	{Name: "extract_entries", Label: "Entries per archive", Unit: UnitCount, Min: 1000, Max: 2000000,
+		Hint: "The most files and folders one uploaded archive may hold. An archive's list of contents is held in memory while it is unpacked"},
 }
 
 // Knobs lists every field, in the order the settings page shows them.
@@ -170,6 +193,12 @@ func (t Tuning) Get(name string) (int64, bool) {
 		return t.RebuildLimit, true
 	case "bundle_limit":
 		return t.BundleLimit, true
+	case "upload_limit":
+		return t.UploadLimit, true
+	case "extract_limit":
+		return t.ExtractLimit, true
+	case "extract_entries":
+		return int64(t.ExtractEntries), true
 	}
 	return 0, false
 }
@@ -201,6 +230,12 @@ func (t Tuning) Set(name string, value int64) (Tuning, bool) {
 		t.RebuildLimit = value
 	case "bundle_limit":
 		t.BundleLimit = value
+	case "upload_limit":
+		t.UploadLimit = value
+	case "extract_limit":
+		t.ExtractLimit = value
+	case "extract_entries":
+		t.ExtractEntries = int(value)
 	default:
 		return t, false
 	}

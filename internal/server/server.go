@@ -63,8 +63,12 @@ type Server struct {
 	// MaxUploadSize caps a single multipart upload request.
 	MaxUploadSize int64
 
+	// MaxPieceUploadSize caps a file uploaded a piece at a time. Zero means
+	// the machine's own setting (tuning.Tuning.UploadLimit).
+	MaxPieceUploadSize int64
+
 	// MaxExtractSize caps what one uploaded archive may unpack to. Zero means
-	// DefaultMaxExtractSize.
+	// the machine's own setting (tuning.Tuning.ExtractLimit).
 	MaxExtractSize int64
 
 	// WebDAV mounts the vault as a WebDAV share at WebDAVPrefix.
@@ -212,6 +216,10 @@ type Server struct {
 	// extracts is the uploaded archives waiting to be unpacked, being
 	// unpacked, and lately finished. See extract_runs.go.
 	extracts *extractRuns
+
+	// pieces is the large files part-way through arriving a piece at a
+	// time. See piece_uploads.go.
+	pieces *pieceUploads[piecePlan]
 
 	// readWatches is the window onto files being opened right now: which
 	// account each is waiting on, and how much of it has been sent. Read by
@@ -399,6 +407,9 @@ func (s *Server) Handler() (http.Handler, error) {
 	}
 	if s.extracts == nil {
 		s.extracts = newExtractRuns()
+	}
+	if s.pieces == nil {
+		s.pieces = newPieceUploads[piecePlan]()
 	}
 	if s.readWatches == nil {
 		s.readWatches = newReadWatch()
@@ -728,6 +739,12 @@ func (s *Server) Handler() (http.Handler, error) {
 		// POST /api/relocate, the same call the file list's own move uses.
 		"GET /api/degraded": s.handleDegradedList,
 		"POST /api/files":   s.handleFilesUpload,
+		// One file too large for a single request, a piece at a time. See
+		// handlers_pieces.go.
+		"POST /api/uploads":             s.handlePieceUploadBegin,
+		"PUT /api/uploads/{id}":         s.handlePieceUploadWrite,
+		"POST /api/uploads/{id}/finish": s.handlePieceUploadFinish,
+		"DELETE /api/uploads/{id}":      s.handlePieceUploadAbort,
 		// Which files of a choice are already stored at their destination with
 		// the same name and size, asked before a byte of them is sent — the
 		// browser drops those from the upload rather than storing copies.
@@ -1229,6 +1246,7 @@ func (s *Server) autoLockLoop() {
 		s.discs.clear()
 		s.mkvs.stopAll()
 		s.extracts.stopAll()
+		s.pieces.stopAll()
 		s.zips.clear()
 		s.strayScans.stopAll()
 		s.reattaches.stopAll()

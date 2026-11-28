@@ -7,7 +7,7 @@ import { UploadDestination, RelocateClouds } from './CloudSelect'
 import { makeThumbnails } from '../thumbs'
 import { useScreenAwake } from '../hooks'
 import {
-  batchBytes, batchPicks, describeFailure, describePicks, describeRetimes, describeSkips, emptyDirs,
+  batchBytes, batchPicks, describeFailure, goesInPieces, describePicks, describeRetimes, describeSkips, emptyDirs,
   picksFromDrop, picksFromInput, totalBytes,
 } from '../upload'
 import { noteExtractStarted } from '../extract'
@@ -519,19 +519,31 @@ export default function FileBrowser({
              number for minutes reads as stuck. So the moment the last byte is
              out, the card stops showing a percentage and says what the wait
              is instead. */
-          const resp = await api.upload(group, path, {
-            vault,
-            accounts,
-            scheme,
-            extract,
-            thumbs: thumbnails,
-            dirs: folders,
-            onProgress: (fraction) => track({
-              progress: (done + fraction * weight) / total,
-              phase: fraction >= 1 ? 'scatter' : '',
-            }),
+          const onProgress = (fraction) => track({
+            progress: (done + fraction * weight) / total,
+            phase: fraction >= 1 ? 'scatter' : '',
           })
-          folders = []
+          /* A file over the batch budget is a batch of its own, and goes up
+             a piece at a time: one request has a ceiling on the server, and
+             a file of several gigabytes is over it. Its picture, if it has
+             one, follows once the file has an ID to hang it on. */
+          let resp
+          if (group.length === 1 && goesInPieces(group[0].file)) {
+            resp = await api.uploadInPieces(group[0], path, { vault, accounts, scheme, extract, onProgress })
+            const made = resp.results?.[0]?.file
+            if (made && thumbnails[0]) api.putThumb(made.id, thumbnails[0]).then(onRefresh).catch(() => {})
+          } else {
+            resp = await api.upload(group, path, {
+              vault,
+              accounts,
+              scheme,
+              extract,
+              thumbs: thumbnails,
+              dirs: folders,
+              onProgress,
+            })
+            folders = []
+          }
 
           const results = resp.results || []
           // An archive taken to be extracted is followed from here on by
@@ -564,6 +576,14 @@ export default function FileBrowser({
 
         done += weight
         track({ progress: done / total, phase: '' })
+      }
+
+      /* The empty folders ride with a batch, and a choice that went up
+         entirely in pieces had no batch to carry them. */
+      if (folders.length) {
+        await Promise.all(folders.map((dir) => api.createFolder(joinPath(path, dir), vault)))
+          .then(onRefresh)
+          .catch((err) => failures.push(err.message))
       }
 
       if (failures.length) onError(failures.join('\n'))
