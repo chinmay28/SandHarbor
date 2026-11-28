@@ -104,6 +104,16 @@ the limit, rather than the `PARSE_ERROR` `http.MaxBytesReader` would produce. Th
 server reads the multipart temp file in place (`UploadStreamAt`) rather than
 spooling it a second time.
 
+An upload can ask for an archive to be unpacked rather than stored
+(`extract-N`, `handlers_extract.go`). Reading the archive is `internal/unpack`,
+which only walks entries and hands them over: it stores nothing and vouches for
+no path. The handler puts each entry through the same `pathSegments` check a
+dropped folder's `rel-N` gets and stores it with `UploadStream`, so an entry is
+spooled one at a time and disk use is bounded by the largest file in the
+archive, not by the archive. What it may unpack to is capped
+(`MaxExtractSize`, 32 GiB, and 20,000 entries), because the request ceiling
+bounds what an archive weighs and not what is in it.
+
 ## Error model
 
 Every error is JSON with a human-readable message and a stable code the

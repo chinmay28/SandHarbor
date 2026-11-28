@@ -137,6 +137,11 @@ type uploadResult struct {
 	Parts       *uploadParts         `json:"parts,omitempty"`
 	FailedParts []vault.ShardFailure `json:"failed_parts,omitempty"`
 	Advice      string               `json:"advice,omitempty"`
+
+	// Extracted is set on the result of an archive that was sent to be
+	// unpacked rather than stored: how many files came out of it and were
+	// stored. See handlers_extract.go.
+	Extracted *int `json:"extracted,omitempty"`
 }
 
 // uploadParts is the count of a scatter that fell short: how many distinct
@@ -250,6 +255,9 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 	v, _ := s.Vault()
 	results := make([]uploadResult, 0, len(uploads)+len(folders))
 	stored := 0
+	// An archive read to its end is a request that worked, even when there
+	// turned out to be no file in it to count.
+	unpacked := false
 	// The previews that came with the files, by the ID each file was stored
 	// as, and which result each belongs to — see below the loop.
 	pictures := map[string][]byte{}
@@ -273,6 +281,18 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 		}
 		made[folder] = true
 	}
+	ensure := func(folder string) error {
+		if made[folder] {
+			return nil
+		}
+		if !v.FolderExists(scope, folder) {
+			if err := v.Mkdir(scope, folder); err != nil {
+				return err
+			}
+		}
+		made[folder] = true
+		return nil
+	}
 
 	for i, fh := range uploads {
 		place := places[i]
@@ -294,6 +314,22 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 			results = append(results, result)
 			continue
 		}
+
+		// An archive sent to be unpacked is not stored: what is inside it is,
+		// under a folder named after it. See handlers_extract.go.
+		if formExtract(r, i) {
+			x := extractor{
+				v: v, scope: scope, ensure: ensure, limits: s.extractLimits(),
+				opts: vault.UploadOptions{Overwrite: overwrite, Accounts: accounts, Scheme: scheme},
+			}
+			out, n := x.extract(ctx, place, f, fh.Size)
+			f.Close()
+			unpacked = unpacked || out[0].OK
+			results = append(results, out...)
+			stored += n
+			continue
+		}
+
 		// Streamed rather than read into a slice first, and read where the
 		// multipart parser already put it. Upload held the whole file in memory,
 		// so a 4 GB film through the browser was 4 GB resident on top of
@@ -351,7 +387,7 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := http.StatusCreated
-	if stored == 0 {
+	if stored == 0 && !unpacked {
 		status = http.StatusBadGateway
 	}
 	writeJSON(w, status, map[string]any{"results": results, "stored": stored})

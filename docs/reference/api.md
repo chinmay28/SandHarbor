@@ -829,6 +829,7 @@ browser cuts a large choice into batches.
 | `rel-N` | The path file N had inside an uploaded folder |
 | `mod-N` | File N's modification time, ms since the epoch |
 | `thumb-N` | A thumbnail JPEG for file N |
+| `extract-N` | `1`/`true` to unpack file N (a `.zip`, `.tar.gz` or `.tgz`) into a folder instead of storing it |
 | `dirs` | Folders of an uploaded tree that hold no file |
 
 Folder paths from `rel-N` and `dirs` are rebuilt under `path` and checked like
@@ -854,6 +855,18 @@ typed names (`400 BAD_PATH`). The answer is `201` if at least one file stored an
 apart. `stage` is `placing`, `reading`, `scattering` or `recording`. A folder
 that could not be made is a result line of its own. `warnings` on an OK result
 note things like a missing spare part or a thumbnail that did not store.
+
+An archive sent with `extract-N` is not stored. Its files are, under a folder
+named after it beside where it would have landed (`photos.zip` → `photos/`); a
+top folder inside the archive with that same name is not nested a second time.
+Entry paths are checked like `rel-N`, symbolic links and other non-files are
+left out, and an archive may unpack to at most 32 GiB and 20,000 entries. The
+archive answers with one result of its own — `ok` if it was read to its end,
+`extracted` the number of files stored from it, `warnings` naming what was left
+out — followed by a failed result for each entry that did not store, named by
+its path under the folder. Files that stored are counted in `extracted` and
+`stored`, not listed. An archive that unpacked answers `201` even if it held no
+file.
 
 #### POST /api/files/precheck
 
