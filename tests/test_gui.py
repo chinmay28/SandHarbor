@@ -2546,6 +2546,48 @@ class TestFixTimestamps:
         dialog.get_by_text("Close", exact=True).click()
 
 
+    def _years(self, app, server, folder):
+        files = requests.get(f"{server}/api/files", params={"path": folder},
+                             cookies={c["name"]: c["value"] for c in app.context.cookies()},
+                             timeout=20).json()["files"]
+        return {f["name"]: f["modified_at"][:4] for f in files}
+
+    def test_a_date_can_be_typed_in_for_one_file(self, app, tmp_path, server):
+        """What is read can be wrong, and then the person is the only source."""
+        make_folder(app, "typed-one")
+        app.get_by_text("typed-one").first.click()
+        app.wait_for_load_state("networkidle")
+        self._upload_arrived(app, tmp_path, "letter.txt", b"a scan")
+        self._upload_arrived(app, tmp_path, "other.txt", b"left alone")
+
+        app.locator('button[aria-label="Actions for letter.txt"]').click()
+        app.get_by_text("Set date and time", exact=True).click()
+        dialog = app.get_by_role("dialog", name="Set date and time")
+        dialog.get_by_label("Date and time").fill("1998-06-12T14:30")
+        dialog.get_by_role("button", name="Set date").click()
+        dialog.wait_for(state="detached", timeout=20000)
+
+        assert self._years(app, server, "/typed-one") == {"letter.txt": "1998", "other.txt": "2021"}
+
+    def test_a_date_can_be_typed_in_for_the_whole_folder(self, app, tmp_path, server):
+        make_folder(app, "typed-all")
+        app.get_by_text("typed-all").first.click()
+        app.wait_for_load_state("networkidle")
+        self._upload_arrived(app, tmp_path, "one.txt", b"one")
+        self._upload_arrived(app, tmp_path, "two.txt", b"two")
+
+        dialog = self._open_tool(app)
+        dialog.get_by_role("button", name="Set a date myself…").click()
+        dialog = app.get_by_role("dialog", name="Set a date for every file")
+        expect(dialog.get_by_role("button", name="This folder · 2")).to_be_visible(timeout=20000)
+        dialog.get_by_label("Date and time").fill("2005-09-17T16:00")
+        dialog.get_by_role("button", name="Set the date of 2 files").click()
+        expect(dialog.get_by_text(re.compile("2 files now dated"))).to_be_visible(timeout=20000)
+        dialog.get_by_role("button", name="Done").click()
+
+        assert self._years(app, server, "/typed-all") == {"one.txt": "2005", "two.txt": "2005"}
+
+
 class TestSearch:
     """The search box, which reaches past the folder the browser is standing in.
 

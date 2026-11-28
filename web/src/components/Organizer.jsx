@@ -11,6 +11,7 @@ import CheckFiles from './CheckFiles'
 import Checksums from './Checksums'
 import Snapshots from './Snapshots'
 import { MakeThumbnails } from './ThumbBackfill'
+import SetDateDialog from './SetDate'
 
 /* Everything you do to a folder rather than to a row in it.
 
@@ -1140,6 +1141,9 @@ function FixTimes({ path, vault, onClose, onDone }) {
   const [plan, setPlan] = useState(null)
   const [error, setError] = useState(null)
   const [started, setStarted] = useState(null)
+  /* The way out when what can be read is wrong, or there is nothing to read:
+     one date, typed in, for every file. See SetDate.jsx. */
+  const [typing, setTyping] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -1150,6 +1154,10 @@ function FixTimes({ path, vault, onClose, onDone }) {
       .catch((err) => { if (live) setError(err.message) })
     return () => { live = false }
   }, [path, vault, deep])
+
+  if (typing) {
+    return <SetDateDialog kind="folder" path={path} vault={vault} onClose={onClose} onDone={onDone} />
+  }
 
   if (started) {
     return (
@@ -1237,6 +1245,20 @@ function FixTimes({ path, vault, onClose, onDone }) {
       )}
 
       {named + openable === 0 && <Buttons onClose={onClose} />}
+
+      <div style={{
+        marginTop: '16px', paddingTop: '12px', borderTop: `1px solid ${COLORS.border}`,
+        display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+      }}>
+        <span style={{
+          flex: 1, minWidth: '180px', fontFamily: FONT.sans, fontSize: '11px',
+          lineHeight: 1.5, color: COLORS.textMuted,
+        }}>
+          Know the date better than the files do? Set one for all of them, or
+          for a single file from its ⋯ menu.
+        </span>
+        <Button size="sm" variant="ghost" onClick={() => setTyping(true)}>Set a date myself…</Button>
+      </div>
     </Modal>
   )
 }

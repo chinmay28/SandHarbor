@@ -1119,7 +1119,9 @@ in one index write, and `read` opens each file, reads the date in its EXIF or
 movie header, and corrects it if the stored time is more than a day out. In the
 answer, `fixed` counts entries changed, `settled` files read and found right,
 and `undated` files read that carry no date. Only `modified_at` ever changes.
-`offset` is the zone a date with none of its own is read in.
+`offset` is the zone a date with none of its own is read in. `set` takes any
+time, so it is also how a date typed in by hand is applied, to one file or to
+every file in a folder.
 
 #### GET /zip/{token}/{name}
 

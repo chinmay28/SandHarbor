@@ -124,6 +124,23 @@ what is loose here, **Everything under it** at the lot.
 
 Fix the timestamps first, then file by date.
 
+### Setting a date yourself
+
+What a file says about itself can be wrong, and sometimes it says nothing: a
+scan of a letter, a camera whose clock was never set, a folder you know is all
+one wedding. Then you can type the date and time in:
+
+- **One file:** its `⋯` menu, **Set date and time**. The field opens on the date
+  the file carries now.
+- **A whole folder:** **Set a date myself…** at the foot of the Fix timestamps
+  dialog, or **Set a date for every file** in a folder's own `⋯` menu. Choose
+  **This folder** or **Everything under it**, each showing how many files that
+  is, and every one of them is given the one date.
+
+The date is read in your browser's time zone. As with the rest of this tool,
+only the modified date changes and no account is contacted. There is no undo:
+the dates the files carried before are replaced.
+
 ## What a folder is holding
 
 A folder's row cannot show its size, because the size lives in the levels below.
