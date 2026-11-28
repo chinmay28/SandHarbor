@@ -16,6 +16,7 @@ func TestPresetsAreTheFormulaOverTheirMachines(t *testing.T) {
 		ChunkSize: 16 * mib, UploadWindow: 4, ReadAhead: 1, ChunkCacheBytes: 1 * gib,
 		CompressLevel: 3, CompressThreads: 2, TransferWindow: 4, EraseWindow: 4,
 		ConnsPerHost: 12, RebuildLimit: 4 * gib, BundleLimit: 4 * gib,
+		UploadLimit: 32 * gib, ExtractLimit: 64 * gib, ExtractEntries: 100000,
 	}
 	if pi != want {
 		t.Errorf("pi5 preset:\n got %+v\nwant %+v", pi, want)
@@ -26,6 +27,7 @@ func TestPresetsAreTheFormulaOverTheirMachines(t *testing.T) {
 		ChunkSize: 32 * mib, UploadWindow: 12, ReadAhead: 6, ChunkCacheBytes: 4 * gib,
 		CompressLevel: 3, CompressThreads: 8, TransferWindow: 8, EraseWindow: 8,
 		ConnsPerHost: 32, RebuildLimit: 16 * gib, BundleLimit: 16 * gib,
+		UploadLimit: 128 * gib, ExtractLimit: 256 * gib, ExtractEntries: 400000,
 	}
 	if ws != want {
 		t.Errorf("workstation preset:\n got %+v\nwant %+v", ws, want)

@@ -119,6 +119,16 @@ func Derive(m Machine) Tuning {
 		EraseWindow:     clampInt(m.CPUs, 4, 8),
 		RebuildLimit:    clampInt64(m.MemoryBytes/4, 1*gib, 16*gib) / (64 * mib) * (64 * mib),
 		BundleLimit:     clampInt64(m.MemoryBytes/4, 2*gib, 16*gib) / (64 * mib) * (64 * mib),
+		// What a browser may send, and what an archive may become. The
+		// first is disk and the second is somebody's clouds, neither of
+		// which memory measures — but memory is what says which kind of
+		// machine this is, and a machine with a workstation's memory has a
+		// workstation's disk far more often than a card's.
+		UploadLimit:  clampInt64(m.MemoryBytes*2, 8*gib, 256*gib) / gib * gib,
+		ExtractLimit: clampInt64(m.MemoryBytes*4, 16*gib, 512*gib) / gib * gib,
+		// About 200 bytes of memory an entry, so a sixteenth of a percent
+		// of memory at the ceiling.
+		ExtractEntries: clampInt(int(m.MemoryBytes/gib)*6250, 25000, 400000),
 	}
 	// Enough idle connections that a full upload window to one cloud, with a
 	// transfer running beside it, reuses connections rather than opening

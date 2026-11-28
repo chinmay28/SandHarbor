@@ -860,7 +860,7 @@ An archive sent with `extract-N` is not stored. Its files are, under a folder
 named after it beside where it would have landed (`photos.zip` → `photos/`); a
 top folder inside the archive with that same name is not nested a second time.
 Entry paths are checked like `rel-N`, symbolic links and other non-files are
-left out, and an archive may unpack to at most 256 GiB and 200,000 entries.
+left out, and how much an archive may unpack to and how many entries it may hold are [machine settings](configuration.md#sizing-to-the-machine) (64 GiB and 100,000 on a Pi, 256 GiB and 400,000 on a workstation).
 
 The request only delivers the archive. Its result is `ok` with `run`, the ID of
 a run that unpacks it on the server after the request has been answered and
@@ -903,7 +903,7 @@ uses it for any file over 256 MB.
 | Finish | `POST /api/uploads/{id}/finish` | As `POST /api/files`: `{"stored", "results": [one]}`, `201` or `502` |
 | Give up | `DELETE /api/uploads/{id}` | `200` |
 
-`size` is required and may be up to 128 GiB (`413 TOO_LARGE`). A bad path, a
+`size` is required and may be up to the machine's **Largest upload** setting — 32 GiB on a Pi, 128 GiB on a workstation (`413 TOO_LARGE`). A bad path, a
 bad scheme, or `extract` on a name that is not an archive is refused when the
 upload is opened (`400`). A piece must start at the current `received`;
 otherwise `409 OFFSET` with `received`, and nothing is written — resend from

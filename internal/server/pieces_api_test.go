@@ -264,3 +264,54 @@ func TestLockingTheVaultGivesUpPieceUploads(t *testing.T) {
 		t.Error("the upload was remembered past the lock")
 	}
 }
+
+// How large a file may be, and how much an archive may become, are the
+// machine's settings: a Pi and a workstation are not given the same, and
+// whoever runs either can move them.
+func TestUploadAndExtractLimitsFollowTheMachineSettings(t *testing.T) {
+	resetSharedTuning(t)
+	c := newTestClient(t)
+	c.setup("pw", 3)
+
+	const gib = 1 << 30
+	open := func(size int64) int {
+		w, body := c.json(http.MethodPost, "/api/uploads", map[string]any{"path": "/", "name": "a.bin", "size": size})
+		if id, _ := body["id"].(string); id != "" {
+			c.json(http.MethodDelete, "/api/uploads/"+id, nil)
+		}
+		return w.Code
+	}
+	choose := func(profile string, overrides map[string]any) {
+		t.Helper()
+		if w, body := c.json(http.MethodPut, "/api/machine", map[string]any{
+			"profile": profile, "overrides": overrides,
+		}); w.Code != http.StatusOK {
+			t.Fatalf("PUT /api/machine: %d %v", w.Code, body)
+		}
+	}
+
+	choose("pi5", nil)
+	if open(32*gib) != http.StatusCreated || open(32*gib+1) != http.StatusRequestEntityTooLarge {
+		t.Error("a Pi takes a file up to 32 GiB and no larger")
+	}
+	if got := c.server.extractLimits(c.server.vault); got.MaxBytes != 64*gib || got.MaxEntries != 100000 {
+		t.Errorf("a Pi's extraction limits = %+v", got)
+	}
+
+	choose("workstation", nil)
+	if open(128*gib) != http.StatusCreated || open(128*gib+1) != http.StatusRequestEntityTooLarge {
+		t.Error("a workstation takes a file up to 128 GiB and no larger")
+	}
+	if got := c.server.extractLimits(c.server.vault); got.MaxBytes != 256*gib || got.MaxEntries != 400000 {
+		t.Errorf("a workstation's extraction limits = %+v", got)
+	}
+
+	// And either can be told otherwise.
+	choose("pi5", map[string]any{"upload_limit": 2 * gib, "extract_limit": 3 * gib, "extract_entries": 5000})
+	if open(2*gib) != http.StatusCreated || open(2*gib+1) != http.StatusRequestEntityTooLarge {
+		t.Error("the upload limit set by hand was not the one applied")
+	}
+	if got := c.server.extractLimits(c.server.vault); got.MaxBytes != 3*gib || got.MaxEntries != 5000 {
+		t.Errorf("extraction limits set by hand = %+v", got)
+	}
+}

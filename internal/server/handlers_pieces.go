@@ -23,11 +23,6 @@ import (
 // it fitted in one request, and answers in the same shape, so everything the
 // browser knows about a result it knows about this one.
 
-// DefaultMaxPieceUploadSize is the largest file that may arrive in pieces.
-// Not a limit on what the vault can hold: the file sits whole on this
-// machine's disk before any of it is stored, and this is the bound on that.
-const DefaultMaxPieceUploadSize = 128 << 30 // 128 GiB
-
 // pieceSize is how much the browser is asked to send per piece, and
 // maxPieceSize the most one piece may be. Small enough that a piece lost to a
 // bad connection is seconds of sending to repeat, and well under what any
@@ -65,11 +60,16 @@ type pieceUploadRequest struct {
 	Extract bool `json:"extract,omitempty"`
 }
 
-func (s *Server) maxPieceUpload() int64 {
+// maxPieceUpload is the largest file that may arrive in pieces. Not a limit on
+// what the vault can hold: the file sits whole on this machine's disk before
+// any of it is stored, and this is the bound on that — the machine's own
+// setting (internal/tuning), since a Pi's card and a workstation's drive are
+// not the same disk, unless the Server was built with a ceiling of its own.
+func (s *Server) maxPieceUpload(v *vault.Vault) int64 {
 	if s.MaxPieceUploadSize > 0 {
 		return s.MaxPieceUploadSize
 	}
-	return DefaultMaxPieceUploadSize
+	return v.Tuning().UploadLimit
 }
 
 // handlePieceUploadBegin opens an upload. Everything that can be refused about
@@ -86,9 +86,10 @@ func (s *Server) handlePieceUploadBegin(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "the file's size is needed to upload it in pieces", "BAD_REQUEST")
 		return
 	}
-	if limit := s.maxPieceUpload(); req.Size > limit {
+	v, _ := s.Vault()
+	if limit := s.maxPieceUpload(v); req.Size > limit {
 		writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf(
-			"that file is over the %s one upload may carry — import it from the machine running SAND instead",
+			"that file is over the %s this machine is set to take in one upload — raise \"Largest upload\" in the machine settings, or import it from the machine running SAND instead",
 			formatBytes(limit)), "TOO_LARGE")
 		return
 	}
@@ -115,9 +116,8 @@ func (s *Server) handlePieceUploadBegin(w http.ResponseWriter, r *http.Request) 
 		plan.opts.ModifiedAt = time.UnixMilli(req.Mod).UTC()
 	}
 
-	v, _ := s.Vault()
 	if req.Extract {
-		x := extractor{v: v, scope: plan.scope, limits: s.extractLimits(), opts: plan.opts}
+		x := extractor{v: v, scope: plan.scope, limits: s.extractLimits(v), opts: plan.opts}
 		// The archive's own time is not its contents': each entry has one.
 		x.opts.ModifiedAt = time.Time{}
 		var err error

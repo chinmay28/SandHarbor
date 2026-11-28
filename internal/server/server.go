@@ -64,11 +64,11 @@ type Server struct {
 	MaxUploadSize int64
 
 	// MaxPieceUploadSize caps a file uploaded a piece at a time. Zero means
-	// DefaultMaxPieceUploadSize.
+	// the machine's own setting (tuning.Tuning.UploadLimit).
 	MaxPieceUploadSize int64
 
 	// MaxExtractSize caps what one uploaded archive may unpack to. Zero means
-	// DefaultMaxExtractSize.
+	// the machine's own setting (tuning.Tuning.ExtractLimit).
 	MaxExtractSize int64
 
 	// WebDAV mounts the vault as a WebDAV share at WebDAVPrefix.
