@@ -98,6 +98,7 @@ func (s *Server) handleSubVaultLock(w http.ResponseWriter, r *http.Request) {
 	s.streams.clear()
 	s.discs.clear()
 	s.mkvs.stopAll()
+	s.extracts.stopVault(r.PathValue("id"))
 	writeJSON(w, http.StatusOK, map[string]any{"id": r.PathValue("id"), "unlocked": false})
 }
 
@@ -218,6 +219,7 @@ func (s *Server) handleSubVaultDelete(w http.ResponseWriter, r *http.Request) {
 	s.streams.clear()
 	s.discs.clear()
 	s.mkvs.stopAll()
+	s.extracts.stopVault(r.PathValue("id"))
 	writeJSON(w, http.StatusOK, map[string]any{"status": "deleted", "warnings": warnings})
 }
 

@@ -1326,6 +1326,12 @@ export const api = {
     return retimed
   },
 
+  /* The archives uploaded to be extracted: waiting, being unpacked on the
+     machine, and lately finished. Stopping a finished one dismisses it. See
+     extract.js. */
+  extractRuns: () => request('/api/extracts'),
+  stopExtract: (id) => request(`/api/extracts/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
   /* Uploads go through XMLHttpRequest rather than fetch so the UI can show
      real progress while a large file is being split and scattered.
 

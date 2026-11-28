@@ -149,9 +149,68 @@ export function archivePicks({ files }) {
 export function describeExtract(archives) {
   if (archives.length === 1) {
     const { name } = archives[0].file
-    return `Extract ${name} into a folder named ${archiveFolder(name)}, instead of storing the archive`
+    return `Extract ${name} into a folder named ${archiveFolder(name)}, instead of storing the archive. It is unpacked on the machine once uploaded, so the page can be closed`
   }
-  return `Extract the ${archives.length} archives, each into a folder named after it, instead of storing them`
+  return `Extract the ${archives.length} archives, each into a folder named after it, instead of storing them. They are unpacked on the machine once uploaded, so the page can be closed`
+}
+
+/* An archive sent to be extracted is unpacked by the machine after its upload
+   has been answered (internal/server/extract_runs.go), and the page follows
+   it as a run. These say where one has got to and what it came to. */
+
+/* How far through its archive a run is, as a fraction — or null before it
+   has anything to measure. The archive's own bytes, read out of in all,
+   because that is the one total both a zip and a tar have up front. */
+export function extractFraction(run) {
+  const at = run?.at || {}
+  if (!at.total) return null
+  return Math.min(1, (at.done || 0) / at.total)
+}
+
+export function extractProgressText(run) {
+  if (run?.waiting) return 'waiting for the archive before it'
+  const at = run?.at || {}
+  const files = at.files || 0
+  const count = `${files} file${files === 1 ? '' : 's'} stored`
+  return at.current ? `${count} · ${at.current}` : count
+}
+
+/* What a finished run came to, in a sentence. Stopped, failed and finished
+   all say how much is in the folder, since in every one of them that much
+   is. */
+export function extractOutcomeText(run) {
+  const report = run?.report || {}
+  const n = report.extracted || 0
+  const files = `${n} file${n === 1 ? '' : 's'}`
+  if (run?.cancelled) {
+    return n
+      ? `Stopped extracting ${run.name}. The ${files} already stored are in ${run.dir}.`
+      : `Stopped extracting ${run.name}. Nothing had been stored.`
+  }
+  if (run?.error) {
+    return `Could not extract ${run.name}: ${run.error}`
+      + (n ? ` The ${files} stored before that are in ${run.dir}.` : '')
+  }
+  const failed = report.failed || 0
+  return `Extracted ${run?.name} into ${run?.dir} — ${files} stored`
+    + (failed ? `, ${failed} could not be.` : '.')
+}
+
+/* The lines under that sentence: why anything was not stored, what was left
+   out for not being a file, and what storing had to say. The server keeps the
+   first few of each and counts the rest. */
+export function extractNotes(run) {
+  const report = run?.report || {}
+  const lines = [...(report.failures || [])]
+  const unnamed = (report.failed || 0) - (report.failures || []).length
+  if (unnamed > 0) lines.push(`…and ${unnamed} more that could not be stored.`)
+  const skips = report.skips || []
+  if (skips.length) {
+    const more = (report.skipped || 0) - skips.length
+    lines.push(`Left out, not being files: ${skips.join(', ')}${more > 0 ? ` and ${more} more` : ''}.`)
+  }
+  lines.push(...(report.warnings || []))
+  return lines
 }
 
 /* How to say what was not sent because the destination already had it. Each

@@ -236,6 +236,9 @@ func (s *Server) handleVaultLock(w http.ResponseWriter, r *http.Request) {
 	// that carried on would find no key to write the index with. The parts
 	// of the file in flight finish their round either way.
 	s.erasures.stopAll()
+	// And an archive being unpacked: what it had stored is stored, and the
+	// rest would find no key to be stored with.
+	s.extracts.stopAll()
 	// And the stray-parts scan: what it found names file paths and was read
 	// with the keys that are leaving, and one still running would finish
 	// for nobody.
